@@ -1,0 +1,1567 @@
+// « À Chacun Une Belle Âme » — schéma de données
+//
+// Conventions appliquées dans tout ce fichier :
+//   - toutes les dates sont en UTC (DateTime @db.Timestamptz(3))
+//   - tous les montants sont en unité monétaire minimale (Int) + devise explicite
+//     ATTENTION : XAF et XOF n'ont PAS de sous-unité (exposant 0) → 1 000 F CFA = 1000
+//   - les champs marqués « chiffré » sont chiffrés au niveau applicatif (AES-256-GCM,
+//     clé dans l'environnement, rotation prévue) avant écriture
+//   - les champs marqués « haché » ne sont jamais réversibles (SHA-256 + sel serveur)
+//   - le schéma `kyc` est physiquement séparé du schéma `app` : rôle PostgreSQL distinct,
+//     aucune jointure applicative entre données publiques et pièces d'identité
+//   - chaque liste est paginée par curseur (createdAt, id) → index composites correspondants
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["app", "kyc"]
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ÉNUMÉRATIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+enum AccountStatus {
+  PENDING_OTP // compte créé, OTP non validé
+  ACTIVE
+  PAUSED // l'utilisateur a mis son profil en pause
+  RESTRICTED // sanction temporaire (lecture seule ou envoi bloqué)
+  SUSPENDED // sanction lourde, réversible après revue
+  BANNED // sanction définitive
+  BLOCKED_UNDERAGE // refusé pour non-respect de l'âge minimum — jamais réactivable
+  PENDING_DELETION // période de grâce en cours
+  DELETED // anonymisé
+
+  @@schema("app")
+}
+
+enum VerificationStatus {
+  NOT_STARTED
+  PENDING // documents déposés, en file
+  IN_REVIEW // pris en charge par un agent ou le prestataire
+  VERIFIED
+  REJECTED
+  ADDITIONAL_REQUIRED // vérification complémentaire demandée
+  SUSPENDED // vérification révoquée, accès produit fermé
+
+  @@schema("app")
+}
+
+enum Gender {
+  FEMALE
+  MALE
+
+  @@schema("app")
+}
+
+enum ProfileStatus {
+  DRAFT // en cours de complétion, jamais publié
+  ACTIVE
+  PAUSED
+  DEACTIVATED
+  HIDDEN_BY_MODERATION
+
+  @@schema("app")
+}
+
+enum RelationshipStatus {
+  SINGLE
+  DIVORCED
+  WIDOWED
+  SEPARATED
+
+  @@schema("app")
+}
+
+enum EducationLevel {
+  NONE
+  SECONDARY
+  VOCATIONAL
+  BACHELOR
+  MASTER
+  DOCTORATE
+
+  @@schema("app")
+}
+
+enum PhotoStatus {
+  UPLOADING
+  PENDING_MODERATION
+  APPROVED
+  REJECTED
+  HIDDEN_BY_MODERATION
+  DELETED
+
+  @@schema("app")
+}
+
+enum AdminRole {
+  SUPER_ADMIN
+  ADMIN
+  MODERATION_LEAD
+  MODERATOR
+  VERIFICATION_AGENT
+  SUPPORT
+  ANALYST
+
+  @@schema("app")
+}
+
+enum DeviceType {
+  ANDROID
+  IOS
+  WEB
+
+  @@schema("app")
+}
+
+enum OtpPurpose {
+  REGISTRATION
+  LOGIN
+  PHONE_CHANGE
+  ACCOUNT_RECOVERY
+  SENSITIVE_ACTION
+
+  @@schema("app")
+}
+
+enum LikeType {
+  INTEREST // intérêt envoyé
+  PASS // refus
+
+  @@schema("app")
+}
+
+enum MatchStatus {
+  ACTIVE
+  UNMATCHED // annulé par l'un des deux
+  CLOSED_BY_MODERATION
+
+  @@schema("app")
+}
+
+enum ConversationStatus {
+  OPEN
+  LOCKED_BY_BLOCK
+  LOCKED_BY_UNMATCH
+  LOCKED_BY_MODERATION
+  ARCHIVED
+
+  @@schema("app")
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  SYSTEM // message généré par la plateforme (match créé, conseil de sécurité)
+
+  @@schema("app")
+}
+
+enum MessageDeliveryStatus {
+  SENT
+  DELIVERED
+  READ
+
+  @@schema("app")
+}
+
+enum ReportCategory {
+  FAKE_PROFILE
+  IDENTITY_THEFT
+  FINANCIAL_SOLICITATION
+  SCAM_SUSPICION
+  HARASSMENT
+  HATE_SPEECH
+  SEXUAL_CONTENT
+  INAPPROPRIATE_PHOTO
+  UNDERAGE_SUSPICION
+  SPAM
+  OTHER
+
+  @@schema("app")
+}
+
+enum ReportTargetType {
+  PROFILE
+  PHOTO
+  MESSAGE
+  BEHAVIOR
+
+  @@schema("app")
+}
+
+enum CasePriority {
+  P0_CRITICAL // mineur suspecté, menace physique — SLA 2 h
+  P1_HIGH // arnaque, harcèlement, usurpation — SLA 6 h
+  P2_NORMAL // contenu inapproprié — SLA 24 h
+  P3_LOW // spam, divers — SLA 72 h
+
+  @@schema("app")
+}
+
+enum CaseStatus {
+  OPEN
+  ASSIGNED
+  AWAITING_USER // information demandée au membre
+  ESCALATED
+  RESOLVED
+  DISMISSED
+
+  @@schema("app")
+}
+
+enum ModerationActionType {
+  WARNING
+  INFORMATION_REQUEST
+  PHOTO_HIDDEN
+  CONTENT_REMOVED
+  TEMPORARY_RESTRICTION
+  SUSPENSION
+  BAN
+  REVERIFICATION_REQUIRED
+  DISMISSED
+  ESCALATED
+
+  @@schema("app")
+}
+
+enum SignalType {
+  REPEATED_MONEY_REQUEST
+  BULK_SIMILAR_MESSAGES
+  REPEATED_ACCOUNT_CREATION
+  FREQUENT_DEVICE_CHANGE
+  ABNORMAL_LIKE_VOLUME
+  VERIFICATION_REFUSAL
+  MULTIPLE_REPORTS
+  SUSPICIOUS_LINK
+  AUTOMATED_BEHAVIOR
+
+  @@schema("app")
+}
+
+enum PlanInterval {
+  MONTHLY
+  QUARTERLY
+  YEARLY
+  ONE_TIME // boost
+
+  @@schema("app")
+}
+
+enum SubscriptionStatus {
+  PENDING_PAYMENT
+  ACTIVE
+  PAST_DUE // échec de paiement, période de grâce
+  CANCELLED // annulé, actif jusqu'à la fin de période
+  EXPIRED
+  REFUNDED
+
+  @@schema("app")
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  REFUNDED
+  PARTIALLY_REFUNDED
+
+  @@schema("app")
+}
+
+enum PaymentMethodType {
+  MOBILE_MONEY
+  CARD
+  MANUAL // régularisation administrative, tracée
+
+  @@schema("app")
+}
+
+enum WebhookProcessingStatus {
+  RECEIVED
+  PROCESSED
+  IGNORED_DUPLICATE
+  FAILED
+
+  @@schema("app")
+}
+
+enum NotificationChannel {
+  IN_APP
+  PUSH
+  EMAIL
+  SMS
+
+  @@schema("app")
+}
+
+enum NotificationType {
+  OTP_CODE
+  VERIFICATION_APPROVED
+  VERIFICATION_REJECTED
+  VERIFICATION_ADDITIONAL
+  NEW_MATCH
+  NEW_MESSAGE
+  NEW_INTEREST
+  PROFILE_INCOMPLETE
+  PHOTO_APPROVED
+  PHOTO_REJECTED
+  REPORT_UPDATED
+  MODERATION_ACTION
+  SUBSCRIPTION_RENEWED
+  SUBSCRIPTION_FAILED
+  SUBSCRIPTION_EXPIRING
+  SECURITY_ALERT
+  ACCOUNT_DELETION_REMINDER
+
+  @@schema("app")
+}
+
+enum ConsentType {
+  TERMS_OF_SERVICE
+  PRIVACY_POLICY
+  CODE_OF_CONDUCT
+  KYC_PROCESSING
+  MARKETING_COMMUNICATIONS
+
+  @@schema("app")
+}
+
+enum UserRequestStatus {
+  PENDING
+  PROCESSING
+  READY
+  COMPLETED
+  CANCELLED
+  FAILED
+
+  @@schema("app")
+}
+
+enum BlockedIdentityReason {
+  BANNED
+  UNDERAGE
+  SELF_DELETED
+  FRAUD
+
+  @@schema("app")
+}
+
+enum DocumentType {
+  NATIONAL_ID
+  PASSPORT
+  DRIVER_LICENSE
+  CONSULAR_CARD
+  SELFIE
+  LIVENESS_CAPTURE
+
+  @@schema("kyc")
+}
+
+enum VerificationDecisionOutcome {
+  APPROVED
+  REJECTED
+  ADDITIONAL_REQUIRED
+  SUSPENDED
+
+  @@schema("kyc")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 1. COMPTE, SESSION, APPAREIL, RÔLE
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Compte. Ne contient AUCUNE donnée de profil publique.
+model User {
+  id String @id @default(cuid())
+
+  /// Identifiant principal, format E.164. Chiffré au repos.
+  phoneE164     String  @unique
+  /// Empreinte du numéro : permet unicité et liste noire sans lecture du numéro.
+  phoneHash     String  @unique
+  phoneVerified Boolean @default(false)
+
+  /// Facultatif (ADR-003). Unique s'il est présent.
+  email         String? @unique
+  emailVerified Boolean @default(false)
+  /// Argon2id. Null tant qu'aucun e-mail n'est ajouté.
+  passwordHash  String?
+
+  /// Source de vérité de l'âge. JAMAIS modifiable après VERIFIED.
+  birthDate     DateTime? @db.Date
+  birthDateLock Boolean   @default(false)
+  gender        Gender?
+
+  accountStatus      AccountStatus      @default(PENDING_OTP)
+  verificationStatus VerificationStatus @default(NOT_STARTED)
+
+  /// Secret TOTP chiffré. Architecture 2FA prête, interface livrée en V1.
+  twoFactorSecret  String?
+  twoFactorEnabled Boolean @default(false)
+
+  countryCode String? @db.Char(2)
+
+  failedLoginCount Int       @default(0)
+  lockedUntil      DateTime? @db.Timestamptz(3)
+
+  /// Granularité volontairement grossière côté API (ADR : confidentialité).
+  lastActiveAt DateTime? @db.Timestamptz(3)
+
+  suspendedUntil DateTime? @db.Timestamptz(3)
+  bannedAt       DateTime? @db.Timestamptz(3)
+  deletionAt     DateTime? @db.Timestamptz(3)
+
+  referralCode     String? @unique
+  /// Invitation effectivement consommée à l'inscription (traçabilité de campagne).
+  usedInviteId     String?
+  registrationIpV4 String? // tronquée sur les 3 premiers octets
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  profile               Profile?
+  preference            Preference?
+  roles                 UserRole[]
+  sessions              UserSession[]
+  devices               Device[]
+  otpChallenges         OtpChallenge[]
+  verificationRequests  VerificationRequest[]
+  photos                Photo[]
+  viewsGiven            ProfileView[]          @relation("Viewer")
+  viewsReceived         ProfileView[]          @relation("Viewed")
+  likesGiven            Like[]                 @relation("LikeSender")
+  likesReceived         Like[]                 @relation("LikeReceiver")
+  matchesAsUserA        Match[]                @relation("MatchUserA")
+  matchesAsUserB        Match[]                @relation("MatchUserB")
+  conversationMembers   ConversationMember[]
+  messagesSent          Message[]
+  blocksGiven           Block[]                @relation("Blocker")
+  blocksReceived        Block[]                @relation("Blocked")
+  reportsFiled          Report[]               @relation("Reporter")
+  reportsAgainst        Report[]               @relation("ReportedUser")
+  moderationCases       ModerationCase[]       @relation("CaseSubject")
+  moderationSignals     ModerationSignal[]
+  subscriptions         Subscription[]
+  payments              Payment[]
+  boosts                Boost[]
+  notifications         Notification[]
+  notificationPrefs     NotificationPreference[]
+  consents              ConsentRecord[]
+  exportRequests        DataExportRequest[]
+  deletionRequests      AccountDeletionRequest[]
+  usedInvite            ReferralInvite?        @relation("InviteUsedBy", fields: [usedInviteId], references: [id], onDelete: SetNull)
+  analyticsEvents       AnalyticsEvent[]
+
+  @@index([accountStatus, verificationStatus])
+  @@index([createdAt(sort: Desc), id])
+  @@index([lastActiveAt(sort: Desc)])
+  @@index([deletionAt])
+  @@schema("app")
+}
+
+/// Session d'authentification. Un refresh token = une ligne.
+model UserSession {
+  id     String @id @default(cuid())
+  userId String
+
+  /// SHA-256 du refresh token opaque. Le token en clair n'existe que côté client.
+  refreshTokenHash String  @unique
+  /// Famille de rotation : la réutilisation d'un token révoque toute la famille (ADR-005).
+  familyId         String
+  deviceId         String?
+
+  ipV4      String? // tronquée
+  userAgent String? @db.VarChar(512)
+
+  expiresAt     DateTime  @db.Timestamptz(3)
+  revokedAt     DateTime? @db.Timestamptz(3)
+  revokedReason String?
+  lastUsedAt    DateTime? @db.Timestamptz(3)
+  createdAt     DateTime  @default(now()) @db.Timestamptz(3)
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+
+  @@index([userId, revokedAt])
+  @@index([familyId])
+  @@index([expiresAt])
+  @@schema("app")
+}
+
+/// Appareil connu. Sert à la détection de changement fréquent et aux notifications push.
+model Device {
+  id     String @id @default(cuid())
+  userId String
+
+  /// Empreinte non réversible calculée côté serveur à partir de signaux client.
+  fingerprintHash String
+  type            DeviceType
+  model           String?    @db.VarChar(120)
+  osVersion       String?    @db.VarChar(40)
+  appVersion      String?    @db.VarChar(40)
+
+  /// Jeton push (chiffré). Effacé à la déconnexion de l'appareil.
+  pushToken String?
+
+  trusted    Boolean   @default(false)
+  lastSeenAt DateTime? @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions UserSession[]
+
+  @@unique([userId, fingerprintHash])
+  @@index([fingerprintHash])
+  @@schema("app")
+}
+
+/// Rôle back-office. Un membre ordinaire n'a aucune ligne ici.
+model UserRole {
+  id     String    @id @default(cuid())
+  userId String
+  role   AdminRole
+
+  grantedBy String
+  grantedAt DateTime  @default(now()) @db.Timestamptz(3)
+  revokedAt DateTime? @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, role])
+  @@index([role, revokedAt])
+  @@schema("app")
+}
+
+/// Défi OTP. Le code n'est jamais stocké en clair.
+model OtpChallenge {
+  id     String @id @default(cuid())
+  userId String
+
+  purpose      OtpPurpose
+  /// SHA-256 du code à 6 chiffres + sel serveur.
+  codeHash     String
+  destination  String // téléphone ou e-mail, chiffré
+  attemptCount Int        @default(0)
+  maxAttempts  Int        @default(5)
+
+  expiresAt  DateTime  @db.Timestamptz(3)
+  consumedAt DateTime? @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose, consumedAt])
+  @@index([expiresAt])
+  @@schema("app")
+}
+
+/// Empreintes des identités interdites de ré-inscription (ADR-013).
+/// Ne contient AUCUNE donnée en clair.
+model BlockedIdentity {
+  id String @id @default(cuid())
+
+  phoneHash          String?
+  documentNumberHash String?
+  deviceFingerprint  String?
+
+  reason    BlockedIdentityReason
+  /// Null = permanent.
+  expiresAt DateTime?             @db.Timestamptz(3)
+  notes     String?               @db.VarChar(500)
+  createdAt DateTime              @default(now()) @db.Timestamptz(3)
+
+  @@unique([phoneHash])
+  @@index([documentNumberHash])
+  @@index([deviceFingerprint])
+  @@schema("app")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 2. PROFIL, PRÉFÉRENCES, PHOTOS
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Référentiel fermé de villes (ADR-011 : pas de GPS au MVP).
+model City {
+  id          String @id @default(cuid())
+  countryCode String @db.Char(2)
+  name        String @db.VarChar(120)
+  region      String @db.VarChar(120)
+  slug        String
+
+  profiles    Profile[]
+  preferences PreferenceCity[]
+
+  @@unique([countryCode, slug])
+  @@index([countryCode, name])
+  @@schema("app")
+}
+
+/// Données publiques du profil. Séparé de User : jamais joint aux données KYC.
+model Profile {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  firstName String @db.VarChar(60)
+  cityId    String
+
+  profession     String?             @db.VarChar(120)
+  educationLevel EducationLevel?
+  relationship   RelationshipStatus?
+  hasChildren    Boolean?
+
+  bio            String? @db.VarChar(1000)
+  lookingFor     String? @db.VarChar(600)
+  personalValues String? @db.VarChar(600)
+
+  status ProfileStatus @default(DRAFT)
+
+  /// Recalculé à chaque écriture. Stocké pour trier et filtrer sans recalcul.
+  completionRate  Int      @default(0)
+  publishedAt     DateTime? @db.Timestamptz(3)
+  /// Photo principale approuvée.
+  primaryPhotoId  String?  @unique
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  city      City              @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  interests ProfileInterest[]
+
+  @@index([status, cityId])
+  @@index([completionRate])
+  @@schema("app")
+}
+
+/// Référentiel des centres d'intérêt et valeurs. Fermé et modéré (pas de saisie libre).
+model Interest {
+  id       String  @id @default(cuid())
+  slug     String  @unique
+  label    String  @db.VarChar(80)
+  category String  @db.VarChar(60) // sport, foi, famille, culture, valeurs…
+  active   Boolean @default(true)
+
+  profiles ProfileInterest[]
+
+  @@index([category, active])
+  @@schema("app")
+}
+
+model ProfileInterest {
+  profileId  String
+  interestId String
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+
+  profile  Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  interest Interest @relation(fields: [interestId], references: [id], onDelete: Cascade)
+
+  @@id([profileId, interestId])
+  @@index([interestId])
+  @@schema("app")
+}
+
+/// Critères de recherche déclarés.
+model Preference {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  seekingGender Gender
+  minAge        Int    @default(18)
+  maxAge        Int    @default(75)
+
+  /// Vide = toutes les villes du pays.
+  sameCountryOnly Boolean @default(true)
+
+  acceptedRelationshipStatuses RelationshipStatus[]
+  acceptsChildren              Boolean?
+  /// Filtre Premium (feature flag premium.filters).
+  minEducationLevel            EducationLevel?
+  requiredInterestIds          String[]
+
+  dailySuggestionLimit Int @default(10)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  user   User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cities PreferenceCity[]
+
+  @@schema("app")
+}
+
+model PreferenceCity {
+  preferenceId String
+  cityId       String
+
+  preference Preference @relation(fields: [preferenceId], references: [id], onDelete: Cascade)
+  city       City       @relation(fields: [cityId], references: [id], onDelete: Cascade)
+
+  @@id([preferenceId, cityId])
+  @@index([cityId])
+  @@schema("app")
+}
+
+/// Photo de profil. Stockage privé, servie uniquement par URL signée.
+model Photo {
+  id     String @id @default(cuid())
+  userId String
+
+  /// Clés d'objet dans le bucket privé — jamais des URL publiques.
+  storageKey          String @unique
+  thumbnailStorageKey String?
+
+  position    Int
+  status      PhotoStatus @default(UPLOADING)
+  width       Int?
+  height      Int?
+  sizeBytes   Int?
+  contentType String?     @db.VarChar(60)
+  /// Empreinte perceptuelle : détecte la réutilisation d'une photo entre comptes.
+  perceptualHash String?
+
+  moderatedAt        DateTime? @db.Timestamptz(3)
+  moderatedBy        String?
+  moderationReason   String?   @db.VarChar(300)
+  autoModerationScore Float?
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, position])
+  @@index([status, createdAt])
+  @@index([perceptualHash])
+  @@schema("app")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 3. VÉRIFICATION D'IDENTITÉ — schéma `kyc`, physiquement séparé (ADR-004)
+// ═══════════════════════════════════════════════════════════════════════════
+
+model VerificationRequest {
+  id     String @id @default(cuid())
+  userId String
+
+  status VerificationStatus @default(PENDING)
+
+  /// Identifiant du fournisseur (mock ou réel). Jamais inventé.
+  providerName      String? @db.VarChar(60)
+  providerReference String?
+
+  /// Empreinte du numéro de pièce : contrôle d'unicité et liste noire sans stockage en clair.
+  documentNumberHash String?
+  /// Nom porté par la pièce, chiffré. Comparé au prénom du profil, jamais affiché publiquement.
+  legalNameEncrypted String?
+  /// Date de naissance lue sur la pièce, chiffrée. Confrontée à la déclaration.
+  birthDateEncrypted String?
+
+  livenessScore  Float?
+  faceMatchScore Float?
+
+  submittedAt DateTime  @default(now()) @db.Timestamptz(3)
+  decidedAt   DateTime? @db.Timestamptz(3)
+  /// Date de purge des documents rattachés (conservation configurable, H6 : 90 j).
+  purgeAt     DateTime? @db.Timestamptz(3)
+
+  user      User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documents VerificationDocument[]
+  decisions VerificationDecision[]
+
+  @@index([status, submittedAt])
+  @@index([userId, submittedAt(sort: Desc)])
+  @@index([documentNumberHash])
+  @@index([purgeAt])
+  @@schema("kyc")
+}
+
+/// Pièce d'identité ou selfie. Donnée la plus sensible de la plateforme.
+/// Bucket S3 dédié, chiffré, jamais servi au public, purge automatique.
+model VerificationDocument {
+  id        String @id @default(cuid())
+  requestId String
+
+  type DocumentType
+  /// Clé d'objet dans le bucket KYC privé. Aucune URL publique n'existe jamais.
+  storageKey  String @unique
+  contentType String @db.VarChar(60)
+  sizeBytes   Int
+  /// SHA-256 du fichier : détecte le renvoi d'un document déjà refusé.
+  checksum    String
+
+  uploadedAt DateTime  @default(now()) @db.Timestamptz(3)
+  purgedAt   DateTime? @db.Timestamptz(3)
+
+  request VerificationRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+  @@index([checksum])
+  @@index([purgedAt])
+  @@schema("kyc")
+}
+
+/// Décision de vérification. Immuable : une correction crée une nouvelle décision.
+model VerificationDecision {
+  id        String @id @default(cuid())
+  requestId String
+
+  outcome VerificationDecisionOutcome
+  /// Motif normalisé (catalogue) — jamais de texte libre en première intention.
+  reasonCode String  @db.VarChar(60)
+  reasonNote String? @db.VarChar(500)
+
+  /// Null si la décision vient du fournisseur automatique.
+  decidedByUserId String?
+  decidedBySystem Boolean @default(false)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  request VerificationRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId, createdAt])
+  @@index([decidedByUserId])
+  @@schema("kyc")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 4. DÉCOUVERTE ET MATCHING
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Vue d'un profil. Sert aux exclusions et au calcul du taux d'intérêt.
+model ProfileView {
+  id       String @id @default(cuid())
+  viewerId String
+  viewedId String
+
+  /// Score au moment de la suggestion : permet d'auditer une recommandation a posteriori.
+  score     Float?
+  source    String  @db.VarChar(30) // daily_suggestion | search | direct
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  viewer User @relation("Viewer", fields: [viewerId], references: [id], onDelete: Cascade)
+  viewed User @relation("Viewed", fields: [viewedId], references: [id], onDelete: Cascade)
+
+  @@unique([viewerId, viewedId])
+  @@index([viewedId, createdAt(sort: Desc)])
+  @@index([viewerId, createdAt(sort: Desc)])
+  @@schema("app")
+}
+
+/// Intérêt envoyé ou refus. Deux INTEREST réciproques créent un Match.
+model Like {
+  id         String @id @default(cuid())
+  senderId   String
+  receiverId String
+
+  type LikeType
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  /// Annulation d'un intérêt (avant match).
+  revokedAt DateTime? @db.Timestamptz(3)
+
+  sender   User @relation("LikeSender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User @relation("LikeReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@unique([senderId, receiverId])
+  @@index([receiverId, type, createdAt(sort: Desc)])
+  @@index([senderId, type, createdAt(sort: Desc)])
+  @@schema("app")
+}
+
+/// Match mutuel. userAId < userBId par convention (unicité du couple).
+model Match {
+  id      String @id @default(cuid())
+  userAId String
+  userBId String
+
+  status MatchStatus @default(ACTIVE)
+  score  Float?
+
+  matchedAt      DateTime  @default(now()) @db.Timestamptz(3)
+  unmatchedAt    DateTime? @db.Timestamptz(3)
+  unmatchedById  String?
+  unmatchedReason String?  @db.VarChar(200)
+
+  userA        User          @relation("MatchUserA", fields: [userAId], references: [id], onDelete: Cascade)
+  userB        User          @relation("MatchUserB", fields: [userBId], references: [id], onDelete: Cascade)
+  conversation Conversation?
+
+  @@unique([userAId, userBId])
+  @@index([userAId, status, matchedAt(sort: Desc)])
+  @@index([userBId, status, matchedAt(sort: Desc)])
+  @@schema("app")
+}
+
+/// Blocage. Coupe la visibilité dans les deux sens et verrouille la conversation.
+model Block {
+  id        String @id @default(cuid())
+  blockerId String
+  blockedId String
+
+  reason    String?  @db.VarChar(200)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  blocker User @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked User @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerId, blockedId])
+  @@index([blockedId])
+  @@schema("app")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 5. CONVERSATIONS ET MESSAGES
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Créée automatiquement et uniquement à partir d'un Match (règle non contournable).
+model Conversation {
+  id      String @id @default(cuid())
+  matchId String @unique
+
+  status ConversationStatus @default(OPEN)
+
+  /// Dénormalisés : indispensables pour trier la liste des conversations sans jointure lourde.
+  lastMessageAt      DateTime? @db.Timestamptz(3)
+  lastMessagePreview String?   @db.VarChar(140)
+
+  lockedAt     DateTime? @db.Timestamptz(3)
+  lockedReason String?   @db.VarChar(200)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  match    Match                @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  members  ConversationMember[]
+  messages Message[]
+
+  @@index([status, lastMessageAt(sort: Desc)])
+  @@schema("app")
+}
+
+model ConversationMember {
+  id             String @id @default(cuid())
+  conversationId String
+  userId         String
+
+  lastReadAt      DateTime? @db.Timestamptz(3)
+  lastReadMessageId String?
+  unreadCount     Int       @default(0)
+  mutedUntil      DateTime? @db.Timestamptz(3)
+  archivedAt      DateTime? @db.Timestamptz(3)
+  leftAt          DateTime? @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId, archivedAt])
+  @@schema("app")
+}
+
+model Message {
+  id             String @id @default(cuid())
+  conversationId String
+  senderId       String
+
+  type MessageType @default(TEXT)
+  /// Chiffré au niveau applicatif. Lisible par le serveur (ADR-008 : pas de bout-en-bout).
+  body String?     @db.VarChar(4000)
+
+  deliveryStatus MessageDeliveryStatus @default(SENT)
+  deliveredAt    DateTime?             @db.Timestamptz(3)
+  readAt         DateTime?             @db.Timestamptz(3)
+
+  /// Clé fournie par le client : rend l'envoi rejouable sans doublon sur réseau instable.
+  clientIdempotencyKey String?
+
+  /// Suppression logique : le contenu est effacé, la ligne survit pour l'audit de modération.
+  deletedAt       DateTime? @db.Timestamptz(3)
+  deletedByUserId String?
+  hiddenByModeration Boolean @default(false)
+
+  /// Date de purge définitive (conservation configurable, H6 : 24 mois).
+  purgeAt DateTime? @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  conversation Conversation        @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User                @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  attachments  MessageAttachment[]
+
+  @@unique([senderId, clientIdempotencyKey])
+  @@index([conversationId, createdAt(sort: Desc), id])
+  @@index([senderId, createdAt(sort: Desc)])
+  @@index([purgeAt])
+  @@schema("app")
+}
+
+model MessageAttachment {
+  id        String @id @default(cuid())
+  messageId String
+
+  storageKey          String  @unique
+  thumbnailStorageKey String?
+  contentType         String  @db.VarChar(60)
+  sizeBytes           Int
+  width               Int?
+  height              Int?
+
+  status           PhotoStatus @default(PENDING_MODERATION)
+  moderationReason String?     @db.VarChar(300)
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@index([status, createdAt])
+  @@schema("app")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 6. SIGNALEMENT ET MODÉRATION
+// ═══════════════════════════════════════════════════════════════════════════
+
+model Report {
+  id             String @id @default(cuid())
+  reporterId     String
+  reportedUserId String
+
+  targetType ReportTargetType
+  /// Id de la photo, du message ou du profil visé.
+  targetId   String?
+
+  category    ReportCategory
+  description String?        @db.VarChar(1500)
+  /// Clés d'objet des captures fournies par le signalant (bucket privé).
+  evidenceKeys String[]
+
+  caseId String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  reporter     User            @relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  reportedUser User            @relation("ReportedUser", fields: [reportedUserId], references: [id], onDelete: Cascade)
+  case         ModerationCase? @relation(fields: [caseId], references: [id], onDelete: SetNull)
+
+  @@index([reportedUserId, createdAt(sort: Desc)])
+  @@index([reporterId, createdAt(sort: Desc)])
+  @@index([caseId])
+  @@index([category, createdAt(sort: Desc)])
+  @@schema("app")
+}
+
+/// Dossier de modération. Regroupe les signalements visant un même membre.
+model ModerationCase {
+  id        String @id @default(cuid())
+  subjectId String
+
+  priority CasePriority @default(P2_NORMAL)
+  status   CaseStatus   @default(OPEN)
+
+  assignedToUserId String?
+  assignedAt       DateTime? @db.Timestamptz(3)
+
+  /// Échéance de traitement calculée depuis la priorité. Pilote l'indicateur SLA < 24 h.
+  slaDueAt   DateTime  @db.Timestamptz(3)
+  resolvedAt DateTime? @db.Timestamptz(3)
+  /// Résumé interne, jamais visible du membre.
+  internalNotes String? @db.VarChar(4000)
+
+  reportCount Int @default(1)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  subject User               @relation("CaseSubject", fields: [subjectId], references: [id], onDelete: Cascade)
+  reports Report[]
+  actions ModerationAction[]
+  signals ModerationSignal[]
+
+  @@index([status, priority, slaDueAt])
+  @@index([assignedToUserId, status])
+  @@index([subjectId, createdAt(sort: Desc)])
+  @@schema("app")
+}
+
+/// Action de modération. Historique immuable : on n'édite jamais, on ajoute.
+model ModerationAction {
+  id     String @id @default(cuid())
+  caseId String
+
+  type       ModerationActionType
+  reasonCode String               @db.VarChar(60)
+  note       String?              @db.VarChar(1500)
+
+  /// Null si l'action provient d'une règle automatique (réversible uniquement, ADR-012).
+  performedByUserId String?
+  performedBySystem Boolean @default(false)
+  /// Second valideur — obligatoire pour BAN (principe des quatre yeux).
+  approvedByUserId  String?
+
+  /// Pour les sanctions temporaires.
+  effectiveUntil DateTime? @db.Timestamptz(3)
+  revertedAt     DateTime? @db.Timestamptz(3)
+  revertedByUserId String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  case ModerationCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId, createdAt])
+  @@index([performedByUserId, createdAt(sort: Desc)])
+  @@schema("app")
+}
+
+/// Signal produit par une règle de détection. N'entraîne jamais seul une sanction lourde.
+model ModerationSignal {
+  id     String @id @default(cuid())
+  userId String
+  caseId String?
+
+  type     SignalType
+  severity Int        @default(1) // 1 à 5
+  /// Contexte non nominatif : compteurs, fenêtre, seuil franchi.
+  evidence Json
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  user User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  case ModerationCase? @relation(fields: [caseId], references: [id], onDelete: SetNull)
+
+  @@index([userId, type, createdAt(sort: Desc)])
+  @@index([caseId])
+  @@schema("app")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 7. ABONNEMENTS ET PAIEMENTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+model SubscriptionPlan {
+  id   String @id @default(cuid())
+  code String @unique // premium_monthly, premium_quarterly, premium_yearly, boost_single
+
+  name        String  @db.VarChar(80)
+  description String? @db.VarChar(500)
+
+  interval      PlanInterval
+  /// Unité monétaire minimale. XAF/XOF : exposant 0 (ADR-009).
+  priceMinor    Int
+  currency      String       @db.Char(3)
+  minorUnitExponent Int      @default(0)
+  countryCode   String?      @db.Char(2) // null = tous les pays
+
+  /// Droits ouverts par le plan : filtres, quotas, boosts inclus.
+  entitlements Json
+
+  active    Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  subscriptions Subscription[]
+  payments      Payment[]
+
+  @@index([active, countryCode])
+  @@schema("app")
+}
+
+model Subscription {
+  id     String @id @default(cuid())
+  userId String
+  planId String
+
+  status SubscriptionStatus @default(PENDING_PAYMENT)
+
+  startedAt          DateTime? @db.Timestamptz(3)
+  currentPeriodEnd   DateTime? @db.Timestamptz(3)
+  cancelAtPeriodEnd  Boolean   @default(false)
+  cancelledAt        DateTime? @db.Timestamptz(3)
+  /// Fin de la période de grâce après échec de paiement.
+  gracePeriodEnd     DateTime? @db.Timestamptz(3)
+
+  /// Période Premium offerte lors de la migration WhatsApp.
+  isPromotional  Boolean @default(false)
+  promotionCode  String? @db.VarChar(60)
+
+  providerName            String? @db.VarChar(60)
+  providerSubscriptionRef String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan     SubscriptionPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+  payments Payment[]
+
+  @@index([userId, status])
+  @@index([status, currentPeriodEnd])
+  @@index([providerSubscriptionRef])
+  @@schema("app")
+}
+
+model Payment {
+  id             String  @id @default(cuid())
+  userId         String
+  subscriptionId String?
+  planId         String?
+
+  amountMinor       Int
+  currency          String @db.Char(3)
+  minorUnitExponent Int    @default(0)
+
+  status     PaymentStatus     @default(PENDING)
+  methodType PaymentMethodType
+
+  providerName      String  @db.VarChar(60)
+  /// Référence du fournisseur — jamais inventée, absente tant que le fournisseur n'a pas répondu.
+  providerPaymentRef String?
+  /// Uniquement les 4 derniers chiffres ou l'opérateur mobile money. JAMAIS de PAN complet.
+  methodLast4       String? @db.VarChar(8)
+  methodLabel       String? @db.VarChar(60)
+
+  /// Clé d'idempotence côté client : empêche le double paiement sur réseau instable.
+  idempotencyKey String @unique
+
+  failureCode   String? @db.VarChar(60)
+  failureReason String? @db.VarChar(300)
+
+  refundedAmountMinor Int      @default(0)
+  refundedAt          DateTime? @db.Timestamptz(3)
+  refundedByUserId    String?
+
+  receiptNumber String? @unique
+
+  paidAt    DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+
+  user         User              @relation(fields: [userId], references: [id], onDelete: Restrict)
+  subscription Subscription?     @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  plan         SubscriptionPlan? @relation(fields: [planId], references: [id], onDelete: SetNull)
+  boost        Boost?
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([status, createdAt(sort: Desc)])
+  @@index([providerName, providerPaymentRef])
+  @@schema("app")
+}
+
+/// Journal des webhooks. Contrainte unique = garantie d'idempotence (ADR-010).
+model PaymentWebhookEvent {
+  id String @id @default(cuid())
+
+  provider        String @db.VarChar(60)
+  providerEventId String
+  eventType       String @db.VarChar(80)
+
+  signatureValid Boolean
+  /// Charge utile brute conservée pour rejeu et litige. Purge configurable (90 j).
+  payload        Json
+  payloadHash    String
+
+  status       WebhookProcessingStatus @default(RECEIVED)
+  processedAt  DateTime?               @db.Timestamptz(3)
+  attemptCount Int                     @default(0)
+  lastError    String?                 @db.VarChar(500)
+
+  relatedPaymentId String?
+  createdAt        DateTime @default(now()) @db.Timestamptz(3)
+  purgeAt          DateTime? @db.Timestamptz(3)
+
+  @@unique([provider, providerEventId])
+  @@index([status, createdAt])
+  @@index([relatedPaymentId])
+  @@index([purgeAt])
+  @@schema("app")
+}
+
+/// Mise en avant temporaire du profil.
+model Boost {
+  id        String  @id @default(cuid())
+  userId    String
+  paymentId String? @unique
+
+  startsAt DateTime @db.Timestamptz(3)
+  endsAt   DateTime @db.Timestamptz(3)
+  /// Coefficient appliqué au score dans la découverte.
+  multiplier Float  @default(2.0)
+
+  /// Inclus dans un abonnement plutôt qu'acheté à l'unité.
+  grantedByPlan Boolean @default(false)
+
+  impressionsGained Int @default(0)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payment Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@index([userId, endsAt(sort: Desc)])
+  @@index([startsAt, endsAt])
+  @@schema("app")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 8. NOTIFICATIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+model Notification {
+  id     String @id @default(cuid())
+  userId String
+
+  type    NotificationType
+  channel NotificationChannel
+
+  title String  @db.VarChar(140)
+  body  String  @db.VarChar(500)
+  /// Cible de navigation dans l'application (deep link interne).
+  data  Json?
+
+  /// Empêche l'envoi en double du même déclencheur (ex. relance de profil incomplet).
+  dedupeKey String?
+
+  sentAt      DateTime? @db.Timestamptz(3)
+  deliveredAt DateTime? @db.Timestamptz(3)
+  readAt      DateTime? @db.Timestamptz(3)
+  failedAt    DateTime? @db.Timestamptz(3)
+  failureReason String? @db.VarChar(300)
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  purgeAt   DateTime? @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, readAt, createdAt(sort: Desc)])
+  @@index([purgeAt])
+  @@schema("app")
+}
+
+/// Préférence par type et par canal. Les types de sécurité ne sont pas désactivables
+/// (contrôle applicatif, pas seulement d'interface).
+model NotificationPreference {
+  id      String              @id @default(cuid())
+  userId  String
+  type    NotificationType
+  channel NotificationChannel
+  enabled Boolean             @default(true)
+
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type, channel])
+  @@schema("app")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 9. MIGRATION WHATSAPP ET ANALYTICS
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Campagne de migration. Aucun import automatique de membres (principe non négociable).
+model Campaign {
+  id   String @id @default(cuid())
+  code String @unique
+
+  name        String  @db.VarChar(120)
+  source      String  @db.VarChar(60) // whatsapp_group, ambassadeur, affiche…
+  description String? @db.VarChar(500)
+
+  /// Offre de lancement : jours de Premium offerts aux inscrits de la campagne.
+  promoPlanCode  String?
+  promoFreeDays  Int     @default(0)
+
+  startsAt DateTime  @db.Timestamptz(3)
+  endsAt   DateTime? @db.Timestamptz(3)
+  active   Boolean   @default(true)
+
+  clickCount Int @default(0)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  invites ReferralInvite[]
+
+  @@index([active, startsAt])
+  @@schema("app")
+}
+
+/// Lien ou code d'invitation traçable et à quota.
+model ReferralInvite {
+  id         String  @id @default(cuid())
+  code       String  @unique
+  campaignId String?
+  /// Null pour un lien de campagne générique ; renseigné pour un parrainage individuel.
+  inviterId  String?
+
+  maxUses Int @default(1)
+  useCount Int @default(0)
+
+  clickCount Int @default(0)
+
+  expiresAt DateTime? @db.Timestamptz(3)
+  revokedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+
+  campaign  Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  usedBy    User[]    @relation("InviteUsedBy")
+
+  @@index([code, revokedAt])
+  @@index([campaignId])
+  @@index([inviterId])
+  @@schema("app")
+}
+
+/// Événement produit pseudonymisé. Aucune donnée nominative, aucun contenu de message.
+model AnalyticsEvent {
+  id String @id @default(cuid())
+
+  /// Pseudonyme stable dérivé de l'userId (HMAC). Permet les cohortes sans identifier.
+  subjectHash String
+  userId      String?
+
+  name       String  @db.VarChar(80)
+  campaignCode String? @db.VarChar(60)
+  /// Propriétés non nominatives uniquement (validées par un schéma au moment de l'écriture).
+  properties Json?
+
+  occurredAt DateTime  @default(now()) @db.Timestamptz(3)
+  purgeAt    DateTime? @db.Timestamptz(3)
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([name, occurredAt(sort: Desc)])
+  @@index([subjectHash, occurredAt(sort: Desc)])
+  @@index([campaignCode, name])
+  @@index([purgeAt])
+  @@schema("app")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 10. GOUVERNANCE : AUDIT, FLAGS, CONSENTEMENTS, DROITS DES PERSONNES
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Journal d'audit administratif. Append-only : aucune mise à jour, aucune suppression
+/// applicative (droits PostgreSQL restreints en conséquence).
+model AdminAuditLog {
+  id String @id @default(cuid())
+
+  actorUserId String
+  actorRole   AdminRole
+  action      String    @db.VarChar(80) // admin.login, kyc.document.viewed, user.banned…
+
+  targetType String? @db.VarChar(60)
+  targetId   String?
+
+  /// Avant/après pour une modification, motif pour une consultation sensible.
+  context Json?
+
+  ipV4      String? // tronquée
+  userAgent String? @db.VarChar(512)
+  requestId String? @db.VarChar(60)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([actorUserId, createdAt(sort: Desc)])
+  @@index([action, createdAt(sort: Desc)])
+  @@index([targetType, targetId, createdAt(sort: Desc)])
+  @@schema("app")
+}
+
+model FeatureFlag {
+  id  String @id @default(cuid())
+  key String @unique
+
+  description String  @db.VarChar(300)
+  enabled     Boolean @default(false)
+
+  /// Déploiement progressif : 0 à 100.
+  rolloutPercentage Int         @default(0)
+  enabledForRoles   AdminRole[]
+  enabledForUserIds String[]
+  /// Valeur de configuration associée (ex. pondérations du score de matching).
+  payload           Json?
+
+  updatedByUserId String?
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+
+  @@schema("app")
+}
+
+/// Consentement horodaté et versionné (ADR-016). Immuable.
+model ConsentRecord {
+  id     String @id @default(cuid())
+  userId String
+
+  type            ConsentType
+  documentVersion String      @db.VarChar(20)
+  granted         Boolean
+  /// Renseigné lorsqu'un consentement est retiré : on n'efface jamais l'historique.
+  revokedAt       DateTime?   @db.Timestamptz(3)
+
+  ipV4      String? // tronquée
+  channel   String  @db.VarChar(20) // web, mobile, admin
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type, createdAt(sort: Desc)])
+  @@schema("app")
+}
+
+model DataExportRequest {
+  id     String @id @default(cuid())
+  userId String
+
+  status UserRequestStatus @default(PENDING)
+
+  /// Archive chiffrée dans un bucket privé, URL signée de courte durée, expiration courte.
+  storageKey String?
+  expiresAt  DateTime? @db.Timestamptz(3)
+  /// Empêche l'abus d'export répété (une demande par période).
+  requestedAt DateTime @default(now()) @db.Timestamptz(3)
+  completedAt DateTime? @db.Timestamptz(3)
+  downloadCount Int     @default(0)
+  failureReason String? @db.VarChar(300)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, requestedAt(sort: Desc)])
+  @@index([status, requestedAt])
+  @@schema("app")
+}
+
+model AccountDeletionRequest {
+  id     String @id @default(cuid())
+  userId String
+
+  status UserRequestStatus @default(PENDING)
+  reason String?           @db.VarChar(300)
+
+  requestedAt DateTime  @default(now()) @db.Timestamptz(3)
+  /// Fin de la période de grâce (H6 : 30 jours). Purge exécutée par le worker `retention`.
+  executeAt   DateTime  @db.Timestamptz(3)
+  cancelledAt DateTime? @db.Timestamptz(3)
+  executedAt  DateTime? @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, executeAt])
+  @@index([userId, requestedAt(sort: Desc)])
+  @@schema("app")
+}
