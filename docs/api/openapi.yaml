@@ -1,0 +1,1613 @@
+openapi: 3.1.0
+
+info:
+  title: À Chacun Une Belle Âme — API
+  version: 1.0.0-mvp
+  description: |
+    API REST de la plateforme de rencontres sérieuses « À Chacun Une Belle Âme ».
+
+    ## Règles transverses
+    - Toutes les dates sont en UTC (RFC 3339).
+    - Tous les montants sont exprimés en unité monétaire minimale (`amountMinor`) avec
+      la devise et son exposant explicites. **XAF et XOF ont un exposant 0.**
+    - Toute liste est paginée par curseur opaque. Aucun paramètre `offset` n'existe.
+    - Chaque opération déclare sa politique d'autorisation dans `x-authorization`.
+    - Les opérations marquées `x-mock: true` reposent, tant qu'aucun prestataire n'est
+      contractualisé, sur une implémentation simulée. Voir `docs/MOCKS.md`.
+  contact:
+    name: Équipe technique
+
+servers:
+  - url: https://api.example.invalid/api/v1
+    description: Production (hôte à définir — question Q12)
+  - url: http://localhost:3000/api/v1
+    description: Développement local
+
+tags:
+  - name: auth
+    description: Inscription, OTP, sessions, tokens
+  - name: verification
+    description: Vérification de majorité et d'identité
+  - name: profile
+    description: Profil, préférences, photos
+  - name: discovery
+    description: Suggestions quotidiennes et intérêts
+  - name: conversations
+    description: Conversations et messages (après match mutuel uniquement)
+  - name: moderation
+    description: Signalement et blocage
+  - name: billing
+    description: Abonnements, paiements, boosts
+  - name: notifications
+    description: Notifications et préférences
+  - name: privacy
+    description: Consentements, export, suppression
+  - name: admin
+    description: Back-office
+
+security:
+  - bearerAuth: []
+
+paths:
+  # ─────────────────────────────── AUTH ───────────────────────────────
+  /auth/register:
+    post:
+      operationId: postAuthRegister
+      tags: [auth]
+      summary: Inscription par numéro de téléphone
+      description: |
+        L'âge est **calculé côté serveur** à partir de `birthDate`. Une date de naissance
+        correspondant à un âge inférieur au minimum légal entraîne un refus définitif
+        (`AUTH_UNDERAGE`) et l'enregistrement d'une empreinte interdisant la ré-inscription.
+      security: []
+      x-authorization: PUBLIC
+      x-rate-limit: 5/h par IP, 3/jour par numéro
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '202':
+          description: Défi OTP émis
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OtpChallengeResponse' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '403':
+          description: Inscription refusée (âge minimum non respecté ou identité bloquée)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Numéro déjà utilisé
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /auth/otp/request:
+    post:
+      operationId: postAuthOtpRequest
+      tags: [auth]
+      summary: Demander ou renvoyer un code OTP
+      security: []
+      x-authorization: PUBLIC
+      x-rate-limit: 3/10 min par numéro
+      x-mock: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phoneE164, purpose]
+              properties:
+                phoneE164: { type: string, example: '+237690000000' }
+                purpose:
+                  type: string
+                  enum: [REGISTRATION, LOGIN, PHONE_CHANGE, ACCOUNT_RECOVERY]
+      responses:
+        '202':
+          description: Défi émis (réponse identique que le compte existe ou non)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OtpChallengeResponse' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /auth/otp/verify:
+    post:
+      operationId: postAuthOtpVerify
+      tags: [auth]
+      summary: Valider un code OTP et obtenir les jetons
+      security: []
+      x-authorization: PUBLIC
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [challengeId, code]
+              properties:
+                challengeId: { type: string }
+                code: { type: string, pattern: '^[0-9]{6}$' }
+                device: { $ref: '#/components/schemas/DeviceInfo' }
+      responses:
+        '200':
+          description: Authentifié
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthTokens' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401':
+          description: Code invalide, expiré ou nombre d'essais dépassé
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /auth/refresh:
+    post:
+      operationId: postAuthRefresh
+      tags: [auth]
+      summary: Rotation du refresh token
+      description: |
+        Le refresh token est à usage unique. La présentation d'un token déjà consommé est
+        traitée comme un vol : toute la famille de sessions est révoquée (`AUTH_TOKEN_REUSED`).
+      security: []
+      x-authorization: PUBLIC (le refresh token fait foi)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '200':
+          description: Nouveaux jetons
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthTokens' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/logout-all:
+    post:
+      operationId: postAuthLogoutAll
+      tags: [auth]
+      summary: Déconnecter tous les appareils
+      x-authorization: AUTH
+      responses:
+        '204': { description: 'Toutes les sessions sont révoquées' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/sessions:
+    get:
+      operationId: getAuthSessions
+      tags: [auth]
+      summary: Lister les sessions et appareils actifs
+      x-authorization: AUTH
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Sessions actives
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CursorPage'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/Session' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/me:
+    get:
+      operationId: getAuthMe
+      tags: [auth]
+      summary: Compte courant, statuts et étape d'onboarding suivante
+      x-authorization: AUTH_PENDING
+      responses:
+        '200':
+          description: Compte
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ─────────────────────────── VERIFICATION ───────────────────────────
+  /verification/status:
+    get:
+      operationId: getVerificationStatus
+      tags: [verification]
+      summary: Statut de vérification et action attendue
+      x-authorization: AUTH_PENDING
+      responses:
+        '200':
+          description: Statut
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerificationStatusResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /verification/requests:
+    post:
+      operationId: postVerificationRequests
+      tags: [verification]
+      summary: Ouvrir une demande de vérification
+      x-authorization: AUTH_PENDING
+      responses:
+        '201':
+          description: Demande créée
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerificationRequest' }
+        '409':
+          description: Déjà vérifié ou demande en cours
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /verification/requests/{requestId}/documents:
+    post:
+      operationId: postVerificationRequestsRequestidDocuments
+      tags: [verification]
+      summary: Déposer une pièce d'identité ou un selfie
+      description: |
+        Le fichier est écrit dans le bucket KYC privé, distinct du bucket média.
+        Aucune URL publique n'est jamais générée pour ces objets.
+      x-authorization: OWNER
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [type, file]
+              properties:
+                type:
+                  type: string
+                  enum: [NATIONAL_ID, PASSPORT, DRIVER_LICENSE, CONSULAR_CARD, SELFIE, LIVENESS_CAPTURE]
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Document accepté (jamais d'URL en réponse)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  documentId: { type: string }
+                  type: { type: string }
+                  uploadedAt: { type: string, format: date-time }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '413':
+          description: Fichier trop volumineux
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /verification/requests/{requestId}/submit:
+    post:
+      operationId: postVerificationRequestsRequestidSubmit
+      tags: [verification]
+      summary: Soumettre la demande pour revue
+      x-authorization: OWNER
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Demande soumise
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerificationRequest' }
+        '409':
+          description: Documents manquants ou demande déjà soumise
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /verification/webhook/{provider}:
+    post:
+      operationId: postVerificationWebhookProvider
+      tags: [verification]
+      summary: Webhook du prestataire KYC
+      description: Signature vérifiée avant toute lecture du corps. Traitement idempotent.
+      security: []
+      x-authorization: PUBLIC (signature)
+      x-mock: true
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200': { description: 'Reçu (même si déjà traité)' }
+        '401': { description: 'Signature invalide' }
+
+  # ───────────────────────────── PROFILE ──────────────────────────────
+  /profile/me:
+    get:
+      operationId: getProfileMe
+      tags: [profile]
+      summary: Mon profil et son taux de complétion
+      x-authorization: AUTH_PENDING
+      responses:
+        '200':
+          description: Profil
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OwnProfile' }
+    patch:
+      operationId: patchProfileMe
+      tags: [profile]
+      summary: Mise à jour partielle du profil
+      x-authorization: AUTH_PENDING
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProfileUpdate' }
+      responses:
+        '200':
+          description: Profil mis à jour
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OwnProfile' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+
+  /profile/me/publish:
+    post:
+      operationId: postProfileMePublish
+      tags: [profile]
+      summary: Publier le profil
+      description: Exige un compte vérifié, une complétion suffisante et au moins une photo approuvée.
+      x-authorization: AUTH_PENDING
+      responses:
+        '200':
+          description: Profil publié
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OwnProfile' }
+        '409':
+          description: Conditions de publication non réunies
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /profile/me/preferences:
+    put:
+      operationId: putProfileMePreferences
+      tags: [profile]
+      summary: Remplacer les préférences de recherche
+      description: Les filtres réservés à l'offre Premium sont refusés côté serveur si le droit est absent.
+      x-authorization: AUTH_PENDING
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Preferences' }
+      responses:
+        '200':
+          description: Préférences enregistrées
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Preferences' }
+        '403':
+          description: Filtre réservé à l'offre Premium
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /profiles/{userId}:
+    get:
+      operationId: getProfilesUserid
+      tags: [profile]
+      summary: Consulter le profil public d'un membre
+      description: |
+        Renvoie 404 — et jamais 403 — lorsque le profil est bloqué, suspendu ou non éligible,
+        afin de ne pas confirmer son existence.
+      x-authorization: VERIFIED
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Profil public
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicProfile' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /media/photos:
+    post:
+      operationId: postMediaPhotos
+      tags: [profile]
+      summary: Envoyer une photo de profil
+      description: |
+        Le type réel est vérifié par signature binaire. Les métadonnées EXIF sont supprimées,
+        l'image est ré-encodée et des miniatures sont générées avant toute publication.
+      x-authorization: AUTH_PENDING
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+                position: { type: integer, minimum: 0, maximum: 5 }
+      responses:
+        '201':
+          description: Photo acceptée, en attente de modération
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Photo' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '409':
+          description: Nombre maximal de photos atteint
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  # ──────────────────────────── DISCOVERY ─────────────────────────────
+  /discovery/suggestions:
+    get:
+      operationId: getDiscoverySuggestions
+      tags: [discovery]
+      summary: Suggestions du jour
+      description: |
+        Aucun profil mineur, non vérifié, suspendu, bloqué, déjà vu ou incompatible
+        n'est renvoyé — filtres appliqués côté serveur.
+      x-authorization: VERIFIED
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Suggestions et quota restant
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CursorPage'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/SuggestionCard' }
+                      quotaRemaining: { type: integer }
+                      quotaResetsAt: { type: string, format: date-time }
+        '403': { $ref: '#/components/responses/VerificationRequired' }
+
+  /likes:
+    post:
+      operationId: postLikes
+      tags: [discovery]
+      summary: Envoyer un intérêt ou refuser un profil
+      description: Deux intérêts réciproques créent atomiquement le match et la conversation.
+      x-authorization: VERIFIED
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetUserId, type]
+              properties:
+                targetUserId: { type: string }
+                type: { type: string, enum: [INTEREST, PASS] }
+      responses:
+        '201':
+          description: Enregistré ; `match` est renseigné en cas de réciprocité
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  likeId: { type: string }
+                  matched: { type: boolean }
+                  match:
+                    oneOf:
+                      - $ref: '#/components/schemas/Match'
+                      - type: 'null'
+        '403': { $ref: '#/components/responses/VerificationRequired' }
+        '409':
+          description: Profil déjà décidé
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429':
+          description: Quota quotidien d'intérêts atteint
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /likes/received:
+    get:
+      operationId: getLikesReceived
+      tags: [discovery]
+      summary: Intérêts reçus
+      description: |
+        En offre gratuite, les profils sont floutés et seul le compteur est exposé.
+        La levée du floutage est un droit Premium résolu côté serveur.
+      x-authorization: VERIFIED
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Intérêts reçus
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CursorPage'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/ReceivedInterest' }
+                      totalCount: { type: integer }
+
+  /matches:
+    get:
+      operationId: getMatches
+      tags: [discovery]
+      summary: Mes matchs actifs
+      x-authorization: VERIFIED
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Matchs
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CursorPage'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/Match' }
+
+  /blocks:
+    post:
+      operationId: postBlocks
+      tags: [moderation]
+      summary: Bloquer un membre
+      description: Effet immédiat et réciproque ; la conversation éventuelle est verrouillée.
+      x-authorization: AUTH
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetUserId]
+              properties:
+                targetUserId: { type: string }
+                reason: { type: string, maxLength: 200 }
+      responses:
+        '201': { description: 'Membre bloqué' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ────────────────────────── CONVERSATIONS ───────────────────────────
+  /conversations:
+    get:
+      operationId: getConversations
+      tags: [conversations]
+      summary: Mes conversations
+      x-authorization: VERIFIED
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Conversations triées par dernier message
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CursorPage'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/Conversation' }
+
+  /conversations/{conversationId}/messages:
+    get:
+      operationId: getConversationsConversationidMessages
+      tags: [conversations]
+      summary: Historique des messages
+      x-authorization: MEMBER
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Messages, du plus récent au plus ancien
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CursorPage'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/Message' }
+        '403': { $ref: '#/components/responses/NoMatch' }
+    post:
+      operationId: postConversationsConversationidMessages
+      tags: [conversations]
+      summary: Envoyer un message
+      description: |
+        Refusé (`MSG_NO_MATCH`) si le match n'est pas actif, si un blocage existe,
+        si la conversation est verrouillée ou si l'un des comptes n'est pas actif et vérifié.
+        La même règle s'applique à l'événement Socket.IO `message:send`.
+      x-authorization: MEMBER
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: { type: string, minLength: 1, maxLength: 4000 }
+      responses:
+        '201':
+          description: Message envoyé
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Message' }
+        '403': { $ref: '#/components/responses/NoMatch' }
+        '429':
+          description: Limite anti-spam atteinte (messages sans réponse)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  # ───────────────────────────── REPORTS ──────────────────────────────
+  /reports:
+    post:
+      operationId: postReports
+      tags: [moderation]
+      summary: Signaler un profil, une photo, un message ou un comportement
+      x-authorization: AUTH
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReportRequest' }
+      responses:
+        '201':
+          description: Signalement enregistré
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reportId: { type: string }
+                  caseId: { type: string }
+                  priority: { type: string, enum: [P0_CRITICAL, P1_HIGH, P2_NORMAL, P3_LOW] }
+                  slaDueAt: { type: string, format: date-time }
+        '400': { $ref: '#/components/responses/ValidationError' }
+
+  # ───────────────────────────── BILLING ──────────────────────────────
+  /subscriptions/plans:
+    get:
+      operationId: getSubscriptionsPlans
+      tags: [billing]
+      summary: Plans disponibles
+      x-authorization: AUTH
+      x-mock: true
+      responses:
+        '200':
+          description: Plans actifs pour le pays du membre
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  testMode:
+                    type: boolean
+                    description: Vrai tant que le fournisseur de paiement est simulé.
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Plan' }
+
+  /payments/checkout:
+    post:
+      operationId: postPaymentsCheckout
+      tags: [billing]
+      summary: Démarrer un paiement
+      x-authorization: VERIFIED
+      x-mock: true
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [planCode, methodType]
+              properties:
+                planCode: { type: string }
+                methodType: { type: string, enum: [MOBILE_MONEY, CARD] }
+                msisdn:
+                  type: string
+                  description: Numéro mobile money, requis pour MOBILE_MONEY.
+      responses:
+        '201':
+          description: Paiement initié
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CheckoutResponse' }
+        '409':
+          description: Clé d'idempotence déjà utilisée avec une charge différente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /payments/webhook/{provider}:
+    post:
+      operationId: postPaymentsWebhookProvider
+      tags: [billing]
+      summary: Webhook du prestataire de paiement
+      description: |
+        Signature vérifiée avant lecture. L'événement est persisté avec une contrainte
+        d'unicité `(provider, providerEventId)` puis traité de façon asynchrone et idempotente.
+        Un rejeu ne produit jamais de double crédit.
+      security: []
+      x-authorization: PUBLIC (signature)
+      x-mock: true
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200': { description: 'Reçu (y compris si déjà traité)' }
+        '401': { description: 'Signature invalide' }
+
+  # ──────────────────────────── PRIVACY ───────────────────────────────
+  /privacy/export:
+    post:
+      operationId: postPrivacyExport
+      tags: [privacy]
+      summary: Demander l'export de mes données
+      x-authorization: AUTH
+      responses:
+        '202':
+          description: Demande enregistrée
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserRequest' }
+        '429':
+          description: Une demande a déjà été faite récemment
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /privacy/delete:
+    post:
+      operationId: postPrivacyDelete
+      tags: [privacy]
+      summary: Demander la suppression du compte
+      description: Le compte devient immédiatement invisible ; la purge intervient après la période de grâce.
+      x-authorization: AUTH
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string, maxLength: 300 }
+      responses:
+        '202':
+          description: Suppression programmée
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserRequest' }
+    delete:
+      operationId: deletePrivacyDelete
+      tags: [privacy]
+      summary: Annuler la suppression pendant la période de grâce
+      x-authorization: AUTH
+      responses:
+        '200': { description: 'Suppression annulée, compte réactivé' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ───────────────────────── NOTIFICATIONS ────────────────────────────
+  /notifications/preferences:
+    put:
+      operationId: putNotificationsPreferences
+      tags: [notifications]
+      summary: Mettre à jour les préférences de notification
+      description: |
+        Les types indispensables à la sécurité du compte (OTP, alerte de sécurité,
+        décisions de modération et de vérification) ne peuvent pas être désactivés :
+        la demande est rejetée côté serveur.
+      x-authorization: AUTH
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                preferences:
+                  type: array
+                  items:
+                    type: object
+                    required: [type, channel, enabled]
+                    properties:
+                      type: { type: string }
+                      channel: { type: string, enum: [IN_APP, PUSH, EMAIL, SMS] }
+                      enabled: { type: boolean }
+      responses:
+        '200': { description: 'Préférences enregistrées' }
+        '403':
+          description: Tentative de désactivation d'un type obligatoire
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  # ──────────────────────────── ADMIN ─────────────────────────────────
+  /admin/verification/queue:
+    get:
+      operationId: getAdminVerificationQueue
+      tags: [admin]
+      summary: File de vérification d'identité
+      x-authorization: 'ADMIN:kyc.review'
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Demandes en attente, triées par ancienneté
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CursorPage'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/VerificationQueueItem' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/verification/{requestId}/documents/{documentId}/url:
+    get:
+      operationId: getAdminVerificationRequestidDocumentsDocumentidUrl
+      tags: [admin]
+      summary: Obtenir une URL signée vers un document d'identité
+      description: |
+        Accès le plus sensible de la plateforme. Le motif est obligatoire, l'URL expire en
+        5 minutes et chaque appel produit un événement d'audit nominatif.
+      x-authorization: 'ADMIN:kyc.view_document'
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: documentId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: reason
+          in: query
+          required: true
+          schema: { type: string, minLength: 10, maxLength: 300 }
+      responses:
+        '200':
+          description: URL signée de courte durée
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url: { type: string, format: uri }
+                  expiresAt: { type: string, format: date-time }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/moderation/cases:
+    get:
+      operationId: getAdminModerationCases
+      tags: [admin]
+      summary: File de modération
+      x-authorization: 'ADMIN:moderation.read'
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [OPEN, ASSIGNED, AWAITING_USER, ESCALATED, RESOLVED, DISMISSED] }
+        - name: priority
+          in: query
+          schema: { type: string, enum: [P0_CRITICAL, P1_HIGH, P2_NORMAL, P3_LOW] }
+        - name: overdue
+          in: query
+          description: Ne renvoyer que les cas dépassant leur échéance de traitement.
+          schema: { type: boolean }
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Cas de modération
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CursorPage'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/ModerationCase' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/moderation/cases/{caseId}/action:
+    post:
+      operationId: postAdminModerationCasesCaseidAction
+      tags: [admin]
+      summary: Appliquer une action de modération
+      description: |
+        Un bannissement définitif exige un second valideur (`approvedByUserId`).
+        Aucune sanction lourde n'est appliquée automatiquement par une règle de détection.
+      x-authorization: 'ADMIN:moderation.act'
+      parameters:
+        - name: caseId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, reasonCode]
+              properties:
+                type:
+                  type: string
+                  enum: [WARNING, INFORMATION_REQUEST, PHOTO_HIDDEN, CONTENT_REMOVED,
+                         TEMPORARY_RESTRICTION, SUSPENSION, BAN, REVERIFICATION_REQUIRED,
+                         DISMISSED, ESCALATED]
+                reasonCode: { type: string }
+                note: { type: string, maxLength: 1500 }
+                effectiveUntil: { type: string, format: date-time }
+                approvedByUserId:
+                  type: string
+                  description: Obligatoire pour BAN (principe des quatre yeux).
+      responses:
+        '201':
+          description: Action enregistrée
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ModerationAction' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422':
+          description: Second valideur manquant pour une sanction définitive
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /admin/audit-logs:
+    get:
+      operationId: getAdminAuditLogs
+      tags: [admin]
+      summary: Consulter le journal d'audit
+      description: Lecture seule. Aucune route d'écriture ou de suppression n'existe sur ce journal.
+      x-authorization: 'ADMIN:audit.read'
+      parameters:
+        - name: actorUserId
+          in: query
+          schema: { type: string }
+        - name: action
+          in: query
+          schema: { type: string }
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Événements d'audit
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CursorPage'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/AuditLog' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /health/providers:
+    get:
+      operationId: getHealthProviders
+      tags: [admin]
+      summary: État réel ou simulé de chaque intégration externe
+      description: Source de vérité de la liste des intégrations encore simulées.
+      x-authorization: 'ADMIN:system.read'
+      responses:
+        '200':
+          description: État des ports
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  providers:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        port: { type: string, example: PaymentProvider }
+                        implementation: { type: string, example: MockPaymentProvider }
+                        mock: { type: boolean }
+                        healthy: { type: boolean }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Jeton d'accès de courte durée (15 minutes).
+
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      description: Nombre d'éléments (1 à 50, défaut 20).
+      schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+    Cursor:
+      name: cursor
+      in: query
+      description: Curseur opaque renvoyé par la page précédente.
+      schema: { type: string }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Clé unique fournie par le client, rendant l'opération rejouable sans doublon.
+      schema: { type: string, minLength: 8, maxLength: 128 }
+
+  responses:
+    ValidationError:
+      description: Données invalides
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: Authentification requise ou jeton invalide
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Droits insuffisants
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Ressource introuvable (ou volontairement masquée)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    RateLimited:
+      description: Trop de requêtes
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    VerificationRequired:
+      description: Compte non vérifié — accès produit fermé
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NoMatch:
+      description: Aucun accord mutuel actif entre les deux membres
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, requestId, timestamp]
+          properties:
+            code:
+              type: string
+              description: Code métier stable, jamais renommé.
+              example: MSG_NO_MATCH
+            message:
+              type: string
+              description: Message destiné à l'utilisateur, en français.
+              example: Vous ne pouvez écrire qu'après un accord mutuel.
+            details:
+              oneOf:
+                - type: object
+                  additionalProperties: true
+                - type: 'null'
+            requestId: { type: string }
+            timestamp: { type: string, format: date-time }
+
+    CursorPage:
+      type: object
+      required: [items, hasMore]
+      properties:
+        items: { type: array, items: {} }
+        nextCursor:
+          oneOf:
+            - type: string
+            - type: 'null'
+        hasMore: { type: boolean }
+
+    RegisterRequest:
+      type: object
+      required: [phoneE164, birthDate, gender, consents]
+      properties:
+        phoneE164: { type: string, example: '+237690000000' }
+        birthDate: { type: string, format: date, example: '1992-04-17' }
+        gender: { type: string, enum: [FEMALE, MALE] }
+        firstName: { type: string, maxLength: 60 }
+        inviteCode: { type: string }
+        consents:
+          type: array
+          minItems: 3
+          items:
+            type: object
+            required: [type, documentVersion, granted]
+            properties:
+              type:
+                type: string
+                enum: [TERMS_OF_SERVICE, PRIVACY_POLICY, CODE_OF_CONDUCT, KYC_PROCESSING, MARKETING_COMMUNICATIONS]
+              documentVersion: { type: string }
+              granted: { type: boolean }
+        device: { $ref: '#/components/schemas/DeviceInfo' }
+
+    DeviceInfo:
+      type: object
+      properties:
+        type: { type: string, enum: [ANDROID, IOS, WEB] }
+        model: { type: string }
+        osVersion: { type: string }
+        appVersion: { type: string }
+        pushToken: { type: string }
+
+    OtpChallengeResponse:
+      type: object
+      properties:
+        challengeId: { type: string }
+        expiresAt: { type: string, format: date-time }
+        resendAvailableAt: { type: string, format: date-time }
+        testMode:
+          type: boolean
+          description: Vrai lorsque l'envoi de SMS est simulé (le code est alors journalisé en développement).
+
+    AuthTokens:
+      type: object
+      properties:
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        expiresIn: { type: integer, example: 900 }
+        user: { $ref: '#/components/schemas/Me' }
+
+    Me:
+      type: object
+      properties:
+        id: { type: string }
+        accountStatus:
+          type: string
+          enum: [PENDING_OTP, ACTIVE, PAUSED, RESTRICTED, SUSPENDED, BANNED, BLOCKED_UNDERAGE, PENDING_DELETION, DELETED]
+        verificationStatus:
+          type: string
+          enum: [NOT_STARTED, PENDING, IN_REVIEW, VERIFIED, REJECTED, ADDITIONAL_REQUIRED, SUSPENDED]
+        profileCompletionRate: { type: integer, minimum: 0, maximum: 100 }
+        isPremium: { type: boolean }
+        nextOnboardingStep:
+          type: string
+          enum: [VERIFY_PHONE, VERIFY_IDENTITY, COMPLETE_PROFILE, ADD_PHOTOS, SET_PREFERENCES, DONE]
+
+    Session:
+      type: object
+      properties:
+        id: { type: string }
+        deviceLabel: { type: string }
+        current: { type: boolean }
+        lastUsedAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+
+    VerificationStatusResponse:
+      type: object
+      properties:
+        status: { type: string }
+        rejectionReasonCode:
+          oneOf:
+            - type: string
+            - type: 'null'
+        canResubmit: { type: boolean }
+        requiredDocuments:
+          type: array
+          items: { type: string }
+        testMode:
+          type: boolean
+          description: Vrai lorsque le prestataire KYC est simulé et la décision prise manuellement.
+
+    VerificationRequest:
+      type: object
+      properties:
+        id: { type: string }
+        status: { type: string }
+        submittedAt: { type: string, format: date-time }
+        decidedAt:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+
+    VerificationQueueItem:
+      type: object
+      properties:
+        requestId: { type: string }
+        submittedAt: { type: string, format: date-time }
+        waitingHours: { type: number }
+        declaredFirstName: { type: string }
+        declaredBirthDate: { type: string, format: date }
+        documentTypes:
+          type: array
+          items: { type: string }
+
+    OwnProfile:
+      type: object
+      properties:
+        id: { type: string }
+        firstName: { type: string }
+        age: { type: integer, description: 'Calculé côté serveur ; jamais stocké.' }
+        city: { $ref: '#/components/schemas/City' }
+        profession:
+          oneOf: [{ type: string }, { type: 'null' }]
+        educationLevel:
+          oneOf: [{ type: string }, { type: 'null' }]
+        relationship:
+          oneOf: [{ type: string }, { type: 'null' }]
+        hasChildren:
+          oneOf: [{ type: boolean }, { type: 'null' }]
+        bio:
+          oneOf: [{ type: string }, { type: 'null' }]
+        lookingFor:
+          oneOf: [{ type: string }, { type: 'null' }]
+        personalValues:
+          oneOf: [{ type: string }, { type: 'null' }]
+        interests:
+          type: array
+          items: { $ref: '#/components/schemas/Interest' }
+        photos:
+          type: array
+          items: { $ref: '#/components/schemas/Photo' }
+        status: { type: string, enum: [DRAFT, ACTIVE, PAUSED, DEACTIVATED, HIDDEN_BY_MODERATION] }
+        completionRate: { type: integer }
+        missingFields:
+          type: array
+          items: { type: string }
+        verifiedBadge: { type: boolean }
+
+    ProfileUpdate:
+      type: object
+      properties:
+        firstName: { type: string, maxLength: 60 }
+        cityId: { type: string }
+        profession: { type: string, maxLength: 120 }
+        educationLevel: { type: string }
+        relationship: { type: string }
+        hasChildren: { type: boolean }
+        bio: { type: string, maxLength: 1000 }
+        lookingFor: { type: string, maxLength: 600 }
+        personalValues: { type: string, maxLength: 600 }
+        interestIds:
+          type: array
+          items: { type: string }
+      additionalProperties: false
+
+    PublicProfile:
+      type: object
+      description: |
+        Ne contient jamais le numéro de téléphone, l'e-mail, la date de naissance exacte
+        ni une localisation plus précise que la ville.
+      properties:
+        userId: { type: string }
+        firstName: { type: string }
+        age: { type: integer }
+        city: { $ref: '#/components/schemas/City' }
+        profession:
+          oneOf: [{ type: string }, { type: 'null' }]
+        bio:
+          oneOf: [{ type: string }, { type: 'null' }]
+        lookingFor:
+          oneOf: [{ type: string }, { type: 'null' }]
+        personalValues:
+          oneOf: [{ type: string }, { type: 'null' }]
+        interests:
+          type: array
+          items: { $ref: '#/components/schemas/Interest' }
+        photos:
+          type: array
+          items: { $ref: '#/components/schemas/Photo' }
+        verifiedBadge: { type: boolean }
+        lastActiveLabel:
+          type: string
+          description: Granularité volontairement grossière.
+          enum: [AUJOURD_HUI, CETTE_SEMAINE, CE_MOIS, PLUS_ANCIEN]
+
+    SuggestionCard:
+      allOf:
+        - $ref: '#/components/schemas/PublicProfile'
+        - type: object
+          properties:
+            compatibilityScore:
+              type: number
+              format: float
+              minimum: 0
+              maximum: 1
+            sharedInterestCount: { type: integer }
+
+    Preferences:
+      type: object
+      required: [seekingGender, minAge, maxAge]
+      properties:
+        seekingGender: { type: string, enum: [FEMALE, MALE] }
+        minAge: { type: integer, minimum: 18, maximum: 99 }
+        maxAge: { type: integer, minimum: 18, maximum: 99 }
+        cityIds:
+          type: array
+          items: { type: string }
+        sameCountryOnly: { type: boolean }
+        acceptedRelationshipStatuses:
+          type: array
+          items: { type: string, enum: [SINGLE, DIVORCED, WIDOWED, SEPARATED] }
+        acceptsChildren: { type: boolean }
+        minEducationLevel:
+          type: string
+          description: Filtre réservé à l'offre Premium.
+        requiredInterestIds:
+          type: array
+          description: Filtre réservé à l'offre Premium.
+          items: { type: string }
+      additionalProperties: false
+
+    City:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        region: { type: string }
+        countryCode: { type: string, minLength: 2, maxLength: 2 }
+
+    Interest:
+      type: object
+      properties:
+        id: { type: string }
+        slug: { type: string }
+        label: { type: string }
+        category: { type: string }
+
+    Photo:
+      type: object
+      properties:
+        id: { type: string }
+        status: { type: string, enum: [UPLOADING, PENDING_MODERATION, APPROVED, REJECTED, HIDDEN_BY_MODERATION, DELETED] }
+        position: { type: integer }
+        url:
+          type: string
+          format: uri
+          description: URL signée de courte durée. Aucune URL permanente n'est jamais émise.
+        thumbnailUrl: { type: string, format: uri }
+        moderationReason:
+          oneOf: [{ type: string }, { type: 'null' }]
+
+    Match:
+      type: object
+      properties:
+        id: { type: string }
+        conversationId: { type: string }
+        profile: { $ref: '#/components/schemas/PublicProfile' }
+        matchedAt: { type: string, format: date-time }
+        status: { type: string, enum: [ACTIVE, UNMATCHED, CLOSED_BY_MODERATION] }
+
+    ReceivedInterest:
+      type: object
+      properties:
+        id: { type: string }
+        createdAt: { type: string, format: date-time }
+        blurred:
+          type: boolean
+          description: Vrai en offre gratuite ; le profil détaillé est alors absent.
+        profile:
+          oneOf:
+            - $ref: '#/components/schemas/PublicProfile'
+            - type: 'null'
+
+    Conversation:
+      type: object
+      properties:
+        id: { type: string }
+        matchId: { type: string }
+        status: { type: string, enum: [OPEN, LOCKED_BY_BLOCK, LOCKED_BY_UNMATCH, LOCKED_BY_MODERATION, ARCHIVED] }
+        peer: { $ref: '#/components/schemas/PublicProfile' }
+        lastMessageAt:
+          oneOf: [{ type: string, format: date-time }, { type: 'null' }]
+        lastMessagePreview:
+          oneOf: [{ type: string }, { type: 'null' }]
+        unreadCount: { type: integer }
+
+    Message:
+      type: object
+      properties:
+        id: { type: string }
+        conversationId: { type: string }
+        senderId: { type: string }
+        type: { type: string, enum: [TEXT, IMAGE, SYSTEM] }
+        body:
+          oneOf: [{ type: string }, { type: 'null' }]
+        deliveryStatus: { type: string, enum: [SENT, DELIVERED, READ] }
+        createdAt: { type: string, format: date-time }
+        deleted: { type: boolean }
+        attachments:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              url: { type: string, format: uri }
+              status: { type: string }
+
+    ReportRequest:
+      type: object
+      required: [reportedUserId, targetType, category]
+      properties:
+        reportedUserId: { type: string }
+        targetType: { type: string, enum: [PROFILE, PHOTO, MESSAGE, BEHAVIOR] }
+        targetId: { type: string }
+        category:
+          type: string
+          enum: [FAKE_PROFILE, IDENTITY_THEFT, FINANCIAL_SOLICITATION, SCAM_SUSPICION,
+                 HARASSMENT, HATE_SPEECH, SEXUAL_CONTENT, INAPPROPRIATE_PHOTO,
+                 UNDERAGE_SUSPICION, SPAM, OTHER]
+        description: { type: string, maxLength: 1500 }
+
+    ModerationCase:
+      type: object
+      properties:
+        id: { type: string }
+        subjectUserId: { type: string }
+        priority: { type: string, enum: [P0_CRITICAL, P1_HIGH, P2_NORMAL, P3_LOW] }
+        status: { type: string, enum: [OPEN, ASSIGNED, AWAITING_USER, ESCALATED, RESOLVED, DISMISSED] }
+        reportCount: { type: integer }
+        slaDueAt: { type: string, format: date-time }
+        overdue: { type: boolean }
+        assignedToUserId:
+          oneOf: [{ type: string }, { type: 'null' }]
+        createdAt: { type: string, format: date-time }
+
+    ModerationAction:
+      type: object
+      properties:
+        id: { type: string }
+        caseId: { type: string }
+        type: { type: string }
+        reasonCode: { type: string }
+        performedByUserId:
+          oneOf: [{ type: string }, { type: 'null' }]
+        approvedByUserId:
+          oneOf: [{ type: string }, { type: 'null' }]
+        effectiveUntil:
+          oneOf: [{ type: string, format: date-time }, { type: 'null' }]
+        createdAt: { type: string, format: date-time }
+
+    Plan:
+      type: object
+      properties:
+        code: { type: string, example: premium_monthly }
+        name: { type: string }
+        interval: { type: string, enum: [MONTHLY, QUARTERLY, YEARLY, ONE_TIME] }
+        priceMinor:
+          type: integer
+          description: Montant en unité monétaire minimale.
+          example: 5000
+        currency: { type: string, example: XAF }
+        minorUnitExponent:
+          type: integer
+          description: 0 pour XAF et XOF (aucune sous-unité).
+          example: 0
+        formattedPrice: { type: string, example: '5 000 F CFA' }
+        entitlements:
+          type: object
+          additionalProperties: true
+
+    CheckoutResponse:
+      type: object
+      properties:
+        paymentId: { type: string }
+        status: { type: string, enum: [PENDING, PROCESSING, SUCCEEDED, FAILED] }
+        testMode: { type: boolean }
+        instruction:
+          type: object
+          description: Instruction de paiement propre au fournisseur (redirection, code USSD…).
+          additionalProperties: true
+
+    UserRequest:
+      type: object
+      properties:
+        id: { type: string }
+        status: { type: string, enum: [PENDING, PROCESSING, READY, COMPLETED, CANCELLED, FAILED] }
+        requestedAt: { type: string, format: date-time }
+        executeAt:
+          oneOf: [{ type: string, format: date-time }, { type: 'null' }]
+        downloadUrl:
+          oneOf: [{ type: string, format: uri }, { type: 'null' }]
+
+    AuditLog:
+      type: object
+      properties:
+        id: { type: string }
+        actorUserId: { type: string }
+        actorRole: { type: string }
+        action: { type: string, example: kyc.document.viewed }
+        targetType:
+          oneOf: [{ type: string }, { type: 'null' }]
+        targetId:
+          oneOf: [{ type: string }, { type: 'null' }]
+        createdAt: { type: string, format: date-time }
