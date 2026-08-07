@@ -7,15 +7,15 @@ Prérequis : [Phase A — audit et cadrage](./00-phase-a-audit-cadrage.md)
 
 ## 1. Principes directeurs
 
-| Principe | Traduction concrète |
-|---|---|
-| **Le serveur décide** | Aucune règle de sécurité, d'éligibilité ou de quota n'est appliquée uniquement côté client. Le client masque, le serveur interdit. |
-| **Un monolithe modulaire, pas des microservices** | Un déployable, 17 modules à frontières explicites. L'extraction ultérieure d'un module reste possible car aucune frontière n'est franchie par accès direct aux tables. |
-| **Toute intégration externe derrière un port** | Le métier ne connaît jamais le nom d'un fournisseur. Une variable d'environnement choisit l'implémentation. |
-| **Asynchrone par défaut pour tout ce qui est lourd** | Médias, notifications, suggestions, détections, purges, réconciliation : événement de domaine → file BullMQ. L'API reste rapide sur réseau lent. |
-| **Autorisation déclarée, jamais implicite** | Chaque route porte une politique explicite. Un test échoue si une route n'en déclare pas. |
-| **Auditabilité des opérations sensibles** | Toute action administrative et toute consultation de donnée sensible produit un événement d'audit append-only. |
-| **Minimisation** | On ne stocke pas ce qui est calculable, pas ce qui n'est pas nécessaire, et pas plus longtemps que la durée configurée. |
+| Principe                                             | Traduction concrète                                                                                                                                                    |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Le serveur décide**                                | Aucune règle de sécurité, d'éligibilité ou de quota n'est appliquée uniquement côté client. Le client masque, le serveur interdit.                                     |
+| **Un monolithe modulaire, pas des microservices**    | Un déployable, 17 modules à frontières explicites. L'extraction ultérieure d'un module reste possible car aucune frontière n'est franchie par accès direct aux tables. |
+| **Toute intégration externe derrière un port**       | Le métier ne connaît jamais le nom d'un fournisseur. Une variable d'environnement choisit l'implémentation.                                                            |
+| **Asynchrone par défaut pour tout ce qui est lourd** | Médias, notifications, suggestions, détections, purges, réconciliation : événement de domaine → file BullMQ. L'API reste rapide sur réseau lent.                       |
+| **Autorisation déclarée, jamais implicite**          | Chaque route porte une politique explicite. Un test échoue si une route n'en déclare pas.                                                                              |
+| **Auditabilité des opérations sensibles**            | Toute action administrative et toute consultation de donnée sensible produit un événement d'audit append-only.                                                         |
+| **Minimisation**                                     | On ne stocke pas ce qui est calculable, pas ce qui n'est pas nécessaire, et pas plus longtemps que la durée configurée.                                                |
 
 ---
 
@@ -142,29 +142,29 @@ graph LR
 
 ### Responsabilité de chaque module
 
-| Module | Responsabilité | Ne fait jamais |
-|---|---|---|
-| `auth` | Inscription téléphone/OTP, connexion, sessions, tokens, appareils, récupération, rate limiting d'authentification | Décider de l'éligibilité produit (c'est `verification`) |
-| `users` | Compte, statut de compte, rôles, consentements, suppression et export de données | Contenir la donnée de profil publique |
-| `profiles` | Profil public, préférences, centres d'intérêt, photos, complétion, statut de disponibilité | Décider quel profil est visible (c'est `discovery`) |
-| `verification` | Date de naissance, calcul d'âge, machine à états KYC, documents, décisions, badge | Stocker un document en clair ou hors du schéma `kyc` |
-| `discovery` | Calcul du score, génération et service des suggestions quotidiennes, exclusions | Créer des matchs |
-| `matching` | Intérêts (envoyés, reçus, refusés), matchs, annulation, blocages | Créer des messages |
-| `conversations` | Cycle de vie d'une conversation, membres, état de lecture, verrouillage | Autoriser un envoi sans match (délégué au garde) |
-| `messages` | Messages, statuts de livraison, pièces jointes, anti-spam, suppression logique | Modérer (c'est `moderation`) |
-| `moderation` | Signalements, cas, actions, SLA, règles de détection, comptes liés | Prendre seule une sanction irréversible |
-| `subscriptions` | Plans, abonnements, cycle de vie, droits Premium, boosts | Parler à un fournisseur de paiement |
-| `payments` | `PaymentProvider`, transactions, webhooks idempotents, remboursements, réconciliation | Décider des droits fonctionnels |
-| `notifications` | 4 canaux, préférences, modèles, file, anti-doublon, réessais | Contenir la règle métier déclenchante |
-| `media` | Envoi, validation, EXIF, compression, miniatures, URLs signées, cycle de modération | Servir un média sans URL signée |
-| `admin` | Surface back-office, files de travail, RBAC administratif | Contourner les règles de domaine |
-| `analytics` | Événements produit pseudonymisés, agrégats, indicateurs, campagnes de migration | Stocker une donnée nominative dans les agrégats |
-| `audit` | Journal append-only des actions sensibles | Être modifiable ou supprimable par l'application |
-| `feature-flags` | Activation par environnement, par rôle, par pourcentage, par utilisateur | Être lu depuis le client sans filtrage |
+| Module          | Responsabilité                                                                                                    | Ne fait jamais                                          |
+| --------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `auth`          | Inscription téléphone/OTP, connexion, sessions, tokens, appareils, récupération, rate limiting d'authentification | Décider de l'éligibilité produit (c'est `verification`) |
+| `users`         | Compte, statut de compte, rôles, consentements, suppression et export de données                                  | Contenir la donnée de profil publique                   |
+| `profiles`      | Profil public, préférences, centres d'intérêt, photos, complétion, statut de disponibilité                        | Décider quel profil est visible (c'est `discovery`)     |
+| `verification`  | Date de naissance, calcul d'âge, machine à états KYC, documents, décisions, badge                                 | Stocker un document en clair ou hors du schéma `kyc`    |
+| `discovery`     | Calcul du score, génération et service des suggestions quotidiennes, exclusions                                   | Créer des matchs                                        |
+| `matching`      | Intérêts (envoyés, reçus, refusés), matchs, annulation, blocages                                                  | Créer des messages                                      |
+| `conversations` | Cycle de vie d'une conversation, membres, état de lecture, verrouillage                                           | Autoriser un envoi sans match (délégué au garde)        |
+| `messages`      | Messages, statuts de livraison, pièces jointes, anti-spam, suppression logique                                    | Modérer (c'est `moderation`)                            |
+| `moderation`    | Signalements, cas, actions, SLA, règles de détection, comptes liés                                                | Prendre seule une sanction irréversible                 |
+| `subscriptions` | Plans, abonnements, cycle de vie, droits Premium, boosts                                                          | Parler à un fournisseur de paiement                     |
+| `payments`      | `PaymentProvider`, transactions, webhooks idempotents, remboursements, réconciliation                             | Décider des droits fonctionnels                         |
+| `notifications` | 4 canaux, préférences, modèles, file, anti-doublon, réessais                                                      | Contenir la règle métier déclenchante                   |
+| `media`         | Envoi, validation, EXIF, compression, miniatures, URLs signées, cycle de modération                               | Servir un média sans URL signée                         |
+| `admin`         | Surface back-office, files de travail, RBAC administratif                                                         | Contourner les règles de domaine                        |
+| `analytics`     | Événements produit pseudonymisés, agrégats, indicateurs, campagnes de migration                                   | Stocker une donnée nominative dans les agrégats         |
+| `audit`         | Journal append-only des actions sensibles                                                                         | Être modifiable ou supprimable par l'application        |
+| `feature-flags` | Activation par environnement, par rôle, par pourcentage, par utilisateur                                          | Être lu depuis le client sans filtrage                  |
 
 ### Règle de communication inter-modules
 
-1. **Appel synchrone autorisé** uniquement vers le *service applicatif public* d'un autre module (exporté par son
+1. **Appel synchrone autorisé** uniquement vers le _service applicatif public_ d'un autre module (exporté par son
    `*.module.ts`), jamais vers son repository ni ses tables.
 2. **Événement de domaine** pour tout ce qui est asynchrone ou multi-destinataires (`match.created`,
    `verification.approved`, `photo.rejected`, `payment.succeeded`…).
@@ -203,16 +203,16 @@ compatibilité sont des fonctions pures testables en millisecondes, sans base de
 
 ## 5. Ports et adaptateurs
 
-| Port | Méthodes principales | Implémentations MVP | Implémentation cible |
-|---|---|---|---|
-| `SmsProvider` | `sendOtp`, `sendTransactional` | `ConsoleSmsProvider` *(simulé)* | Passerelle SMS à contractualiser (Q4) |
-| `KycProvider` | `submitDocument`, `getResult`, `handleWebhook` | `MockKycProvider` *(simulé)* + revue humaine | Prestataire KYC local (Q2) |
-| `PaymentProvider` | `createCheckout`, `getTransaction`, `refund`, `verifyWebhook`, `parseWebhook` | `MockPaymentProvider` *(« Mode test »)* | Agrégateur mobile money + carte (Q3) |
-| `StorageProvider` | `putObject`, `getSignedUrl`, `deleteObject`, `copyObject` | MinIO (S3 compatible) — **réel** | S3 ou équivalent |
-| `MailProvider` | `send` | Mailpit — **réel en local** | Service transactionnel |
-| `PushProvider` | `sendToDevice`, `sendToTopic` | `MockPushProvider` *(simulé)* | Adaptateur compatible FCM |
-| `ContentModerationProvider` | `scanImage`, `scanText` | `RuleBasedModerationProvider` (règles) | Service de modération |
-| `ClockProvider` | `now()` | `SystemClock` / `FrozenClock` en test | — |
+| Port                        | Méthodes principales                                                          | Implémentations MVP                          | Implémentation cible                  |
+| --------------------------- | ----------------------------------------------------------------------------- | -------------------------------------------- | ------------------------------------- |
+| `SmsProvider`               | `sendOtp`, `sendTransactional`                                                | `ConsoleSmsProvider` _(simulé)_              | Passerelle SMS à contractualiser (Q4) |
+| `KycProvider`               | `submitDocument`, `getResult`, `handleWebhook`                                | `MockKycProvider` _(simulé)_ + revue humaine | Prestataire KYC local (Q2)            |
+| `PaymentProvider`           | `createCheckout`, `getTransaction`, `refund`, `verifyWebhook`, `parseWebhook` | `MockPaymentProvider` _(« Mode test »)_      | Agrégateur mobile money + carte (Q3)  |
+| `StorageProvider`           | `putObject`, `getSignedUrl`, `deleteObject`, `copyObject`                     | MinIO (S3 compatible) — **réel**             | S3 ou équivalent                      |
+| `MailProvider`              | `send`                                                                        | Mailpit — **réel en local**                  | Service transactionnel                |
+| `PushProvider`              | `sendToDevice`, `sendToTopic`                                                 | `MockPushProvider` _(simulé)_                | Adaptateur compatible FCM             |
+| `ContentModerationProvider` | `scanImage`, `scanText`                                                       | `RuleBasedModerationProvider` (règles)       | Service de modération                 |
+| `ClockProvider`             | `now()`                                                                       | `SystemClock` / `FrozenClock` en test        | —                                     |
 
 **Sélection par environnement :** `SMS_PROVIDER=console|<réel>`, `KYC_PROVIDER=mock|<réel>`,
 `PAYMENT_PROVIDER=mock|<réel>`. Aucun branchement conditionnel dans le métier ; l'injection se fait au niveau du
@@ -254,9 +254,9 @@ sequenceDiagram
 ```
 
 - **Access token** JWT 15 min, signé RS256, contenant `sub`, `sid`, `roles`, `verificationStatus`, `accountStatus`.
-- **Refresh token** opaque 30 jours, **haché (SHA-256) en base**, rotatif à chaque usage, rattaché à une *famille*.
+- **Refresh token** opaque 30 jours, **haché (SHA-256) en base**, rotatif à chaque usage, rattaché à une _famille_.
   La réutilisation d'un token déjà consommé = vol présumé → **révocation de toute la famille** + événement d'audit
-  + notification de sécurité.
+  - notification de sécurité.
 - Le token porte `verificationStatus`, mais **le garde revalide en base** pour toute route sensible : un compte
   suspendu ne doit pas survivre 15 minutes.
 
@@ -290,14 +290,14 @@ Chaque route déclare sa politique par décorateur :
 
 ### 6.4 Événements de domaine et files
 
-| File BullMQ | Producteurs | Traitements |
-|---|---|---|
-| `media` | `photo.uploaded`, `attachment.uploaded` | validation binaire, EXIF, ré-encodage, miniatures, pré-modération |
-| `notifications` | tous | résolution des préférences, rendu du modèle, envoi multi-canal, réessais |
-| `discovery` | planificateur quotidien | génération des suggestions par utilisateur actif |
-| `moderation` | `report.created`, signaux de comportement | priorisation, règles de détection, alertes |
-| `retention` | planificateur quotidien | purge des documents KYC, messages, comptes en grâce, événements analytics |
-| `payments` | `payment.webhook.received`, planificateur | traitement idempotent, réconciliation, relances d'échec |
+| File BullMQ     | Producteurs                               | Traitements                                                               |
+| --------------- | ----------------------------------------- | ------------------------------------------------------------------------- |
+| `media`         | `photo.uploaded`, `attachment.uploaded`   | validation binaire, EXIF, ré-encodage, miniatures, pré-modération         |
+| `notifications` | tous                                      | résolution des préférences, rendu du modèle, envoi multi-canal, réessais  |
+| `discovery`     | planificateur quotidien                   | génération des suggestions par utilisateur actif                          |
+| `moderation`    | `report.created`, signaux de comportement | priorisation, règles de détection, alertes                                |
+| `retention`     | planificateur quotidien                   | purge des documents KYC, messages, comptes en grâce, événements analytics |
+| `payments`      | `payment.webhook.received`, planificateur | traitement idempotent, réconciliation, relances d'échec                   |
 
 Réglages : `attempts: 5`, backoff exponentiel, `removeOnComplete` borné, **dead-letter queue** consultable au
 back-office. Tout job porte un `jobId` déterministe quand l'idempotence l'exige.
@@ -393,14 +393,14 @@ chaque table concernée. `limit` par défaut 20, maximum 50.
 
 Cible : 9 000 membres au lancement, capacité x10 (90 000) sans refonte.
 
-| Levier | Au MVP | À x10 |
-|---|---|---|
-| API | 2 instances | 4 à 8 instances derrière le répartiteur |
-| Workers | 1 process, files séparées | 1 process par famille de file |
-| PostgreSQL | 1 instance + PgBouncer | + réplicas de lecture pour `discovery` et `analytics` |
-| Redis | 1 instance | Redis dédié aux files, séparé du cache |
-| Médias | Stockage S3 + CDN | inchangé (déjà hors chemin applicatif) |
-| Suggestions | Calcul nocturne par lots | Partitionnement par pays / fenêtre horaire |
+| Levier      | Au MVP                    | À x10                                                 |
+| ----------- | ------------------------- | ----------------------------------------------------- |
+| API         | 2 instances               | 4 à 8 instances derrière le répartiteur               |
+| Workers     | 1 process, files séparées | 1 process par famille de file                         |
+| PostgreSQL  | 1 instance + PgBouncer    | + réplicas de lecture pour `discovery` et `analytics` |
+| Redis       | 1 instance                | Redis dédié aux files, séparé du cache                |
+| Médias      | Stockage S3 + CDN         | inchangé (déjà hors chemin applicatif)                |
+| Suggestions | Calcul nocturne par lots  | Partitionnement par pays / fenêtre horaire            |
 
 Le point de contention attendu est le **calcul des suggestions** (comparaison de candidats). Il est traité par
 pré-filtrage SQL indexé (pays, ville, tranche d'âge, statut vérifié, non bloqué) **avant** tout scoring applicatif,
@@ -410,11 +410,11 @@ avec un plafond de candidats évalués par utilisateur. Détail dans [04 — alg
 
 ## 12. Environnements
 
-| Environnement | Usage | Données | Fournisseurs |
-|---|---|---|---|
-| `local` | Développement | Seed anonyme | Tous simulés (MinIO et Mailpit réels) |
-| `ci` | Tests automatisés | Base éphémère | Tous simulés, horloge figée |
-| `staging` (recette) | Validation métier, tests de charge | Anonymisées, jamais de copie de production | Réels en mode bac à sable si disponibles |
-| `production` | Service | Réelles | Réels — démarrage refusé si un port critique est simulé |
+| Environnement       | Usage                              | Données                                    | Fournisseurs                                            |
+| ------------------- | ---------------------------------- | ------------------------------------------ | ------------------------------------------------------- |
+| `local`             | Développement                      | Seed anonyme                               | Tous simulés (MinIO et Mailpit réels)                   |
+| `ci`                | Tests automatisés                  | Base éphémère                              | Tous simulés, horloge figée                             |
+| `staging` (recette) | Validation métier, tests de charge | Anonymisées, jamais de copie de production | Réels en mode bac à sable si disponibles                |
+| `production`        | Service                            | Réelles                                    | Réels — démarrage refusé si un port critique est simulé |
 
 Voir [10 — plan de déploiement](./10-plan-de-deploiement.md).

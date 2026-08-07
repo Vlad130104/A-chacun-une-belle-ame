@@ -3,28 +3,31 @@
 Plateforme SaaS de rencontres sérieuses, réservée aux personnes majeures, pour le Cameroun, le Bénin et la Côte
 d'Ivoire.
 
-**État du projet : phase B (conception) terminée. Aucun code applicatif n'a encore été écrit.**
+**État du projet : phase C (initialisation) terminée.** Le monorepo est fonctionnel — lint, typage, tests et build
+verts — mais **aucune fonctionnalité produit n'est encore implémentée**.
 
 ---
 
 ## Par où commencer
 
-| Vous êtes… | Lisez dans cet ordre |
-|---|---|
-| **Porteur de projet** | [00 — Cadrage](./00-phase-a-audit-cadrage.md) → [12 — Risques](./12-registre-des-risques.md) → [11 — Roadmap](./11-roadmap-v1-v2.md) → [08 — Backlog](./08-backlog-mvp.md) |
+| Vous êtes…                  | Lisez dans cet ordre                                                                                                                                                       |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Porteur de projet**       | [00 — Cadrage](./00-phase-a-audit-cadrage.md) → [12 — Risques](./12-registre-des-risques.md) → [11 — Roadmap](./11-roadmap-v1-v2.md) → [08 — Backlog](./08-backlog-mvp.md) |
 | **Développeur qui rejoint** | [01 — Architecture](./01-architecture.md) → [02 — Décisions](./02-decisions-techniques.md) → [03 — Modèle de données](./03-modele-de-donnees.md) → [05 — API](./05-api.md) |
-| **Designer** | [07 — Parcours UX](./07-parcours-ux.md) → [00 — Cadrage §2](./00-phase-a-audit-cadrage.md) |
-| **Responsable sécurité** | [SECURITY.md](../SECURITY.md) → [06 — Rôles](./06-roles-et-permissions.md) → [MOCKS.md](./MOCKS.md) |
-| **Modérateur ou agent** | [06 — Rôles](./06-roles-et-permissions.md) → [07 — Écrans 23 et 24](./07-parcours-ux.md) |
+| **Designer**                | [07 — Parcours UX](./07-parcours-ux.md) → [00 — Cadrage §2](./00-phase-a-audit-cadrage.md)                                                                                 |
+| **Responsable sécurité**    | [SECURITY.md](../SECURITY.md) → [06 — Rôles](./06-roles-et-permissions.md) → [MOCKS.md](./MOCKS.md)                                                                        |
+| **Modérateur ou agent**     | [06 — Rôles](./06-roles-et-permissions.md) → [07 — Écrans 23 et 24](./07-parcours-ux.md)                                                                                   |
 
 ---
 
 ## Sommaire
 
 ### Phase A — Cadrage
+
 - [00 — Audit et cadrage](./00-phase-a-audit-cadrage.md) — périmètre, hypothèses, 12 questions bloquantes, plan par lots
 
 ### Phase B — Conception
+
 - [01 — Architecture générale](./01-architecture.md) — monolithe modulaire, 17 modules, ports, flux, monorepo
 - [02 — Décisions techniques](./02-decisions-techniques.md) — 20 ADR
 - [03 — Modèle de données](./03-modele-de-donnees.md) — 43 entités, index, conservation · schéma : [`prisma/schema.prisma`](../prisma/schema.prisma)
@@ -38,7 +41,12 @@ d'Ivoire.
 - [11 — Roadmap V1 et V2](./11-roadmap-v1-v2.md)
 - [12 — Registre des risques](./12-registre-des-risques.md)
 
+### Phase C — Initialisation
+
+- [13 — Installation et développement local](./13-installation.md) — prérequis, démarrage, commandes, dépannage
+
 ### Transverse
+
 - [SECURITY.md](../SECURITY.md) — modèle de menace, mesures, incidents, checklist avant production
 - [MOCKS.md](./MOCKS.md) — intégrations encore simulées
 

@@ -1,0 +1,136 @@
+import { z } from 'zod';
+
+/**
+ * Schéma de configuration.
+ *
+ * Toute la configuration est validée au démarrage : une variable manquante, mal
+ * typée ou hors bornes EMPÊCHE le démarrage. Une configuration invalide doit échouer
+ * bruyamment au lancement, jamais silencieusement à la première requête d'un
+ * utilisateur (docs/10-plan-de-deploiement.md §5).
+ */
+
+/** Une variable d'environnement arrive en chaîne ; les tests passent parfois un booléen. */
+const bool = z
+  .union([z.boolean(), z.string()])
+  .default(false)
+  .transform((value) => value === true || value === 'true' || value === '1');
+
+export const envSchema = z.object({
+  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
+
+  DATABASE_URL: z.string().url(),
+  KYC_DATABASE_URL: z.string().url().optional(),
+  REDIS_URL: z.string().url(),
+
+  API_PORT: z.coerce.number().int().min(1).max(65535).default(3000),
+  API_GLOBAL_PREFIX: z.string().default('api/v1'),
+  PROCESS_ROLE: z.enum(['api', 'worker', 'all']).default('all'),
+
+  ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(900),
+  REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(30),
+  ADMIN_SESSION_TTL_HOURS: z.coerce.number().int().positive().default(8),
+
+  // ── Ports externes ─────────────────────────────────────────────────────────
+  SMS_PROVIDER: z.enum(['console', 'live']).default('console'),
+  KYC_PROVIDER: z.enum(['mock', 'live']).default('mock'),
+  PAYMENT_PROVIDER: z.enum(['mock', 'live']).default('mock'),
+  PUSH_PROVIDER: z.enum(['mock', 'live']).default('mock'),
+  MAIL_PROVIDER: z.enum(['smtp', 'live']).default('smtp'),
+  CONTENT_MODERATION_PROVIDER: z.enum(['rules', 'live']).default('rules'),
+  ALLOW_MOCK_PROVIDERS_IN_PRODUCTION: bool,
+
+  // ── Règles métier (docs/03-modele-de-donnees.md §11) ───────────────────────
+  MINIMUM_AGE: z.coerce.number().int().min(18).max(21).default(18),
+  KYC_DOCUMENT_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
+  MESSAGE_RETENTION_MONTHS: z.coerce.number().int().positive().default(24),
+  ACCOUNT_DELETION_GRACE_DAYS: z.coerce.number().int().positive().default(30),
+  ANALYTICS_RETENTION_MONTHS: z.coerce.number().int().positive().default(14),
+  WEBHOOK_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
+  PHOTO_SOFT_DELETE_DAYS: z.coerce.number().int().positive().default(7),
+
+  DAILY_SUGGESTION_LIMIT_FREE: z.coerce.number().int().positive().default(10),
+  DAILY_SUGGESTION_LIMIT_PREMIUM: z.coerce.number().int().positive().default(30),
+  DAILY_LIKE_LIMIT_FREE: z.coerce.number().int().positive().default(10),
+  DAILY_LIKE_LIMIT_PREMIUM: z.coerce.number().int().positive().default(50),
+  MIN_COMPLETION_TO_PUBLISH: z.coerce.number().int().min(0).max(100).default(60),
+  MAX_PHOTOS: z.coerce.number().int().min(1).max(12).default(6),
+  MIN_PHOTOS_TO_PUBLISH: z.coerce.number().int().min(1).max(6).default(3),
+  MAX_UPLOAD_SIZE_BYTES: z.coerce.number().int().positive().default(8_388_608),
+  MAX_KYC_UPLOAD_SIZE_BYTES: z.coerce.number().int().positive().default(10_485_760),
+  UNANSWERED_MESSAGE_LIMIT: z.coerce.number().int().positive().default(20),
+  MATCHING_MAX_CANDIDATES: z.coerce.number().int().positive().default(500),
+  MATCHING_POLICY: z.enum(['HETERO', 'OPEN']).default('HETERO'),
+
+  // ── Sécurité ───────────────────────────────────────────────────────────────
+  CORS_ALLOWED_ORIGINS: z.string().default(''),
+  RATE_LIMIT_GLOBAL_PER_MINUTE: z.coerce.number().int().positive().default(120),
+  RATE_LIMIT_AUTH_PER_HOUR: z.coerce.number().int().positive().default(10),
+  RATE_LIMIT_OTP_PER_10_MIN: z.coerce.number().int().positive().default(3),
+  OTP_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
+  OTP_TTL_SECONDS: z.coerce.number().int().positive().default(300),
+
+  METRICS_ENABLED: bool,
+});
+
+export type Env = z.infer<typeof envSchema>;
+
+/** Ports dont l'absence d'implémentation réelle rend la production non conforme. */
+export const CRITICAL_PROVIDER_KEYS = ['SMS_PROVIDER', 'PAYMENT_PROVIDER'] as const;
+
+export class EnvValidationError extends Error {
+  constructor(issues: string[]) {
+    super(`Configuration invalide :\n  - ${issues.join('\n  - ')}`);
+    this.name = 'EnvValidationError';
+  }
+}
+
+const SIMULATED_VALUES = new Set(['console', 'mock', 'rules']);
+
+/**
+ * Retourne la liste des ports encore simulés. Source de vérité de docs/MOCKS.md et
+ * de la route GET /health/providers.
+ */
+export function listSimulatedProviders(env: Env): string[] {
+  const entries: Array<[string, string]> = [
+    ['SmsProvider', env.SMS_PROVIDER],
+    ['KycProvider', env.KYC_PROVIDER],
+    ['PaymentProvider', env.PAYMENT_PROVIDER],
+    ['PushProvider', env.PUSH_PROVIDER],
+    ['ContentModerationProvider', env.CONTENT_MODERATION_PROVIDER],
+  ];
+  return entries.filter(([, value]) => SIMULATED_VALUES.has(value)).map(([port]) => port);
+}
+
+export function validateEnv(raw: Record<string, unknown>): Env {
+  const parsed = envSchema.safeParse(raw);
+
+  if (!parsed.success) {
+    throw new EnvValidationError(
+      parsed.error.issues.map((issue) => `${issue.path.join('.')} : ${issue.message}`),
+    );
+  }
+
+  const env = parsed.data;
+
+  // Garde-fou : en production, un port critique simulé empêche le démarrage.
+  // On ne peut pas présenter comme fonctionnelle une intégration qui ne l'est pas.
+  if (env.NODE_ENV === 'production' && !env.ALLOW_MOCK_PROVIDERS_IN_PRODUCTION) {
+    const simulatedCritical = CRITICAL_PROVIDER_KEYS.filter((key) =>
+      SIMULATED_VALUES.has(env[key]),
+    );
+    if (simulatedCritical.length > 0) {
+      throw new EnvValidationError([
+        `ports critiques encore simulés en production : ${simulatedCritical.join(', ')}. ` +
+          'Fournissez une implémentation réelle, ou posez explicitement ' +
+          'ALLOW_MOCK_PROVIDERS_IN_PRODUCTION=true en connaissance de cause (voir docs/MOCKS.md).',
+      ]);
+    }
+  }
+
+  if (env.MIN_PHOTOS_TO_PUBLISH > env.MAX_PHOTOS) {
+    throw new EnvValidationError(['MIN_PHOTOS_TO_PUBLISH ne peut pas dépasser MAX_PHOTOS.']);
+  }
+
+  return env;
+}

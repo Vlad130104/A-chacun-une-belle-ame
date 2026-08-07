@@ -1,0 +1,9 @@
+{
+  "extends": "@acuba/config/tsconfig-next",
+  "compilerOptions": {
+    "types": ["node"],
+    "incremental": true
+  },
+  "include": ["**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules", ".next"]
+}

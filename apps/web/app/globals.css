@@ -1,0 +1,81 @@
+/*
+ * Jetons de conception — identité proposée, à valider (question Q11).
+ * Terracotta chaleureux plutôt que rouge « passion » : le positionnement est la
+ * relation sérieuse, pas la rencontre occasionnelle (docs/07-parcours-ux.md §1).
+ */
+:root {
+  --couleur-action: #c4593b;
+  --couleur-action-sombre: #a5462c;
+  --couleur-confiance: #1f4d3d;
+  --couleur-fond: #f5efe7;
+  --couleur-surface: #ffffff;
+  --couleur-encre: #1c1917;
+  --couleur-encre-douce: #57534e;
+  --couleur-bordure: #e7ded2;
+
+  --rayon: 12px;
+  --espace: 16px;
+  --largeur-contenu: 68ch;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--couleur-fond);
+  color: var(--couleur-encre);
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+main {
+  max-width: var(--largeur-contenu);
+  margin: 0 auto;
+  padding: calc(var(--espace) * 2) var(--espace);
+}
+
+h1 {
+  font-size: clamp(1.75rem, 5vw, 2.5rem);
+  line-height: 1.2;
+  margin-bottom: 0.5em;
+}
+
+.bouton {
+  display: inline-block;
+  min-height: 44px; /* cible tactile accessible */
+  padding: 12px 24px;
+  border-radius: var(--rayon);
+  background: var(--couleur-action);
+  color: #fff;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.bouton:hover {
+  background: var(--couleur-action-sombre);
+}
+
+.bouton:focus-visible,
+a:focus-visible {
+  outline: 3px solid var(--couleur-confiance);
+  outline-offset: 2px;
+}
+
+.carte {
+  background: var(--couleur-surface);
+  border: 1px solid var(--couleur-bordure);
+  border-radius: var(--rayon);
+  padding: var(--espace);
+  margin-bottom: var(--espace);
+}
+
+.mention-majorite {
+  color: var(--couleur-encre-douce);
+  font-size: 0.9rem;
+}

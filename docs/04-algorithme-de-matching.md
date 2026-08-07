@@ -17,11 +17,11 @@ graph LR
     A["1. Éligibilité<br/>filtres durs — SQL indexé"] --> B["2. Scoring<br/>fonction pure, en mémoire"] --> C["3. Ordonnancement<br/>boost, diversité, quota"]
 ```
 
-| Étape | Où | Coût | Résultat |
-|---|---|---|---|
-| 1. Éligibilité | PostgreSQL, index `(status, cityId)` + `(accountStatus, verificationStatus)` | O(index) | ≤ `MAX_CANDIDATES` (défaut 500) candidats |
-| 2. Scoring | Fonction pure TypeScript, `domain/services/compatibility-score.ts` | O(n) sur 500 max | score ∈ [0, 1] par candidat |
-| 3. Ordonnancement | En mémoire | O(n log n) | `dailySuggestionLimit` suggestions |
+| Étape             | Où                                                                           | Coût             | Résultat                                  |
+| ----------------- | ---------------------------------------------------------------------------- | ---------------- | ----------------------------------------- |
+| 1. Éligibilité    | PostgreSQL, index `(status, cityId)` + `(accountStatus, verificationStatus)` | O(index)         | ≤ `MAX_CANDIDATES` (défaut 500) candidats |
+| 2. Scoring        | Fonction pure TypeScript, `domain/services/compatibility-score.ts`           | O(n) sur 500 max | score ∈ [0, 1] par candidat               |
+| 3. Ordonnancement | En mémoire                                                                   | O(n log n)       | `dailySuggestionLimit` suggestions        |
 
 **Le plafond de candidats est ce qui garantit la tenue à x10 :** le coût du scoring ne dépend pas de la taille de la
 base, seulement du plafond. Si le pré-filtre remonte plus de `MAX_CANDIDATES`, on retient les plus récemment actifs.
@@ -33,21 +33,21 @@ base, seulement du plafond. Si le pré-filtre remonte plus de `MAX_CANDIDATES`, 
 Un candidat est écarté si **l'une** de ces conditions est vraie. Ces filtres sont appliqués en SQL, jamais en mémoire,
 et **jamais côté client**.
 
-| # | Exclusion | Traduction |
-|---|---|---|
-| E1 | Non majeur | Impossible par construction : `BLOCKED_UNDERAGE` n'atteint jamais cette table |
-| E2 | Non vérifié | `verificationStatus != VERIFIED` |
-| E3 | Compte non actif | `accountStatus ∉ {ACTIVE}` — exclut pause, restriction, suspension, bannissement, suppression |
-| E4 | Profil non publiable | `Profile.status != ACTIVE` ou `completionRate < SEUIL_PUBLICATION` (défaut 60) |
-| E5 | Aucune photo approuvée | `primaryPhotoId IS NULL` |
-| E6 | Blocage dans un sens ou l'autre | ligne dans `Block` entre les deux, quel que soit le sens |
-| E7 | Déjà vu | ligne dans `ProfileView` |
-| E8 | Déjà décidé | ligne dans `Like` (intérêt **ou** refus) |
-| E9 | Déjà en match | ligne dans `Match` |
-| E10 | Genre incompatible | selon `matching.policy` (ADR-019) : le genre du candidat doit correspondre à `seekingGender` de l'utilisateur **et** réciproquement |
-| E11 | Hors tranche d'âge **réciproque** | l'âge du candidat hors `[minAge, maxAge]` de l'utilisateur, **ou** l'âge de l'utilisateur hors tranche du candidat |
-| E12 | Hors zone souhaitée | si `PreferenceCity` est renseignée et que la ville n'y figure pas ; si `sameCountryOnly` et pays différent |
-| E13 | Soi-même | `candidateId = userId` |
+| #   | Exclusion                         | Traduction                                                                                                                          |
+| --- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| E1  | Non majeur                        | Impossible par construction : `BLOCKED_UNDERAGE` n'atteint jamais cette table                                                       |
+| E2  | Non vérifié                       | `verificationStatus != VERIFIED`                                                                                                    |
+| E3  | Compte non actif                  | `accountStatus ∉ {ACTIVE}` — exclut pause, restriction, suspension, bannissement, suppression                                       |
+| E4  | Profil non publiable              | `Profile.status != ACTIVE` ou `completionRate < SEUIL_PUBLICATION` (défaut 60)                                                      |
+| E5  | Aucune photo approuvée            | `primaryPhotoId IS NULL`                                                                                                            |
+| E6  | Blocage dans un sens ou l'autre   | ligne dans `Block` entre les deux, quel que soit le sens                                                                            |
+| E7  | Déjà vu                           | ligne dans `ProfileView`                                                                                                            |
+| E8  | Déjà décidé                       | ligne dans `Like` (intérêt **ou** refus)                                                                                            |
+| E9  | Déjà en match                     | ligne dans `Match`                                                                                                                  |
+| E10 | Genre incompatible                | selon `matching.policy` (ADR-019) : le genre du candidat doit correspondre à `seekingGender` de l'utilisateur **et** réciproquement |
+| E11 | Hors tranche d'âge **réciproque** | l'âge du candidat hors `[minAge, maxAge]` de l'utilisateur, **ou** l'âge de l'utilisateur hors tranche du candidat                  |
+| E12 | Hors zone souhaitée               | si `PreferenceCity` est renseignée et que la ville n'y figure pas ; si `sameCountryOnly` et pays différent                          |
+| E13 | Soi-même                          | `candidateId = userId`                                                                                                              |
 
 **E11 est réciproque et c'est délibéré.** Suggérer un profil qui, par ses propres critères, ne peut pas être
 intéressé produit une frustration des deux côtés et fausse le taux de match.
@@ -72,17 +72,17 @@ Le score brut appartient donc à `[0, 1]`. Il est ensuite modulé (§4).
 
 ### 3.2 Les huit composantes
 
-| k | Composante | Poids `wₖ` (défaut) | Formule |
-|---|---|---|---|
-| C1 | Compatibilité d'âge | **0,20** | voir 3.3 |
-| C2 | Proximité géographique | **0,15** | voir 3.4 |
-| C3 | Centres d'intérêt communs | **0,20** | voir 3.5 |
-| C4 | Valeurs déclarées | **0,10** | voir 3.6 |
-| C5 | Situation familiale | **0,10** | voir 3.7 |
-| C6 | Réciprocité des préférences | **0,10** | voir 3.8 |
-| C7 | Complétion du profil | **0,05** | voir 3.9 |
-| C8 | Activité récente | **0,10** | voir 3.10 |
-| | **Total** | **1,00** | |
+| k   | Composante                  | Poids `wₖ` (défaut) | Formule   |
+| --- | --------------------------- | ------------------- | --------- |
+| C1  | Compatibilité d'âge         | **0,20**            | voir 3.3  |
+| C2  | Proximité géographique      | **0,15**            | voir 3.4  |
+| C3  | Centres d'intérêt communs   | **0,20**            | voir 3.5  |
+| C4  | Valeurs déclarées           | **0,10**            | voir 3.6  |
+| C5  | Situation familiale         | **0,10**            | voir 3.7  |
+| C6  | Réciprocité des préférences | **0,10**            | voir 3.8  |
+| C7  | Complétion du profil        | **0,05**            | voir 3.9  |
+| C8  | Activité récente            | **0,10**            | voir 3.10 |
+|     | **Total**                   | **1,00**            |           |
 
 Le statut de vérification n'a **pas** de poids : c'est un filtre dur (E2), tous les candidats sont vérifiés. Lui
 donner un poids serait mathématiquement sans effet et trompeur dans la documentation.
@@ -179,19 +179,19 @@ C7 = completionRate(c) / 100
 
 Le taux est calculé à chaque écriture du profil selon une grille fixe :
 
-| Élément | Points |
-|---|---|
-| Prénom, date de naissance, genre, ville | 15 |
-| 1 photo approuvée | 15 |
-| 3 photos approuvées | +10 (25 au total) |
-| Présentation ≥ 100 caractères | 15 |
-| « Ce que je recherche » ≥ 60 caractères | 10 |
-| Valeurs (≥ 3 déclarées) | 10 |
-| Centres d'intérêt (≥ 5 déclarés) | 10 |
-| Situation familiale | 5 |
-| Profession ou niveau d'études | 5 |
-| Préférences de recherche renseignées | 5 |
-| **Total** | **100** |
+| Élément                                 | Points            |
+| --------------------------------------- | ----------------- |
+| Prénom, date de naissance, genre, ville | 15                |
+| 1 photo approuvée                       | 15                |
+| 3 photos approuvées                     | +10 (25 au total) |
+| Présentation ≥ 100 caractères           | 15                |
+| « Ce que je recherche » ≥ 60 caractères | 10                |
+| Valeurs (≥ 3 déclarées)                 | 10                |
+| Centres d'intérêt (≥ 5 déclarés)        | 10                |
+| Situation familiale                     | 5                 |
+| Profession ou niveau d'études           | 5                 |
+| Préférences de recherche renseignées    | 5                 |
+| **Total**                               | **100**           |
 
 ### 3.10 C8 — Activité récente
 
@@ -218,11 +218,11 @@ suffit à départager deux profils par ailleurs équivalents.
 ScoreFinal(u, c) = Score(u, c) × Boost(c) × Nouveauté(c) × Équité(c)
 ```
 
-| Facteur | Valeur | Justification |
-|---|---|---|
-| `Boost(c)` | `multiplier` du boost actif (défaut 2,0), sinon 1,0 | Fonctionnalité payante (feature flag `boost.enabled`) |
-| `Nouveauté(c)` | 1,15 si le profil a moins de 7 jours, sinon 1,0 | Un nouvel inscrit sans visibilité se désengage vite — enjeu direct de rétention à J+7 |
-| `Équité(c)` | 0,85 si le candidat a déjà reçu plus de `PLAFOND_IMPRESSIONS_JOUR` (défaut 50) impressions aujourd'hui, sinon 1,0 | Empêche que quelques profils captent toutes les suggestions et que les autres ne soient jamais vus |
+| Facteur        | Valeur                                                                                                            | Justification                                                                                      |
+| -------------- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `Boost(c)`     | `multiplier` du boost actif (défaut 2,0), sinon 1,0                                                               | Fonctionnalité payante (feature flag `boost.enabled`)                                              |
+| `Nouveauté(c)` | 1,15 si le profil a moins de 7 jours, sinon 1,0                                                                   | Un nouvel inscrit sans visibilité se désengage vite — enjeu direct de rétention à J+7              |
+| `Équité(c)`    | 0,85 si le candidat a déjà reçu plus de `PLAFOND_IMPRESSIONS_JOUR` (défaut 50) impressions aujourd'hui, sinon 1,0 | Empêche que quelques profils captent toutes les suggestions et que les autres ne soient jamais vus |
 
 **Le facteur `Boost` est le seul levier payant sur le classement, et il est borné.** Il ne contourne aucun filtre
 d'éligibilité : un membre Premium ne voit pas de profils qu'il ne devrait pas voir, il est simplement mieux classé.
@@ -236,10 +236,10 @@ monotone dans les grandes villes.
 
 ### 4.3 Quota quotidien
 
-| Offre | Suggestions / jour | Intérêts / jour |
-|---|---|---|
-| Gratuite | 10 | 10 |
-| Premium | 30 | 50 |
+| Offre    | Suggestions / jour | Intérêts / jour |
+| -------- | ------------------ | --------------- |
+| Gratuite | 10                 | 10              |
+| Premium  | 30                 | 50              |
 
 Le quota est **remis à zéro à 00:00 UTC**, valeurs configurables (H7). Le compteur est côté serveur (Redis + vérification
 en base) : un client modifié ne peut pas dépasser son quota.
@@ -254,17 +254,17 @@ valeurs {famille, foi, fidélité}, célibataire sans enfant, cherche 30-40 ans,
 **Jean**, 35 ans, Douala, complétion 90 %, intérêts {lecture, voyage, football, cinéma}, valeurs {famille, fidélité,
 ambition}, célibataire sans enfant, cherche 28-38 ans, actif il y a 2 jours, pas de boost, inscrit il y a 3 mois.
 
-| Composante | Calcul | Valeur | × poids |
-|---|---|---|---|
-| C1 âge | `1 − 3/10` | 0,700 | 0,1400 |
-| C2 géo | même ville | 1,000 | 0,1500 |
-| C3 intérêts | `2 / min(5,4) = 2/4` | 0,500 | 0,1000 |
-| C4 valeurs | `2 / min(3,3) = 2/3` | 0,667 | 0,0667 |
-| C5 famille | accepté des deux côtés, enfants compatibles | 1,000 | 0,1000 |
-| C6 réciprocité | `0,4 + 0,3 + 0,3` (32 ∈ [28,38] ✓, ville ✓, 85 ≥ 60 ✓) | 1,000 | 0,1000 |
-| C7 complétion | `90/100` | 0,900 | 0,0450 |
-| C8 activité | `d = 2 → 0,80` | 0,800 | 0,0800 |
-| | | **Score brut** | **0,7817** |
+| Composante     | Calcul                                                 | Valeur         | × poids    |
+| -------------- | ------------------------------------------------------ | -------------- | ---------- |
+| C1 âge         | `1 − 3/10`                                             | 0,700          | 0,1400     |
+| C2 géo         | même ville                                             | 1,000          | 0,1500     |
+| C3 intérêts    | `2 / min(5,4) = 2/4`                                   | 0,500          | 0,1000     |
+| C4 valeurs     | `2 / min(3,3) = 2/3`                                   | 0,667          | 0,0667     |
+| C5 famille     | accepté des deux côtés, enfants compatibles            | 1,000          | 0,1000     |
+| C6 réciprocité | `0,4 + 0,3 + 0,3` (32 ∈ [28,38] ✓, ville ✓, 85 ≥ 60 ✓) | 1,000          | 0,1000     |
+| C7 complétion  | `90/100`                                               | 0,900          | 0,0450     |
+| C8 activité    | `d = 2 → 0,80`                                         | 0,800          | 0,0800     |
+|                |                                                        | **Score brut** | **0,7817** |
 
 Modulation : `Boost = 1,0` · `Nouveauté = 1,0` (3 mois) · `Équité = 1,0` → **ScoreFinal = 0,782**.
 
@@ -275,19 +275,19 @@ scoring qui change cette valeur sans changement de configuration fait échouer l
 
 ## 6. Paramètres configurables
 
-| Clé | Défaut | Effet |
-|---|---|---|
-| `matching.weights` | voir 3.2 | Poids des 8 composantes (somme validée à 1,0) |
-| `matching.policy` | `HETERO` | Politique de mise en relation (ADR-019, question Q7) |
-| `matching.ageTolerance` | 10 | Paramètre `T` de C1 |
-| `matching.maxCandidates` | 500 | Plafond de scoring — le garant de la performance |
-| `matching.minCompletionToPublish` | 60 | Seuil E4 |
-| `matching.dailyLimitFree` / `Premium` | 10 / 30 | Quota de suggestions |
-| `matching.likeLimitFree` / `Premium` | 10 / 50 | Quota d'intérêts |
-| `matching.newProfileBoostDays` | 7 | Fenêtre du facteur Nouveauté |
-| `matching.fairnessImpressionCap` | 50 | Seuil du facteur Équité |
-| `premium.filters` | `false` | Active `minEducationLevel` et `requiredInterestIds` |
-| `boost.enabled` | `false` | Active l'achat de boost |
+| Clé                                   | Défaut   | Effet                                                |
+| ------------------------------------- | -------- | ---------------------------------------------------- |
+| `matching.weights`                    | voir 3.2 | Poids des 8 composantes (somme validée à 1,0)        |
+| `matching.policy`                     | `HETERO` | Politique de mise en relation (ADR-019, question Q7) |
+| `matching.ageTolerance`               | 10       | Paramètre `T` de C1                                  |
+| `matching.maxCandidates`              | 500      | Plafond de scoring — le garant de la performance     |
+| `matching.minCompletionToPublish`     | 60       | Seuil E4                                             |
+| `matching.dailyLimitFree` / `Premium` | 10 / 30  | Quota de suggestions                                 |
+| `matching.likeLimitFree` / `Premium`  | 10 / 50  | Quota d'intérêts                                     |
+| `matching.newProfileBoostDays`        | 7        | Fenêtre du facteur Nouveauté                         |
+| `matching.fairnessImpressionCap`      | 50       | Seuil du facteur Équité                              |
+| `premium.filters`                     | `false`  | Active `minEducationLevel` et `requiredInterestIds`  |
+| `boost.enabled`                       | `false`  | Active l'achat de boost                              |
 
 ---
 

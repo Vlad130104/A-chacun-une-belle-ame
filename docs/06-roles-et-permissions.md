@@ -7,13 +7,13 @@ dispersée dans les contrôleurs et **aucune décision côté client**.
 
 ## 1. Deux populations distinctes
 
-| | Membres | Back-office |
-|---|---|---|
-| Identifiant | Numéro de téléphone | E-mail professionnel |
-| Authentification | OTP ou mot de passe | Mot de passe + **2FA obligatoire** |
-| Durée de session | 30 jours (refresh) | **8 heures**, non prolongeable |
-| Domaine | `app.<domaine>` | `admin.<domaine>` (séparé, ADR-014) |
-| Rôle | Aucune ligne `UserRole` | Une ou plusieurs lignes `UserRole` |
+|                  | Membres                 | Back-office                         |
+| ---------------- | ----------------------- | ----------------------------------- |
+| Identifiant      | Numéro de téléphone     | E-mail professionnel                |
+| Authentification | OTP ou mot de passe     | Mot de passe + **2FA obligatoire**  |
+| Durée de session | 30 jours (refresh)      | **8 heures**, non prolongeable      |
+| Domaine          | `app.<domaine>`         | `admin.<domaine>` (séparé, ADR-014) |
+| Rôle             | Aucune ligne `UserRole` | Une ou plusieurs lignes `UserRole`  |
 
 Un compte back-office **n'est pas** un compte membre : il ne possède ni profil, ni suggestions, ni conversations.
 Si une personne de l'équipe souhaite aussi utiliser le service, elle crée un compte membre distinct — un
@@ -34,14 +34,14 @@ PUBLIC
 
 ### Ce que chaque niveau ouvre
 
-| Niveau | Accès |
-|---|---|
-| `PUBLIC` | Vitrine, CGU, confidentialité, validation d'un code d'invitation, inscription, OTP, récupération |
-| `AUTH_PENDING` | `/auth/me`, dépôt KYC, création et complétion du profil, photos, préférences, consentements |
-| `AUTH` | Paramètres, sessions, appareils, notifications, blocage, signalement, confidentialité, export, suppression, abonnements (consultation) |
-| `VERIFIED` | **Suggestions, profils d'autrui, intérêts, matchs, conversations, messages, achat** |
-| `OWNER` | Modification et suppression de ses propres ressources |
-| `MEMBER` | Lecture et écriture dans une conversation |
+| Niveau         | Accès                                                                                                                                  |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `PUBLIC`       | Vitrine, CGU, confidentialité, validation d'un code d'invitation, inscription, OTP, récupération                                       |
+| `AUTH_PENDING` | `/auth/me`, dépôt KYC, création et complétion du profil, photos, préférences, consentements                                            |
+| `AUTH`         | Paramètres, sessions, appareils, notifications, blocage, signalement, confidentialité, export, suppression, abonnements (consultation) |
+| `VERIFIED`     | **Suggestions, profils d'autrui, intérêts, matchs, conversations, messages, achat**                                                    |
+| `OWNER`        | Modification et suppression de ses propres ressources                                                                                  |
+| `MEMBER`       | Lecture et écriture dans une conversation                                                                                              |
 
 **Le franchissement `AUTH → VERIFIED` est le cœur de la promesse produit.** Il est vérifié en base à chaque requête
 sensible (cache Redis 60 s, invalidé à tout changement de statut), jamais sur la seule foi du JWT (ADR-006).
@@ -68,59 +68,59 @@ Socket.IO. Un seul et même code : il ne peut pas y avoir de divergence entre le
 
 ### 3.1 Catalogue des permissions
 
-| Permission | Autorise |
-|---|---|
-| `users.read` | Consulter un compte, son profil, son historique |
-| `users.contact` | Contacter un membre depuis le support |
-| `users.sanction` | Restriction temporaire, suspension, levée de sanction |
-| `users.ban` | Bannissement définitif — **second valideur obligatoire** |
-| `users.edit` | Corriger une donnée de compte (motif obligatoire) |
-| `kyc.review` | Traiter la file de vérification, décider |
-| `kyc.view_document` | **Ouvrir une pièce d'identité** — motif obligatoire, URL 5 min, audit nominatif |
-| `moderation.read` | Consulter la file et les cas |
-| `moderation.act` | Appliquer une action de modération |
-| `moderation.content` | Approuver ou masquer une photo, un texte de profil |
-| `moderation.escalate` | Escalader vers un responsable |
-| `moderation.assign` | Attribuer un cas à un modérateur |
-| `content.manage` | CGU, charte, confidentialité, modèles de notification |
-| `billing.read` | Abonnements et transactions |
-| `billing.manage` | Créer et modifier offres et prix |
-| `billing.refund` | Rembourser — **second valideur obligatoire** |
-| `campaign.manage` | Campagnes de migration, codes d'invitation, offre de lancement |
-| `analytics.read` | Tableaux de bord agrégés |
-| `analytics.export` | Exporter des données agrégées |
-| `audit.read` | Consulter le journal d'audit |
-| `system.flags` | Modifier les feature flags |
-| `system.roles` | Attribuer ou retirer un rôle |
-| `system.read` | État des services et des intégrations |
+| Permission            | Autorise                                                                        |
+| --------------------- | ------------------------------------------------------------------------------- |
+| `users.read`          | Consulter un compte, son profil, son historique                                 |
+| `users.contact`       | Contacter un membre depuis le support                                           |
+| `users.sanction`      | Restriction temporaire, suspension, levée de sanction                           |
+| `users.ban`           | Bannissement définitif — **second valideur obligatoire**                        |
+| `users.edit`          | Corriger une donnée de compte (motif obligatoire)                               |
+| `kyc.review`          | Traiter la file de vérification, décider                                        |
+| `kyc.view_document`   | **Ouvrir une pièce d'identité** — motif obligatoire, URL 5 min, audit nominatif |
+| `moderation.read`     | Consulter la file et les cas                                                    |
+| `moderation.act`      | Appliquer une action de modération                                              |
+| `moderation.content`  | Approuver ou masquer une photo, un texte de profil                              |
+| `moderation.escalate` | Escalader vers un responsable                                                   |
+| `moderation.assign`   | Attribuer un cas à un modérateur                                                |
+| `content.manage`      | CGU, charte, confidentialité, modèles de notification                           |
+| `billing.read`        | Abonnements et transactions                                                     |
+| `billing.manage`      | Créer et modifier offres et prix                                                |
+| `billing.refund`      | Rembourser — **second valideur obligatoire**                                    |
+| `campaign.manage`     | Campagnes de migration, codes d'invitation, offre de lancement                  |
+| `analytics.read`      | Tableaux de bord agrégés                                                        |
+| `analytics.export`    | Exporter des données agrégées                                                   |
+| `audit.read`          | Consulter le journal d'audit                                                    |
+| `system.flags`        | Modifier les feature flags                                                      |
+| `system.roles`        | Attribuer ou retirer un rôle                                                    |
+| `system.read`         | État des services et des intégrations                                           |
 
 ### 3.2 Matrice rôles × permissions
 
-| Permission | SUPER_ADMIN | ADMIN | MODERATION_LEAD | MODERATOR | VERIFICATION_AGENT | SUPPORT | ANALYST |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| `users.read` | ✅ | ✅ | ✅ | ✅ | ✅¹ | ✅ | ❌ |
-| `users.contact` | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
-| `users.sanction` | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `users.ban` | ✅ | ✅ | ✅ | ❌² | ❌ | ❌ | ❌ |
-| `users.edit` | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `kyc.review` | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
-| `kyc.view_document` | ✅³ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
-| `moderation.read` | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
-| `moderation.act` | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `moderation.content` | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `moderation.escalate` | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
-| `moderation.assign` | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| `content.manage` | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `billing.read` | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ✅⁴ |
-| `billing.manage` | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `billing.refund` | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `campaign.manage` | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `analytics.read` | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ |
-| `analytics.export` | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅⁴ |
-| `audit.read` | ✅ | ✅ | ✅⁵ | ❌ | ❌ | ❌ | ❌ |
-| `system.flags` | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `system.roles` | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `system.read` | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Permission            | SUPER_ADMIN | ADMIN | MODERATION_LEAD | MODERATOR | VERIFICATION_AGENT | SUPPORT | ANALYST |
+| --------------------- | :---------: | :---: | :-------------: | :-------: | :----------------: | :-----: | :-----: |
+| `users.read`          |     ✅      |  ✅   |       ✅        |    ✅     |        ✅¹         |   ✅    |   ❌    |
+| `users.contact`       |     ✅      |  ✅   |       ✅        |    ✅     |         ❌         |   ✅    |   ❌    |
+| `users.sanction`      |     ✅      |  ✅   |       ✅        |    ✅     |         ❌         |   ❌    |   ❌    |
+| `users.ban`           |     ✅      |  ✅   |       ✅        |    ❌²    |         ❌         |   ❌    |   ❌    |
+| `users.edit`          |     ✅      |  ✅   |       ❌        |    ❌     |         ❌         |   ❌    |   ❌    |
+| `kyc.review`          |     ✅      |  ❌   |       ❌        |    ❌     |         ✅         |   ❌    |   ❌    |
+| `kyc.view_document`   |     ✅³     |  ❌   |       ❌        |    ❌     |         ✅         |   ❌    |   ❌    |
+| `moderation.read`     |     ✅      |  ✅   |       ✅        |    ✅     |         ❌         |   ✅    |   ❌    |
+| `moderation.act`      |     ✅      |  ✅   |       ✅        |    ✅     |         ❌         |   ❌    |   ❌    |
+| `moderation.content`  |     ✅      |  ✅   |       ✅        |    ✅     |         ❌         |   ❌    |   ❌    |
+| `moderation.escalate` |     ✅      |  ✅   |       ✅        |    ✅     |         ❌         |   ✅    |   ❌    |
+| `moderation.assign`   |     ✅      |  ✅   |       ✅        |    ❌     |         ❌         |   ❌    |   ❌    |
+| `content.manage`      |     ✅      |  ✅   |       ❌        |    ❌     |         ❌         |   ❌    |   ❌    |
+| `billing.read`        |     ✅      |  ✅   |       ❌        |    ❌     |         ❌         |   ✅    |   ✅⁴   |
+| `billing.manage`      |     ✅      |  ✅   |       ❌        |    ❌     |         ❌         |   ❌    |   ❌    |
+| `billing.refund`      |     ✅      |  ✅   |       ❌        |    ❌     |         ❌         |   ❌    |   ❌    |
+| `campaign.manage`     |     ✅      |  ✅   |       ❌        |    ❌     |         ❌         |   ❌    |   ❌    |
+| `analytics.read`      |     ✅      |  ✅   |       ✅        |    ❌     |         ❌         |   ❌    |   ✅    |
+| `analytics.export`    |     ✅      |  ✅   |       ❌        |    ❌     |         ❌         |   ❌    |   ✅⁴   |
+| `audit.read`          |     ✅      |  ✅   |       ✅⁵       |    ❌     |         ❌         |   ❌    |   ❌    |
+| `system.flags`        |     ✅      |  ❌   |       ❌        |    ❌     |         ❌         |   ❌    |   ❌    |
+| `system.roles`        |     ✅      |  ❌   |       ❌        |    ❌     |         ❌         |   ❌    |   ❌    |
+| `system.read`         |     ✅      |  ✅   |       ❌        |    ❌     |         ❌         |   ❌    |   ❌    |
 
 **Notes.**
 ¹ L'agent de vérification voit **uniquement** l'identité déclarée du membre en cours de traitement — pas ses
@@ -150,13 +150,13 @@ commercial ni système.
 
 ## 4. Opérations exigeant deux personnes
 
-| Opération | Proposé par | Validé par | Motivation |
-|---|---|---|---|
-| Bannissement définitif | Modérateur | Responsable ou administrateur | Irréversible pour le membre |
-| Remboursement | Administrateur | Second administrateur | Impact financier direct |
-| Modification d'une date de naissance vérifiée | Support | `SUPER_ADMIN` | Contourne le contrôle de majorité |
-| Attribution d'un rôle back-office | — | `SUPER_ADMIN` uniquement | Élévation de privilège |
-| Suppression manuelle d'un document KYC hors purge | Agent | `SUPER_ADMIN` | Destruction de preuve |
+| Opération                                         | Proposé par    | Validé par                    | Motivation                        |
+| ------------------------------------------------- | -------------- | ----------------------------- | --------------------------------- |
+| Bannissement définitif                            | Modérateur     | Responsable ou administrateur | Irréversible pour le membre       |
+| Remboursement                                     | Administrateur | Second administrateur         | Impact financier direct           |
+| Modification d'une date de naissance vérifiée     | Support        | `SUPER_ADMIN`                 | Contourne le contrôle de majorité |
+| Attribution d'un rôle back-office                 | —              | `SUPER_ADMIN` uniquement      | Élévation de privilège            |
+| Suppression manuelle d'un document KYC hors purge | Agent          | `SUPER_ADMIN`                 | Destruction de preuve             |
 
 Techniquement : `ModerationAction.approvedByUserId` doit être renseigné et **différent** de `performedByUserId`,
 sinon l'API renvoie 422 `MOD_SECOND_APPROVER_REQUIRED`.
@@ -168,21 +168,21 @@ sinon l'API renvoie 422 `MOD_SECOND_APPROVER_REQUIRED`.
 Toute action de cette liste écrit un `AdminAuditLog` **dans la même transaction** que l'action elle-même. Si
 l'écriture d'audit échoue, l'action est annulée — un acte non tracé ne doit pas exister.
 
-| Action journalisée | Contexte enregistré |
-|---|---|
-| `admin.login` / `admin.login_failed` | IP tronquée, agent, résultat 2FA |
-| `admin.user.viewed` | Identifiant consulté |
-| `kyc.document.viewed` | **Motif obligatoire**, document, durée de l'URL |
-| `kyc.decision` | Résultat, code de motif |
-| `user.suspended` / `user.banned` / `user.reinstated` | Motif, durée, second valideur |
-| `user.edited` | Valeurs avant/après (hors secrets) |
-| `moderation.action` | Type, cas, motif |
-| `role.granted` / `role.revoked` | Rôle, bénéficiaire |
-| `billing.refund` | Montant, devise, paiement, second valideur |
-| `content.updated` | Clé, version |
-| `flag.updated` | Clé, valeur avant/après |
-| `data.exported` | Périmètre, nombre d'enregistrements |
-| `campaign.created` / `campaign.updated` | Code, offre |
+| Action journalisée                                   | Contexte enregistré                             |
+| ---------------------------------------------------- | ----------------------------------------------- |
+| `admin.login` / `admin.login_failed`                 | IP tronquée, agent, résultat 2FA                |
+| `admin.user.viewed`                                  | Identifiant consulté                            |
+| `kyc.document.viewed`                                | **Motif obligatoire**, document, durée de l'URL |
+| `kyc.decision`                                       | Résultat, code de motif                         |
+| `user.suspended` / `user.banned` / `user.reinstated` | Motif, durée, second valideur                   |
+| `user.edited`                                        | Valeurs avant/après (hors secrets)              |
+| `moderation.action`                                  | Type, cas, motif                                |
+| `role.granted` / `role.revoked`                      | Rôle, bénéficiaire                              |
+| `billing.refund`                                     | Montant, devise, paiement, second valideur      |
+| `content.updated`                                    | Clé, version                                    |
+| `flag.updated`                                       | Clé, valeur avant/après                         |
+| `data.exported`                                      | Périmètre, nombre d'enregistrements             |
+| `campaign.created` / `campaign.updated`              | Code, offre                                     |
 
 **Alerte automatique** si un même compte consulte plus de 20 documents KYC en une heure, ou effectue plus de
 50 consultations de comptes en une heure. Un accès légitime en volume existe (traitement de file) ; l'alerte

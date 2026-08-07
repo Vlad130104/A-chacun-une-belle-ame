@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "À Chacun Une Belle Âme",
+    "slug": "a-chacun-une-belle-ame",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "acuba",
+    "userInterfaceStyle": "light",
+    "locales": {},
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "invalid.example.acuba",
+      "infoPlist": {
+        "NSCameraUsageDescription": "L'appareil photo est utilisé pour la vérification d'identité et l'ajout de photos de profil.",
+        "NSPhotoLibraryUsageDescription": "Vos photos servent uniquement à compléter votre profil."
+      }
+    },
+    "android": {
+      "package": "invalid.example.acuba",
+      "permissions": ["CAMERA", "READ_MEDIA_IMAGES"]
+    },
+    "extra": {
+      "commentaire": "bundleIdentifier et package sont des valeurs de substitution : les identifiants réels seront fixés à l'ouverture des comptes Apple et Google (question Q13 du cadrage)."
+    }
+  }
+}

@@ -1,0 +1,64 @@
+import { describe, expect, it } from '@jest/globals';
+import { EnvValidationError, listSimulatedProviders, validateEnv } from './env.schema';
+
+const baseEnv = {
+  DATABASE_URL: 'postgresql://u:p@localhost:5432/db?schema=app',
+  REDIS_URL: 'redis://localhost:6379',
+};
+
+describe('validation de la configuration', () => {
+  it('applique les valeurs par défaut documentées', () => {
+    const env = validateEnv(baseEnv);
+    expect(env.MINIMUM_AGE).toBe(18);
+    expect(env.PROCESS_ROLE).toBe('all');
+    expect(env.MATCHING_POLICY).toBe('HETERO');
+    expect(env.KYC_DOCUMENT_RETENTION_DAYS).toBe(90);
+  });
+
+  it('refuse une URL de base de données absente', () => {
+    expect(() => validateEnv({ REDIS_URL: 'redis://localhost:6379' })).toThrow(EnvValidationError);
+  });
+
+  it('refuse un âge minimum inférieur à 18 ans', () => {
+    expect(() => validateEnv({ ...baseEnv, MINIMUM_AGE: '16' })).toThrow(EnvValidationError);
+  });
+
+  it('refuse un seuil de photos incohérent', () => {
+    expect(() => validateEnv({ ...baseEnv, MAX_PHOTOS: '2', MIN_PHOTOS_TO_PUBLISH: '3' })).toThrow(
+      /MIN_PHOTOS_TO_PUBLISH/,
+    );
+  });
+
+  describe('garde-fou des intégrations simulées', () => {
+    it('empêche le démarrage en production avec un port critique simulé', () => {
+      expect(() =>
+        validateEnv({ ...baseEnv, NODE_ENV: 'production', SMS_PROVIDER: 'console' }),
+      ).toThrow(/ports critiques encore simulés/);
+    });
+
+    it('autorise le démarrage si la dérogation est posée explicitement', () => {
+      const env = validateEnv({
+        ...baseEnv,
+        NODE_ENV: 'production',
+        SMS_PROVIDER: 'console',
+        ALLOW_MOCK_PROVIDERS_IN_PRODUCTION: 'true',
+      });
+      expect(env.NODE_ENV).toBe('production');
+    });
+
+    it('laisse passer les ports simulés hors production', () => {
+      expect(() => validateEnv({ ...baseEnv, NODE_ENV: 'development' })).not.toThrow();
+    });
+
+    it('énumère les ports encore simulés', () => {
+      const env = validateEnv(baseEnv);
+      expect(listSimulatedProviders(env)).toEqual([
+        'SmsProvider',
+        'KycProvider',
+        'PaymentProvider',
+        'PushProvider',
+        'ContentModerationProvider',
+      ]);
+    });
+  });
+});

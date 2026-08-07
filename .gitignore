@@ -1,0 +1,28 @@
+node_modules/
+dist/
+build/
+.next/
+out/
+.expo/
+.turbo/
+coverage/
+*.tsbuildinfo
+
+# Secrets — jamais dans le dépôt (SECURITY.md §7)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+!prisma/**/*.key.example
+
+# Prisma
+prisma/migrations/**/shadow.db
+
+# Divers
+.DS_Store
+*.log
+npm-debug.log*
+pnpm-debug.log*
+playwright-report/
+test-results/

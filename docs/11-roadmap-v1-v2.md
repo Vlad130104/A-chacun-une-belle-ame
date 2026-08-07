@@ -23,13 +23,13 @@ Priorisée par ce qui débloque du revenu et de la confiance, pas par ce qui est
 
 ### V1.1 — Intégrations réelles ⭐ priorité absolue
 
-| Élément | Dépendance | Effort | Ce que ça débloque |
-|---|---|:--:|---|
-| **Passerelle SMS réelle** | Contrat (Q4) | 3 j | **L'ouverture publique elle-même** — rien ne fonctionne sans OTP réel |
-| **Agrégateur mobile money** | Contrat (Q3) | 3 sem | Tout le revenu |
-| **Passerelle carte** | Contrat | 2 sem | Diaspora, phase 2 |
-| **Prestataire KYC + vivacité** | Contrat (Q2) | 3 sem | Divise par 5 à 10 la charge de vérification manuelle |
-| **Push FCM réel** | Compte Firebase | 1 sem | Rétention (la notification est le principal levier de retour) |
+| Élément                        | Dépendance      | Effort | Ce que ça débloque                                                    |
+| ------------------------------ | --------------- | :----: | --------------------------------------------------------------------- |
+| **Passerelle SMS réelle**      | Contrat (Q4)    |  3 j   | **L'ouverture publique elle-même** — rien ne fonctionne sans OTP réel |
+| **Agrégateur mobile money**    | Contrat (Q3)    | 3 sem  | Tout le revenu                                                        |
+| **Passerelle carte**           | Contrat         | 2 sem  | Diaspora, phase 2                                                     |
+| **Prestataire KYC + vivacité** | Contrat (Q2)    | 3 sem  | Divise par 5 à 10 la charge de vérification manuelle                  |
+| **Push FCM réel**              | Compte Firebase | 1 sem  | Rétention (la notification est le principal levier de retour)         |
 
 **Toute l'abstraction est déjà livrée au MVP.** Chaque intégration consiste à écrire une implémentation de port et
 à basculer une variable d'environnement — aucune modification du domaine ni de l'application. Les délais ci-dessus
@@ -60,14 +60,14 @@ Prolongement de l'esprit WhatsApp (§5.6).
 
 ### V1.4 — Compléments (2 à 3 semaines cumulées)
 
-| Élément | Effort | Note |
-|---|:--:|---|
-| 2FA membre (interface) | 1 sem | Schéma et endpoints déjà livrés au MVP |
-| Modération de contenu assistée | 2 sem | Port `ContentModerationProvider` déjà en place |
-| Reporting financier par formule | 1 sem | Nécessite un volume de transactions réel |
-| Re-vérification aléatoire automatisée | 3 j | Règle planifiée, décision humaine |
-| Recherche par filtres (Premium) | 1 sem | Distincte des suggestions quotidiennes |
-| API WhatsApp Business | 2 sem | Validation Meta longue — à lancer tôt si retenu |
+| Élément                               | Effort | Note                                            |
+| ------------------------------------- | :----: | ----------------------------------------------- |
+| 2FA membre (interface)                | 1 sem  | Schéma et endpoints déjà livrés au MVP          |
+| Modération de contenu assistée        | 2 sem  | Port `ContentModerationProvider` déjà en place  |
+| Reporting financier par formule       | 1 sem  | Nécessite un volume de transactions réel        |
+| Re-vérification aléatoire automatisée |  3 j   | Règle planifiée, décision humaine               |
+| Recherche par filtres (Premium)       | 1 sem  | Distincte des suggestions quotidiennes          |
+| API WhatsApp Business                 | 2 sem  | Validation Meta longue — à lancer tôt si retenu |
 
 ---
 
@@ -109,15 +109,15 @@ modération avec prédiction de charge.
 
 ## 4. Ce qui restera volontairement hors périmètre
 
-| Élément | Raison |
-|---|---|
-| Chiffrement de bout en bout de la messagerie | Incompatible avec la modération, qui est la promesse centrale du produit (ADR-008) |
-| Géolocalisation précise / distance en kilomètres | Risque de traque physique disproportionné au bénéfice (ADR-011) |
-| Balayage rapide de profils | Contraire au positionnement « relation sérieuse » (cahier des charges §3.4) |
-| Achat de visibilité illimitée | Le boost est borné ; laisser l'argent dominer le classement détruirait la pertinence |
-| Import automatique de contacts | Interdit par principe : aucune donnée sans consentement explicite |
-| Enregistrement des appels | Créerait un actif de données plus dangereux que le risque traité |
-| Vérification par reconnaissance faciale propriétaire | Relève d'un prestataire spécialisé, pas d'une équipe produit |
+| Élément                                              | Raison                                                                               |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Chiffrement de bout en bout de la messagerie         | Incompatible avec la modération, qui est la promesse centrale du produit (ADR-008)   |
+| Géolocalisation précise / distance en kilomètres     | Risque de traque physique disproportionné au bénéfice (ADR-011)                      |
+| Balayage rapide de profils                           | Contraire au positionnement « relation sérieuse » (cahier des charges §3.4)          |
+| Achat de visibilité illimitée                        | Le boost est borné ; laisser l'argent dominer le classement détruirait la pertinence |
+| Import automatique de contacts                       | Interdit par principe : aucune donnée sans consentement explicite                    |
+| Enregistrement des appels                            | Créerait un actif de données plus dangereux que le risque traité                     |
+| Vérification par reconnaissance faciale propriétaire | Relève d'un prestataire spécialisé, pas d'une équipe produit                         |
 
 ---
 
@@ -125,15 +125,15 @@ modération avec prédiction de charge.
 
 Ces éléments ne dépendent pas de l'équipe technique et **conditionnent** le calendrier ci-dessus :
 
-| Dépendance | Bloque | Délai typique |
-|---|---|---|
-| Contrat passerelle SMS | **L'ouverture publique** | 2 à 6 semaines |
-| Contrat agrégateur mobile money | Tout le revenu | 4 à 12 semaines (vérifications commerciales) |
-| Contrat prestataire KYC | Automatisation de la vérification | 4 à 8 semaines |
-| Validation juridique (Q5) | L'ouverture publique | 3 à 8 semaines |
-| Recrutement des modérateurs (Q9) | L'ouverture publique | 2 à 6 semaines |
-| Comptes Apple et Google | Distribution mobile en magasin | 1 à 4 semaines + revue |
-| Étude de prix locale | Grille tarifaire (Q8) | 2 à 4 semaines |
+| Dépendance                       | Bloque                            | Délai typique                                |
+| -------------------------------- | --------------------------------- | -------------------------------------------- |
+| Contrat passerelle SMS           | **L'ouverture publique**          | 2 à 6 semaines                               |
+| Contrat agrégateur mobile money  | Tout le revenu                    | 4 à 12 semaines (vérifications commerciales) |
+| Contrat prestataire KYC          | Automatisation de la vérification | 4 à 8 semaines                               |
+| Validation juridique (Q5)        | L'ouverture publique              | 3 à 8 semaines                               |
+| Recrutement des modérateurs (Q9) | L'ouverture publique              | 2 à 6 semaines                               |
+| Comptes Apple et Google          | Distribution mobile en magasin    | 1 à 4 semaines + revue                       |
+| Étude de prix locale             | Grille tarifaire (Q8)             | 2 à 4 semaines                               |
 
 **À lancer dès maintenant, en parallèle du développement.** Les contrats prestataires et la validation juridique sont
 les chemins critiques réels du projet — pas le code. Un MVP terminé sans contrat SMS ne peut ouvrir à personne.

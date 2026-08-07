@@ -1,0 +1,53 @@
+{
+  "name": "a-chacun-une-belle-ame",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Plateforme SaaS de rencontres sérieuses réservée aux personnes majeures",
+  "packageManager": "pnpm@10.11.0",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:unit": "turbo run test:unit",
+    "test:int": "turbo run test:int",
+    "format": "prettier --write \"**/*.{ts,tsx,md,json,yaml,yml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,md,json,yaml,yml}\"",
+    "docker:up": "docker compose -f docker/docker-compose.yml up -d",
+    "docker:down": "docker compose -f docker/docker-compose.yml down",
+    "docker:reset": "docker compose -f docker/docker-compose.yml down -v && pnpm docker:up",
+    "db:generate": "prisma generate --schema prisma/schema.prisma",
+    "db:migrate": "prisma migrate dev --schema prisma/schema.prisma",
+    "db:migrate:deploy": "prisma migrate deploy --schema prisma/schema.prisma",
+    "db:studio": "prisma studio --schema prisma/schema.prisma",
+    "db:seed": "tsx prisma/seed/index.ts",
+    "db:validate": "prisma validate --schema prisma/schema.prisma",
+    "api:openapi:lint": "redocly lint docs/api/openapi.yaml",
+    "setup": "node scripts/check-env.mjs && pnpm install && pnpm db:generate",
+    "prepare": "node scripts/check-env.mjs"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "esbuild",
+      "prisma",
+      "protobufjs",
+      "sharp"
+    ]
+  },
+  "devDependencies": {
+    "@prisma/client": "^6.8.2",
+    "@redocly/cli": "^1.34.2",
+    "prettier": "^3.5.3",
+    "prisma": "^6.8.2",
+    "tsx": "^4.19.4",
+    "turbo": "^2.5.3",
+    "typescript": "^5.8.3"
+  }
+}

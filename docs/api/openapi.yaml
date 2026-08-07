@@ -278,7 +278,8 @@ paths:
               properties:
                 type:
                   type: string
-                  enum: [NATIONAL_ID, PASSPORT, DRIVER_LICENSE, CONSULAR_CARD, SELFIE, LIVENESS_CAPTURE]
+                  enum:
+                    [NATIONAL_ID, PASSPORT, DRIVER_LICENSE, CONSULAR_CARD, SELFIE, LIVENESS_CAPTURE]
                 file:
                   type: string
                   format: binary
@@ -967,7 +968,8 @@ paths:
       parameters:
         - name: status
           in: query
-          schema: { type: string, enum: [OPEN, ASSIGNED, AWAITING_USER, ESCALATED, RESOLVED, DISMISSED] }
+          schema:
+            { type: string, enum: [OPEN, ASSIGNED, AWAITING_USER, ESCALATED, RESOLVED, DISMISSED] }
         - name: priority
           in: query
           schema: { type: string, enum: [P0_CRITICAL, P1_HIGH, P2_NORMAL, P3_LOW] }
@@ -1016,9 +1018,19 @@ paths:
               properties:
                 type:
                   type: string
-                  enum: [WARNING, INFORMATION_REQUEST, PHOTO_HIDDEN, CONTENT_REMOVED,
-                         TEMPORARY_RESTRICTION, SUSPENSION, BAN, REVERIFICATION_REQUIRED,
-                         DISMISSED, ESCALATED]
+                  enum:
+                    [
+                      WARNING,
+                      INFORMATION_REQUEST,
+                      PHOTO_HIDDEN,
+                      CONTENT_REMOVED,
+                      TEMPORARY_RESTRICTION,
+                      SUSPENSION,
+                      BAN,
+                      REVERIFICATION_REQUIRED,
+                      DISMISSED,
+                      ESCALATED,
+                    ]
                 reasonCode: { type: string }
                 note: { type: string, maxLength: 1500 }
                 effectiveUntil: { type: string, format: date-time }
@@ -1214,7 +1226,14 @@ components:
             properties:
               type:
                 type: string
-                enum: [TERMS_OF_SERVICE, PRIVACY_POLICY, CODE_OF_CONDUCT, KYC_PROCESSING, MARKETING_COMMUNICATIONS]
+                enum:
+                  [
+                    TERMS_OF_SERVICE,
+                    PRIVACY_POLICY,
+                    CODE_OF_CONDUCT,
+                    KYC_PROCESSING,
+                    MARKETING_COMMUNICATIONS,
+                  ]
               documentVersion: { type: string }
               granted: { type: boolean }
         device: { $ref: '#/components/schemas/DeviceInfo' }
@@ -1252,10 +1271,22 @@ components:
         id: { type: string }
         accountStatus:
           type: string
-          enum: [PENDING_OTP, ACTIVE, PAUSED, RESTRICTED, SUSPENDED, BANNED, BLOCKED_UNDERAGE, PENDING_DELETION, DELETED]
+          enum:
+            [
+              PENDING_OTP,
+              ACTIVE,
+              PAUSED,
+              RESTRICTED,
+              SUSPENDED,
+              BANNED,
+              BLOCKED_UNDERAGE,
+              PENDING_DELETION,
+              DELETED,
+            ]
         verificationStatus:
           type: string
-          enum: [NOT_STARTED, PENDING, IN_REVIEW, VERIFIED, REJECTED, ADDITIONAL_REQUIRED, SUSPENDED]
+          enum:
+            [NOT_STARTED, PENDING, IN_REVIEW, VERIFIED, REJECTED, ADDITIONAL_REQUIRED, SUSPENDED]
         profileCompletionRate: { type: integer, minimum: 0, maximum: 100 }
         isPremium: { type: boolean }
         nextOnboardingStep:
@@ -1448,7 +1479,12 @@ components:
       type: object
       properties:
         id: { type: string }
-        status: { type: string, enum: [UPLOADING, PENDING_MODERATION, APPROVED, REJECTED, HIDDEN_BY_MODERATION, DELETED] }
+        status:
+          {
+            type: string,
+            enum:
+              [UPLOADING, PENDING_MODERATION, APPROVED, REJECTED, HIDDEN_BY_MODERATION, DELETED],
+          }
         position: { type: integer }
         url:
           type: string
@@ -1485,7 +1521,11 @@ components:
       properties:
         id: { type: string }
         matchId: { type: string }
-        status: { type: string, enum: [OPEN, LOCKED_BY_BLOCK, LOCKED_BY_UNMATCH, LOCKED_BY_MODERATION, ARCHIVED] }
+        status:
+          {
+            type: string,
+            enum: [OPEN, LOCKED_BY_BLOCK, LOCKED_BY_UNMATCH, LOCKED_BY_MODERATION, ARCHIVED],
+          }
         peer: { $ref: '#/components/schemas/PublicProfile' }
         lastMessageAt:
           oneOf: [{ type: string, format: date-time }, { type: 'null' }]
@@ -1523,9 +1563,20 @@ components:
         targetId: { type: string }
         category:
           type: string
-          enum: [FAKE_PROFILE, IDENTITY_THEFT, FINANCIAL_SOLICITATION, SCAM_SUSPICION,
-                 HARASSMENT, HATE_SPEECH, SEXUAL_CONTENT, INAPPROPRIATE_PHOTO,
-                 UNDERAGE_SUSPICION, SPAM, OTHER]
+          enum:
+            [
+              FAKE_PROFILE,
+              IDENTITY_THEFT,
+              FINANCIAL_SOLICITATION,
+              SCAM_SUSPICION,
+              HARASSMENT,
+              HATE_SPEECH,
+              SEXUAL_CONTENT,
+              INAPPROPRIATE_PHOTO,
+              UNDERAGE_SUSPICION,
+              SPAM,
+              OTHER,
+            ]
         description: { type: string, maxLength: 1500 }
 
     ModerationCase:
@@ -1534,7 +1585,8 @@ components:
         id: { type: string }
         subjectUserId: { type: string }
         priority: { type: string, enum: [P0_CRITICAL, P1_HIGH, P2_NORMAL, P3_LOW] }
-        status: { type: string, enum: [OPEN, ASSIGNED, AWAITING_USER, ESCALATED, RESOLVED, DISMISSED] }
+        status:
+          { type: string, enum: [OPEN, ASSIGNED, AWAITING_USER, ESCALATED, RESOLVED, DISMISSED] }
         reportCount: { type: integer }
         slaDueAt: { type: string, format: date-time }
         overdue: { type: boolean }

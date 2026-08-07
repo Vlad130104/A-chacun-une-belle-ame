@@ -1,7 +1,7 @@
 # Phase A — Audit et cadrage
 
 **Produit :** « À Chacun Une Belle Âme » — plateforme SaaS de rencontres sérieuses réservée aux personnes majeures
-**Document :** cadrage technique et produit, en prolongement du *Cahier des charges fonctionnel & technique v1.0*
+**Document :** cadrage technique et produit, en prolongement du _Cahier des charges fonctionnel & technique v1.0_
 **Statut :** proposition d'équipe technique — à valider par le porteur de projet
 **Date :** août 2026
 
@@ -36,14 +36,14 @@ lentement), et le **parcours de migration doit être traçable** campagne par ca
 
 ### 1.2 Contraintes de contexte qui structurent tout le reste
 
-| Contrainte | Conséquence produit / technique directe |
-|---|---|
-| Marchés Cameroun, Bénin, Côte d'Ivoire | Paiement **mobile money d'abord**, carte en second. Devises **XAF / XOF sans sous-unité**. |
+| Contrainte                                           | Conséquence produit / technique directe                                                                                             |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Marchés Cameroun, Bénin, Côte d'Ivoire               | Paiement **mobile money d'abord**, carte en second. Devises **XAF / XOF sans sous-unité**.                                          |
 | Réseaux mobiles lents, smartphones d'entrée de gamme | Budget de poids par écran, images agressivement compressées, pagination par curseur, hors-ligne tolérant, pas d'animation coûteuse. |
-| Inscription par téléphone, pas par e-mail | L'identifiant principal est le **numéro E.164**, l'e-mail est secondaire et facultatif. |
-| Vérification d'identité obligatoire | Un **sas d'onboarding** en plusieurs étapes courtes, et un back-office de revue humaine opérationnel **au jour 1**. |
-| Communauté existante de 9 000 membres | **Aucun import automatique** de contacts. Migration par lien/code d'invitation avec consentement explicite. |
-| Français unique au lancement | i18n **préparée dans le code** (clés de traduction), une seule locale livrée. |
+| Inscription par téléphone, pas par e-mail            | L'identifiant principal est le **numéro E.164**, l'e-mail est secondaire et facultatif.                                             |
+| Vérification d'identité obligatoire                  | Un **sas d'onboarding** en plusieurs étapes courtes, et un back-office de revue humaine opérationnel **au jour 1**.                 |
+| Communauté existante de 9 000 membres                | **Aucun import automatique** de contacts. Migration par lien/code d'invitation avec consentement explicite.                         |
+| Français unique au lancement                         | i18n **préparée dans le code** (clés de traduction), une seule locale livrée.                                                       |
 
 ### 1.3 Ce que le produit n'est pas
 
@@ -59,17 +59,17 @@ Rappel du cahier des charges, à traiter comme des contraintes de conception et 
 
 ### 2.1 Rôles côté membre
 
-| Rôle | Description | Accès |
-|---|---|---|
-| Visiteur | Non authentifié | Vitrine, présentation, CGU, politique de confidentialité, page de migration |
-| Compte créé (non vérifié OTP) | Téléphone saisi, OTP non validé | Écran OTP uniquement |
-| Compte authentifié non éligible | OTP validé, date de naissance sous l'âge minimum | Compte **bloqué immédiatement et définitivement** — aucun accès produit |
-| Compte authentifié non vérifié | OTP validé, majeur déclaré, KYC non fait | Complétion de profil, dépôt KYC. **Aucune découverte, aucun message** |
-| Membre vérifié gratuit | KYC approuvé | Découverte, intérêts, matchs, messagerie, signalement, blocage |
-| Membre vérifié Premium | Abonnement actif | + filtres avancés, visibilité renforcée, quota de suggestions élargi, boost |
-| Membre en pause | A suspendu son profil | Conserve ses conversations, disparaît de la découverte |
-| Membre restreint | Sanction temporaire | Lecture seule ou envoi bloqué selon la sanction |
-| Membre suspendu / banni | Sanction lourde | Aucun accès, session révoquée, ré-inscription empêchée |
+| Rôle                            | Description                                      | Accès                                                                       |
+| ------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------- |
+| Visiteur                        | Non authentifié                                  | Vitrine, présentation, CGU, politique de confidentialité, page de migration |
+| Compte créé (non vérifié OTP)   | Téléphone saisi, OTP non validé                  | Écran OTP uniquement                                                        |
+| Compte authentifié non éligible | OTP validé, date de naissance sous l'âge minimum | Compte **bloqué immédiatement et définitivement** — aucun accès produit     |
+| Compte authentifié non vérifié  | OTP validé, majeur déclaré, KYC non fait         | Complétion de profil, dépôt KYC. **Aucune découverte, aucun message**       |
+| Membre vérifié gratuit          | KYC approuvé                                     | Découverte, intérêts, matchs, messagerie, signalement, blocage              |
+| Membre vérifié Premium          | Abonnement actif                                 | + filtres avancés, visibilité renforcée, quota de suggestions élargi, boost |
+| Membre en pause                 | A suspendu son profil                            | Conserve ses conversations, disparaît de la découverte                      |
+| Membre restreint                | Sanction temporaire                              | Lecture seule ou envoi bloqué selon la sanction                             |
+| Membre suspendu / banni         | Sanction lourde                                  | Aucun accès, session révoquée, ré-inscription empêchée                      |
 
 **Décision structurante :** la messagerie et la découverte exigent le statut **vérifié**. Un profil non vérifié ne
 peut ni voir, ni être vu, ni écrire. C'est la traduction technique de « aucun compte pleinement activé sans
@@ -77,15 +77,15 @@ vérification » et c'est ce qui rend crédible l'objectif de 90 % de profils v�
 
 ### 2.2 Rôles côté back-office
 
-| Rôle | Peut faire | Ne peut pas faire |
-|---|---|---|
-| Super administrateur | Tout, y compris gestion des rôles et des feature flags | — (mais toute action est journalisée et non modifiable) |
-| Administrateur | Utilisateurs, contenus, offres commerciales, paramètres | Changer les rôles, accéder aux secrets |
-| Responsable de modération | Attribuer, escalader, décider les sanctions lourdes | Gestion commerciale |
-| Modérateur | Traiter la file, sanctions légères, proposer une sanction lourde | Bannir définitivement seul, voir les données de paiement |
-| Agent de vérification (KYC) | Traiter la file de vérification, voir les pièces | Voir les conversations, gérer les sanctions |
-| Support client | Voir un compte, historique, relancer, ouvrir un cas | Voir les pièces d'identité, sanctionner |
-| Analyste (lecture seule) | Tableaux de bord agrégés | Toute donnée nominative, tout export nominatif |
+| Rôle                        | Peut faire                                                       | Ne peut pas faire                                        |
+| --------------------------- | ---------------------------------------------------------------- | -------------------------------------------------------- |
+| Super administrateur        | Tout, y compris gestion des rôles et des feature flags           | — (mais toute action est journalisée et non modifiable)  |
+| Administrateur              | Utilisateurs, contenus, offres commerciales, paramètres          | Changer les rôles, accéder aux secrets                   |
+| Responsable de modération   | Attribuer, escalader, décider les sanctions lourdes              | Gestion commerciale                                      |
+| Modérateur                  | Traiter la file, sanctions légères, proposer une sanction lourde | Bannir définitivement seul, voir les données de paiement |
+| Agent de vérification (KYC) | Traiter la file de vérification, voir les pièces                 | Voir les conversations, gérer les sanctions              |
+| Support client              | Voir un compte, historique, relancer, ouvrir un cas              | Voir les pièces d'identité, sanctionner                  |
+| Analyste (lecture seule)    | Tableaux de bord agrégés                                         | Toute donnée nominative, tout export nominatif           |
 
 **Décision :** le rôle « agent de vérification » est **séparé** du rôle « modérateur ». La consultation d'une pièce
 d'identité est l'accès le plus sensible de la plateforme ; il ne doit pas être un effet de bord du droit de modérer.
@@ -100,18 +100,18 @@ confirmés par un rôle supérieur. Aucune sanction lourde irréversible n'est p
 
 ### 3.1 Inclus — tranches verticales livrées
 
-| # | Tranche | Contenu MVP | Exclusions explicites de la tranche |
-|---|---|---|---|
-| 1 | Infrastructure & authentification | Monorepo, Docker Compose, CI, inscription téléphone + OTP, e-mail/mot de passe secondaire, sessions, JWT court + refresh rotatif haché, déconnexion d'un/tous les appareils, rate limiting, verrouillage progressif, récupération de compte, journalisation | 2FA **activable** (schéma et endpoints prévus, UI non livrée) |
-| 2 | Majorité & identité | Date de naissance obligatoire, âge calculé **côté serveur**, refus immédiat des mineurs, dépôt pièce + selfie, machine à états de vérification (7 statuts), file de revue back-office, décisions journalisées, badge vérifié, verrouillage de la date de naissance, re-vérification, adaptateur KYC | Vivacité réelle (interface prévue, fournisseur simulé), OCR automatique |
-| 3 | Profils & photos | Tous les champs du cahier des charges, préférences, 3 à 6 photos, pipeline média (validation, EXIF strippé, compression, miniatures, stockage privé, URLs signées), file de modération photo, taux de complétion, statuts actif/pause/désactivé, dernière activité floutée | Vidéos de profil, vérification photo par IA propriétaire |
-| 4 | Découverte & matching | Score déterministe documenté, quota quotidien, intérêt envoyé/reçu/refusé, match mutuel, annulation, exclusions (vus, bloqués, suspendus, non vérifiés, préférences incompatibles), filtres Premium derrière feature flag | Signaux comportementaux, ML, recommandation apprise |
-| 5 | Messagerie | Conversation créée automatiquement au match, envoi impossible sans match (**vérifié côté serveur**), temps réel Socket.IO, statuts envoyé/livré/lu, pagination curseur, notifications, blocage et signalement depuis la conversation, anti-spam, pièces jointes contrôlées, suppression logique, conservation configurable, audit modération | **Appels audio/vidéo (WebRTC)** — reportés V1, architecture préparée |
-| 6 | Sécurité & modération | Signalement 7 catégories, cas de modération avec priorité/SLA/assignation/historique/décision, 9 types d'action, détection par règles (9 schémas), liste noire des comptes liés, charte acceptée à l'inscription, tableau de bord de modération avec SLA 24 h | Modération de contenu par IA tierce (interface prévue, règles simples au MVP) |
-| 7 | Abonnements & paiements | Plans mensuel/trimestriel/annuel, boost à l'unité, abstraction `PaymentProvider`, **fournisseur simulé « Mode test »**, cycle de vie complet (actif, échec, renouvellement, annulation, remboursement admin), webhooks vérifiés et idempotents, reçus, historique | Intégration réelle mobile money / carte — dépend d'un contrat prestataire (voir §8) |
-| 8 | Notifications | In-app, push (adaptateur FCM), e-mail, SMS ; 8 déclencheurs MVP ; préférences utilisateur avec catégorie « sécurité » non désactivable ; file BullMQ, réessais, anti-doublon | Campagnes marketing segmentées |
-| 9 | Back-office | 7 sections (tableau de bord, utilisateurs, vérification, modération, contenus, commercial, audit), RBAC, journal d'audit inaltérable en append-only | Reporting financier avancé, exports BI |
-| 10 | Analytics & migration WhatsApp | Événements produit pseudonymisés, 13 indicateurs du §12, lien/code d'invitation traçable, campagnes, offre de lancement configurable, période Premium offerte, anti-abus | Import automatique de membres (**interdit par principe**) |
+| #   | Tranche                           | Contenu MVP                                                                                                                                                                                                                                                                                                                                  | Exclusions explicites de la tranche                                                 |
+| --- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| 1   | Infrastructure & authentification | Monorepo, Docker Compose, CI, inscription téléphone + OTP, e-mail/mot de passe secondaire, sessions, JWT court + refresh rotatif haché, déconnexion d'un/tous les appareils, rate limiting, verrouillage progressif, récupération de compte, journalisation                                                                                  | 2FA **activable** (schéma et endpoints prévus, UI non livrée)                       |
+| 2   | Majorité & identité               | Date de naissance obligatoire, âge calculé **côté serveur**, refus immédiat des mineurs, dépôt pièce + selfie, machine à états de vérification (7 statuts), file de revue back-office, décisions journalisées, badge vérifié, verrouillage de la date de naissance, re-vérification, adaptateur KYC                                          | Vivacité réelle (interface prévue, fournisseur simulé), OCR automatique             |
+| 3   | Profils & photos                  | Tous les champs du cahier des charges, préférences, 3 à 6 photos, pipeline média (validation, EXIF strippé, compression, miniatures, stockage privé, URLs signées), file de modération photo, taux de complétion, statuts actif/pause/désactivé, dernière activité floutée                                                                   | Vidéos de profil, vérification photo par IA propriétaire                            |
+| 4   | Découverte & matching             | Score déterministe documenté, quota quotidien, intérêt envoyé/reçu/refusé, match mutuel, annulation, exclusions (vus, bloqués, suspendus, non vérifiés, préférences incompatibles), filtres Premium derrière feature flag                                                                                                                    | Signaux comportementaux, ML, recommandation apprise                                 |
+| 5   | Messagerie                        | Conversation créée automatiquement au match, envoi impossible sans match (**vérifié côté serveur**), temps réel Socket.IO, statuts envoyé/livré/lu, pagination curseur, notifications, blocage et signalement depuis la conversation, anti-spam, pièces jointes contrôlées, suppression logique, conservation configurable, audit modération | **Appels audio/vidéo (WebRTC)** — reportés V1, architecture préparée                |
+| 6   | Sécurité & modération             | Signalement 7 catégories, cas de modération avec priorité/SLA/assignation/historique/décision, 9 types d'action, détection par règles (9 schémas), liste noire des comptes liés, charte acceptée à l'inscription, tableau de bord de modération avec SLA 24 h                                                                                | Modération de contenu par IA tierce (interface prévue, règles simples au MVP)       |
+| 7   | Abonnements & paiements           | Plans mensuel/trimestriel/annuel, boost à l'unité, abstraction `PaymentProvider`, **fournisseur simulé « Mode test »**, cycle de vie complet (actif, échec, renouvellement, annulation, remboursement admin), webhooks vérifiés et idempotents, reçus, historique                                                                            | Intégration réelle mobile money / carte — dépend d'un contrat prestataire (voir §8) |
+| 8   | Notifications                     | In-app, push (adaptateur FCM), e-mail, SMS ; 8 déclencheurs MVP ; préférences utilisateur avec catégorie « sécurité » non désactivable ; file BullMQ, réessais, anti-doublon                                                                                                                                                                 | Campagnes marketing segmentées                                                      |
+| 9   | Back-office                       | 7 sections (tableau de bord, utilisateurs, vérification, modération, contenus, commercial, audit), RBAC, journal d'audit inaltérable en append-only                                                                                                                                                                                          | Reporting financier avancé, exports BI                                              |
+| 10  | Analytics & migration WhatsApp    | Événements produit pseudonymisés, 13 indicateurs du §12, lien/code d'invitation traçable, campagnes, offre de lancement configurable, période Premium offerte, anti-abus                                                                                                                                                                     | Import automatique de membres (**interdit par principe**)                           |
 
 ### 3.2 Trois façades livrées
 
@@ -135,16 +135,16 @@ implémente pas.
 
 ### V1 (2 à 3 mois après le MVP)
 
-| Fonction | Pourquoi reportée | Dépendances préparées au MVP |
-|---|---|---|
+| Fonction                                         | Pourquoi reportée                                                                                                       | Dépendances préparées au MVP                                                    |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
 | Appels audio et vidéo sans divulgation du numéro | WebRTC + serveurs TURN + modération d'appel = un chantier à part entière ; à ne lancer qu'une fois la messagerie stable | Conversation comme agrégat, permissions par conversation, événements de domaine |
-| Communautés et groupes thématiques | Prolonge WhatsApp mais démultiplie la surface de modération | Modèle de modération générique (cible = profil, photo, message, **ou contenu**) |
-| Événements et billetterie | Dépend d'un paiement réel opérationnel et de la logistique terrain | `PaymentProvider`, plans et achats à l'unité déjà génériques |
-| Intégration réelle mobile money + carte | Dépend d'un contrat prestataire signé | Abstraction `PaymentProvider`, webhooks idempotents, réconciliation |
-| Vivacité KYC réelle et OCR | Dépend d'un contrat prestataire signé | Adaptateur KYC, machine à états inchangée |
-| 2FA utilisateur (UI complète) | Non bloquant au lancement | Schéma, endpoints, secrets chiffrés prévus |
-| API WhatsApp Business pour les annonces | Validation Meta longue ; le lien de migration suffit au lancement | Campagnes et codes d'invitation traçables |
-| Reporting financier par formule | Nécessite un volume de transactions réel | Événements de paiement, devise explicite, montants en unité minimale |
+| Communautés et groupes thématiques               | Prolonge WhatsApp mais démultiplie la surface de modération                                                             | Modèle de modération générique (cible = profil, photo, message, **ou contenu**) |
+| Événements et billetterie                        | Dépend d'un paiement réel opérationnel et de la logistique terrain                                                      | `PaymentProvider`, plans et achats à l'unité déjà génériques                    |
+| Intégration réelle mobile money + carte          | Dépend d'un contrat prestataire signé                                                                                   | Abstraction `PaymentProvider`, webhooks idempotents, réconciliation             |
+| Vivacité KYC réelle et OCR                       | Dépend d'un contrat prestataire signé                                                                                   | Adaptateur KYC, machine à états inchangée                                       |
+| 2FA utilisateur (UI complète)                    | Non bloquant au lancement                                                                                               | Schéma, endpoints, secrets chiffrés prévus                                      |
+| API WhatsApp Business pour les annonces          | Validation Meta longue ; le lien de migration suffit au lancement                                                       | Campagnes et codes d'invitation traçables                                       |
+| Reporting financier par formule                  | Nécessite un volume de transactions réel                                                                                | Événements de paiement, devise explicite, montants en unité minimale            |
 
 ### V2
 
@@ -251,23 +251,23 @@ documentation et l'interface :
 > car la modération, le traitement des signalements et la lutte contre l'arnaque sentimentale l'exigent.
 
 Annoncer du bout-en-bout tout en modérant les contenus serait une déclaration fausse aux utilisateurs. Nous
-recommandons de l'assumer explicitement dans les CGU : *« vos messages peuvent être examinés en cas de signalement »*
+recommandons de l'assumer explicitement dans les CGU : _« vos messages peuvent être examinés en cas de signalement »_
 est un argument de confiance sur une plateforme de rencontres sérieuses, pas une faiblesse.
 
 ### 6.4 Menaces prioritaires identifiées
 
-| Menace | Gravité | Réponse MVP |
-|---|---|---|
-| Arnaque sentimentale (romance scam) | Critique | Catégorie de signalement dédiée, détection par règles (demandes d'argent, discours pressant, refus de vérification), priorité haute dans la file, avertissement in-app dans la conversation |
-| Faux profils / usurpation d'identité | Critique | KYC obligatoire, selfie comparé, badge vérifié, re-vérification aléatoire |
-| Inscription de mineurs | Critique | Contrôle serveur, KYC, bannissement, empêchement de recréation |
-| Recréation de comptes bannis | Élevée | Empreinte d'appareil, numéro haché conservé en liste noire, corrélation des comptes liés |
-| Harcèlement / sollicitation non désirée | Élevée | Messagerie sur consentement mutuel, blocage immédiat, anti-spam |
-| Extorsion à partir de photos intimes | Élevée | Modération des pièces jointes, signalement en un geste, procédure d'escalade |
-| Fuite des pièces d'identité | Critique | Séparation, chiffrement, accès journalisé, conservation minimale, suppression contrôlée |
-| Compromission d'un compte administrateur | Critique | 2FA obligatoire sur le back-office, IP autorisées optionnelles, audit, sessions courtes |
-| Fraude au paiement / rejeu de webhook | Élevée | Signature vérifiée, idempotence, réconciliation, aucun stockage de données carte |
-| Énumération d'utilisateurs par le formulaire | Moyenne | Réponses uniformes, temporisation constante, rate limiting |
+| Menace                                       | Gravité  | Réponse MVP                                                                                                                                                                                 |
+| -------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Arnaque sentimentale (romance scam)          | Critique | Catégorie de signalement dédiée, détection par règles (demandes d'argent, discours pressant, refus de vérification), priorité haute dans la file, avertissement in-app dans la conversation |
+| Faux profils / usurpation d'identité         | Critique | KYC obligatoire, selfie comparé, badge vérifié, re-vérification aléatoire                                                                                                                   |
+| Inscription de mineurs                       | Critique | Contrôle serveur, KYC, bannissement, empêchement de recréation                                                                                                                              |
+| Recréation de comptes bannis                 | Élevée   | Empreinte d'appareil, numéro haché conservé en liste noire, corrélation des comptes liés                                                                                                    |
+| Harcèlement / sollicitation non désirée      | Élevée   | Messagerie sur consentement mutuel, blocage immédiat, anti-spam                                                                                                                             |
+| Extorsion à partir de photos intimes         | Élevée   | Modération des pièces jointes, signalement en un geste, procédure d'escalade                                                                                                                |
+| Fuite des pièces d'identité                  | Critique | Séparation, chiffrement, accès journalisé, conservation minimale, suppression contrôlée                                                                                                     |
+| Compromission d'un compte administrateur     | Critique | 2FA obligatoire sur le back-office, IP autorisées optionnelles, audit, sessions courtes                                                                                                     |
+| Fraude au paiement / rejeu de webhook        | Élevée   | Signature vérifiée, idempotence, réconciliation, aucun stockage de données carte                                                                                                            |
+| Énumération d'utilisateurs par le formulaire | Moyenne  | Réponses uniformes, temporisation constante, rate limiting                                                                                                                                  |
 
 Le fichier `SECURITY.md` complet (modèle de menace, actifs, procédure d'incident, divulgation responsable,
 checklist avant production) est un livrable de la Phase B.
@@ -276,22 +276,22 @@ checklist avant production) est un livrable de la Phase B.
 
 ## 7. Risques majeurs
 
-| # | Risque | Prob. | Impact | Réponse proposée |
-|---|---|---|---|---|
-| R1 | **Aucun prestataire KYC contractualisé** au démarrage → parcours de vérification non fonctionnel en production | Élevée | Critique | Adaptateur + fournisseur simulé dès le MVP ; **revue humaine dans le back-office comme mode dégradé viable au lancement** (un agent compare pièce et selfie). Le produit peut ouvrir sans KYC automatique, pas sans KYC du tout. |
-| R2 | **Aucun agrégateur mobile money contractualisé** → pas de revenu au lancement | Élevée | Élevé | `PaymentProvider` + fournisseur simulé « Mode test ». Le MVP peut ouvrir en gratuit intégral et activer le paiement par feature flag dès le contrat signé. |
-| R3 | **Capacité de modération humaine insuffisante** → SLA 24 h non tenu, réputation dégradée dès la première semaine | Élevée | Critique | Recruter et former les modérateurs **avant** l'ouverture (cf. cahier des charges §10.1 : modérateurs issus du groupe WhatsApp). Outillage : file priorisée, SLA visible, alertes de dépassement. Sans équipe, le lancement doit être échelonné par vagues. |
-| R4 | **Pic d'inscriptions à l'ouverture** (9 000 membres alertés simultanément) → OTP saturés, file KYC engorgée, coûts SMS imprévus | Élevée | Élevé | Ouverture **par vagues** via codes d'invitation à quota. Test de charge avant ouverture. Quota SMS et alerte de budget. |
-| R5 | **Coût des SMS OTP** sous-estimé sur les marchés visés | Moyenne | Moyen | Suivi du coût par inscription dès le premier jour ; repli WhatsApp/voix étudié en V1 ; limitation stricte des renvois d'OTP. |
-| R6 | **Fraude à l'offre de lancement** (multi-comptes pour cumuler le Premium offert) | Élevée | Moyen | Un seul bénéfice par numéro vérifié **et** par identité KYC ; quota par code d'invitation ; détection des comptes liés. |
-| R7 | **Cadre juridique non arbitré** (protection des données par pays, CGU, conservation) | Élevée | Élevé | Durées de conservation **configurables** et non codées en dur ; consentements versionnés ; **validation par un conseil juridique avant ouverture publique** — condition de la checklist de lancement. |
-| R8 | **Contenu illégal ou majeur en danger** signalé sur la plateforme | Moyenne | Critique | Procédure d'escalade documentée, preuve conservée pour la durée nécessaire, contact autorité prévu dans la procédure d'incident. |
-| R9 | **Politique de mise en relation hommes/femmes** (cahier des charges §3.4) contestée ou incompatible avec une règle de place de marché applicative | Moyenne | Moyen | Implémenter comme **politique de matching configurable** et non comme une hypothèse figée dans le code ; documenter la justification produit ; faire valider juridiquement (question bloquante Q7). |
-| R10 | **Dérive de périmètre** vers les groupes, événements et appels vidéo avant stabilisation du MVP | Élevée | Élevé | Périmètre gelé §3, roadmap V1/V2 écrite, toute demande nouvelle passe par le backlog. |
-| R11 | **Rétention faible après le pic de migration** (l'objectif 35 % à 30 j est ambitieux) | Moyenne | Élevé | Quota quotidien de suggestions pour créer une habitude, notifications utiles et non intrusives, mesure par cohorte dès le premier jour. |
-| R12 | **Dépendance à un fournisseur unique** (SMS, KYC, paiement) | Moyenne | Moyen | Interfaces de service permettant deux implémentations simultanées et un basculement par feature flag. |
-| R13 | **Compte administrateur compromis** → accès aux pièces d'identité | Faible | Critique | 2FA obligatoire back-office, moindre privilège, audit append-only, alerte sur consultation massive. |
-| R14 | **Perte de données** sans restauration éprouvée | Faible | Critique | Sauvegardes chiffrées quotidiennes + **exercice de restauration obligatoire** dans la checklist de lancement. |
+| #   | Risque                                                                                                                                            | Prob.   | Impact   | Réponse proposée                                                                                                                                                                                                                                           |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R1  | **Aucun prestataire KYC contractualisé** au démarrage → parcours de vérification non fonctionnel en production                                    | Élevée  | Critique | Adaptateur + fournisseur simulé dès le MVP ; **revue humaine dans le back-office comme mode dégradé viable au lancement** (un agent compare pièce et selfie). Le produit peut ouvrir sans KYC automatique, pas sans KYC du tout.                           |
+| R2  | **Aucun agrégateur mobile money contractualisé** → pas de revenu au lancement                                                                     | Élevée  | Élevé    | `PaymentProvider` + fournisseur simulé « Mode test ». Le MVP peut ouvrir en gratuit intégral et activer le paiement par feature flag dès le contrat signé.                                                                                                 |
+| R3  | **Capacité de modération humaine insuffisante** → SLA 24 h non tenu, réputation dégradée dès la première semaine                                  | Élevée  | Critique | Recruter et former les modérateurs **avant** l'ouverture (cf. cahier des charges §10.1 : modérateurs issus du groupe WhatsApp). Outillage : file priorisée, SLA visible, alertes de dépassement. Sans équipe, le lancement doit être échelonné par vagues. |
+| R4  | **Pic d'inscriptions à l'ouverture** (9 000 membres alertés simultanément) → OTP saturés, file KYC engorgée, coûts SMS imprévus                   | Élevée  | Élevé    | Ouverture **par vagues** via codes d'invitation à quota. Test de charge avant ouverture. Quota SMS et alerte de budget.                                                                                                                                    |
+| R5  | **Coût des SMS OTP** sous-estimé sur les marchés visés                                                                                            | Moyenne | Moyen    | Suivi du coût par inscription dès le premier jour ; repli WhatsApp/voix étudié en V1 ; limitation stricte des renvois d'OTP.                                                                                                                               |
+| R6  | **Fraude à l'offre de lancement** (multi-comptes pour cumuler le Premium offert)                                                                  | Élevée  | Moyen    | Un seul bénéfice par numéro vérifié **et** par identité KYC ; quota par code d'invitation ; détection des comptes liés.                                                                                                                                    |
+| R7  | **Cadre juridique non arbitré** (protection des données par pays, CGU, conservation)                                                              | Élevée  | Élevé    | Durées de conservation **configurables** et non codées en dur ; consentements versionnés ; **validation par un conseil juridique avant ouverture publique** — condition de la checklist de lancement.                                                      |
+| R8  | **Contenu illégal ou majeur en danger** signalé sur la plateforme                                                                                 | Moyenne | Critique | Procédure d'escalade documentée, preuve conservée pour la durée nécessaire, contact autorité prévu dans la procédure d'incident.                                                                                                                           |
+| R9  | **Politique de mise en relation hommes/femmes** (cahier des charges §3.4) contestée ou incompatible avec une règle de place de marché applicative | Moyenne | Moyen    | Implémenter comme **politique de matching configurable** et non comme une hypothèse figée dans le code ; documenter la justification produit ; faire valider juridiquement (question bloquante Q7).                                                        |
+| R10 | **Dérive de périmètre** vers les groupes, événements et appels vidéo avant stabilisation du MVP                                                   | Élevée  | Élevé    | Périmètre gelé §3, roadmap V1/V2 écrite, toute demande nouvelle passe par le backlog.                                                                                                                                                                      |
+| R11 | **Rétention faible après le pic de migration** (l'objectif 35 % à 30 j est ambitieux)                                                             | Moyenne | Élevé    | Quota quotidien de suggestions pour créer une habitude, notifications utiles et non intrusives, mesure par cohorte dès le premier jour.                                                                                                                    |
+| R12 | **Dépendance à un fournisseur unique** (SMS, KYC, paiement)                                                                                       | Moyenne | Moyen    | Interfaces de service permettant deux implémentations simultanées et un basculement par feature flag.                                                                                                                                                      |
+| R13 | **Compte administrateur compromis** → accès aux pièces d'identité                                                                                 | Faible  | Critique | 2FA obligatoire back-office, moindre privilège, audit append-only, alerte sur consultation massive.                                                                                                                                                        |
+| R14 | **Perte de données** sans restauration éprouvée                                                                                                   | Faible  | Critique | Sauvegardes chiffrées quotidiennes + **exercice de restauration obligatoire** dans la checklist de lancement.                                                                                                                                              |
 
 ---
 
@@ -300,41 +300,41 @@ checklist avant production) est un livrable de la Phase B.
 Chacune est marquée **HYPOTHÈSE À VALIDER**. Le travail continue sur cette base ; une infirmation ultérieure a un
 coût de reprise indiqué.
 
-| # | Hypothèse | Coût de reprise si infirmée |
-|---|---|---|
-| H1 | **HYPOTHÈSE À VALIDER** — L'âge minimum est **18 ans révolus**, uniforme sur les trois pays. | Faible — paramètre de configuration |
-| H2 | **HYPOTHÈSE À VALIDER** — Les devises sont **XAF** (Cameroun) et **XOF** (Bénin, Côte d'Ivoire), **sans sous-unité**. Affichage en F CFA. | Faible si multi-devise dès le départ (retenu) |
-| H3 | **HYPOTHÈSE À VALIDER** — Pièces d'identité acceptées : carte nationale d'identité, passeport, permis de conduire, carte consulaire. | Faible — liste configurable |
-| H4 | **HYPOTHÈSE À VALIDER** — Aucun prestataire KYC ni agrégateur de paiement n'est contractualisé à ce jour ; le MVP est livré avec fournisseurs simulés. | Nulle — c'est le design retenu |
-| H5 | **HYPOTHÈSE À VALIDER** — La revue KYC manuelle par un agent est **acceptable au lancement** comme mode nominal. | Moyen — sinon le lancement dépend d'un contrat prestataire |
-| H6 | **HYPOTHÈSE À VALIDER** — Conservation : pièces d'identité **90 jours** après décision puis suppression ; empreinte de décision conservée 5 ans ; messages 24 mois ; compte supprimé après **30 jours** de grâce. Toutes valeurs **configurables**. | Faible — configuration ; à confirmer juridiquement |
-| H7 | **HYPOTHÈSE À VALIDER** — Quota gratuit : **10 suggestions/jour**, **10 intérêts/jour** ; Premium : 30 et 50. Valeurs configurables. | Nulle — configuration |
-| H8 | **HYPOTHÈSE À VALIDER** — Photos : 3 minimum pour un profil publiable, 6 maximum, 8 Mo par fichier, JPEG/PNG/WebP/HEIC. | Faible |
-| H9 | **HYPOTHÈSE À VALIDER** — La « dernière activité » est affichée avec une granularité grossière (« actif aujourd'hui », « cette semaine »), jamais à la minute. | Faible |
-| H10 | **HYPOTHÈSE À VALIDER** — La localisation est déclarative (ville/pays choisis dans une liste), sans GPS ni distance en kilomètres au MVP. | Moyen — GPS = nouveau modèle géographique et enjeu de sécurité (traque) |
-| H11 | **HYPOTHÈSE À VALIDER** — Hébergement cloud région Europe (latence acceptable vers l'Afrique de l'Ouest et Centrale, offre mature), CDN avec points de présence africains. | Moyen — migration de région possible mais coûteuse en aval |
-| H12 | **HYPOTHÈSE À VALIDER** — Une seule locale au lancement (fr), i18n préparée. | Faible |
-| H13 | **HYPOTHÈSE À VALIDER** — Pas de publication sur les magasins d'applications au MVP interne ; distribution mobile via Expo (build interne) puis magasins avant l'ouverture publique. | Moyen — délais de revue Apple/Google à anticiper (2 à 4 semaines) |
-| H14 | **HYPOTHÈSE À VALIDER** — Les pièces jointes en messagerie sont limitées aux **images** au MVP (pas de vidéo, pas de document, pas d'audio). | Faible |
-| H15 | **HYPOTHÈSE À VALIDER** — La charte de bonne conduite, les CGU et la politique de confidentialité sont fournies par le porteur de projet ; nous livrons des textes de substitution clairement marqués « projet — à faire valider juridiquement ». | Nulle |
+| #   | Hypothèse                                                                                                                                                                                                                                           | Coût de reprise si infirmée                                             |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| H1  | **HYPOTHÈSE À VALIDER** — L'âge minimum est **18 ans révolus**, uniforme sur les trois pays.                                                                                                                                                        | Faible — paramètre de configuration                                     |
+| H2  | **HYPOTHÈSE À VALIDER** — Les devises sont **XAF** (Cameroun) et **XOF** (Bénin, Côte d'Ivoire), **sans sous-unité**. Affichage en F CFA.                                                                                                           | Faible si multi-devise dès le départ (retenu)                           |
+| H3  | **HYPOTHÈSE À VALIDER** — Pièces d'identité acceptées : carte nationale d'identité, passeport, permis de conduire, carte consulaire.                                                                                                                | Faible — liste configurable                                             |
+| H4  | **HYPOTHÈSE À VALIDER** — Aucun prestataire KYC ni agrégateur de paiement n'est contractualisé à ce jour ; le MVP est livré avec fournisseurs simulés.                                                                                              | Nulle — c'est le design retenu                                          |
+| H5  | **HYPOTHÈSE À VALIDER** — La revue KYC manuelle par un agent est **acceptable au lancement** comme mode nominal.                                                                                                                                    | Moyen — sinon le lancement dépend d'un contrat prestataire              |
+| H6  | **HYPOTHÈSE À VALIDER** — Conservation : pièces d'identité **90 jours** après décision puis suppression ; empreinte de décision conservée 5 ans ; messages 24 mois ; compte supprimé après **30 jours** de grâce. Toutes valeurs **configurables**. | Faible — configuration ; à confirmer juridiquement                      |
+| H7  | **HYPOTHÈSE À VALIDER** — Quota gratuit : **10 suggestions/jour**, **10 intérêts/jour** ; Premium : 30 et 50. Valeurs configurables.                                                                                                                | Nulle — configuration                                                   |
+| H8  | **HYPOTHÈSE À VALIDER** — Photos : 3 minimum pour un profil publiable, 6 maximum, 8 Mo par fichier, JPEG/PNG/WebP/HEIC.                                                                                                                             | Faible                                                                  |
+| H9  | **HYPOTHÈSE À VALIDER** — La « dernière activité » est affichée avec une granularité grossière (« actif aujourd'hui », « cette semaine »), jamais à la minute.                                                                                      | Faible                                                                  |
+| H10 | **HYPOTHÈSE À VALIDER** — La localisation est déclarative (ville/pays choisis dans une liste), sans GPS ni distance en kilomètres au MVP.                                                                                                           | Moyen — GPS = nouveau modèle géographique et enjeu de sécurité (traque) |
+| H11 | **HYPOTHÈSE À VALIDER** — Hébergement cloud région Europe (latence acceptable vers l'Afrique de l'Ouest et Centrale, offre mature), CDN avec points de présence africains.                                                                          | Moyen — migration de région possible mais coûteuse en aval              |
+| H12 | **HYPOTHÈSE À VALIDER** — Une seule locale au lancement (fr), i18n préparée.                                                                                                                                                                        | Faible                                                                  |
+| H13 | **HYPOTHÈSE À VALIDER** — Pas de publication sur les magasins d'applications au MVP interne ; distribution mobile via Expo (build interne) puis magasins avant l'ouverture publique.                                                                | Moyen — délais de revue Apple/Google à anticiper (2 à 4 semaines)       |
+| H14 | **HYPOTHÈSE À VALIDER** — Les pièces jointes en messagerie sont limitées aux **images** au MVP (pas de vidéo, pas de document, pas d'audio).                                                                                                        | Faible                                                                  |
+| H15 | **HYPOTHÈSE À VALIDER** — La charte de bonne conduite, les CGU et la politique de confidentialité sont fournies par le porteur de projet ; nous livrons des textes de substitution clairement marqués « projet — à faire valider juridiquement ».   | Nulle                                                                   |
 
 ---
 
 ## 9. Intégrations externes nécessaires
 
-| Intégration | Rôle | Statut MVP | Interface | Bloquant pour l'ouverture publique ? |
-|---|---|---|---|---|
-| Passerelle SMS (OTP) | Envoi des codes | **Simulé** (code affiché en console dev) | `SmsProvider` | **Oui** — sans SMS réel, aucune inscription |
-| Prestataire KYC | Pièce + selfie + vivacité | **Simulé** + revue humaine | `KycProvider` | Non si revue humaine acceptée (H5) |
-| Agrégateur mobile money | Paiement local | **Simulé « Mode test »** | `PaymentProvider` | Non — ouverture possible en gratuit |
-| Passerelle carte | Paiement international | **Simulé « Mode test »** | `PaymentProvider` | Non |
-| Stockage compatible S3 | Médias privés | Réel (MinIO en local) | `StorageProvider` | Oui |
-| CDN | Diffusion des médias | Configuration | — | Non (dégradé acceptable) |
-| Push (compatible FCM) | Notifications mobiles | **Simulé** | `PushProvider` | Non |
-| E-mail transactionnel | Notifications e-mail | **Simulé** (Mailpit en local) | `MailProvider` | Non |
-| Modération de contenu | Détection contenu explicite | **Simulé** (règles simples) | `ContentModerationProvider` | Non — revue humaine au MVP |
-| Traçage d'erreurs + métriques | Observabilité | Réel (compatible OpenTelemetry) | — | Oui |
-| API WhatsApp Business | Annonces de migration | **Hors MVP** | — | Non |
+| Intégration                   | Rôle                        | Statut MVP                               | Interface                   | Bloquant pour l'ouverture publique ?        |
+| ----------------------------- | --------------------------- | ---------------------------------------- | --------------------------- | ------------------------------------------- |
+| Passerelle SMS (OTP)          | Envoi des codes             | **Simulé** (code affiché en console dev) | `SmsProvider`               | **Oui** — sans SMS réel, aucune inscription |
+| Prestataire KYC               | Pièce + selfie + vivacité   | **Simulé** + revue humaine               | `KycProvider`               | Non si revue humaine acceptée (H5)          |
+| Agrégateur mobile money       | Paiement local              | **Simulé « Mode test »**                 | `PaymentProvider`           | Non — ouverture possible en gratuit         |
+| Passerelle carte              | Paiement international      | **Simulé « Mode test »**                 | `PaymentProvider`           | Non                                         |
+| Stockage compatible S3        | Médias privés               | Réel (MinIO en local)                    | `StorageProvider`           | Oui                                         |
+| CDN                           | Diffusion des médias        | Configuration                            | —                           | Non (dégradé acceptable)                    |
+| Push (compatible FCM)         | Notifications mobiles       | **Simulé**                               | `PushProvider`              | Non                                         |
+| E-mail transactionnel         | Notifications e-mail        | **Simulé** (Mailpit en local)            | `MailProvider`              | Non                                         |
+| Modération de contenu         | Détection contenu explicite | **Simulé** (règles simples)              | `ContentModerationProvider` | Non — revue humaine au MVP                  |
+| Traçage d'erreurs + métriques | Observabilité               | Réel (compatible OpenTelemetry)          | —                           | Oui                                         |
+| API WhatsApp Business         | Annonces de migration       | **Hors MVP**                             | —                           | Non                                         |
 
 **Engagement de transparence :** un fichier `docs/MOCKS.md` listera en permanence chaque intégration encore
 simulée, son interface, l'implémentation réelle attendue, et ce qui casse si elle reste simulée en production.
@@ -347,20 +347,20 @@ Aucune interface simulée ne sera présentée comme fonctionnelle.
 Seules figurent ici les questions qui **empêchent directement** l'architecture ou le développement. Tout le reste
 est traité par hypothèse au §8 et n'attend pas de réponse pour avancer.
 
-| # | Question | Ce qui est bloqué | Réponse par défaut si sans réponse |
-|---|---|---|---|
-| **Q1** | Confirmez-vous l'âge minimum à **18 ans révolus** pour les trois pays ? | Règle de refus, KYC, CGU | 18 ans |
-| **Q2** | Un prestataire **KYC** est-il déjà identifié ou contractualisé ? Sinon, validez-vous la **revue humaine comme mode nominal au lancement** ? | Parcours de vérification, dimensionnement de l'équipe de vérification, date d'ouverture | Revue humaine + adaptateur simulé |
-| **Q3** | Un **agrégateur mobile money** est-il déjà identifié (couverture MTN MoMo, Orange Money, Moov, Wave selon les pays) ? | Module paiement, réconciliation, date d'activation du Premium | Fournisseur simulé, Premium derrière feature flag |
-| **Q4** | Quel **fournisseur SMS** pour les OTP, et quel budget mensuel plafond ? | Inscription — **aucune ouverture publique sans ce point** | Simulé en dev, à contractualiser avant ouverture |
-| **Q5** | Quelle **entité juridique** exploite le service, dans quel pays, et un **conseil juridique** est-il mandaté ? | CGU, politique de confidentialité, conservation, mentions légales, contrats prestataires | Textes de substitution marqués « à valider » |
-| **Q6** | Quelles **durées de conservation** retenez-vous (pièces d'identité, messages, compte supprimé) ? | Tâches de purge, politique de rétention | H6 |
-| **Q7** | Confirmez-vous la **politique de mise en relation exclusivement hommes/femmes** (cahier des charges §3.4) ? Cette règle a été validée juridiquement et au regard des règles des magasins d'applications ? | Modèle de préférences, algorithme de matching, revue des magasins | Implémentée comme politique **configurable**, activée conformément au cahier des charges |
-| **Q8** | Quelle est la **grille tarifaire** (montants mensuel/trimestriel/annuel, prix du boost, devise) ? | Plans d'abonnement, seed, écrans d'abonnement | Plans de démonstration en « Mode test » |
-| **Q9** | Combien de **modérateurs et d'agents de vérification** seront opérationnels au lancement, et sur quelle amplitude horaire ? | Dimensionnement du SLA 24 h, stratégie d'ouverture par vagues | Ouverture par vagues avec quotas |
-| **Q10** | Ouverture **en une fois** aux 9 000 membres, ou **par vagues** ? | Capacité, budget SMS, file de vérification, test de charge | Par vagues (recommandé) |
-| **Q11** | Disposez-vous d'une **charte graphique** (logo, couleurs, typographie) ou devons-nous en proposer une ? | Design system, écrans, magasins d'applications | Proposition d'identité sobre et chaleureuse à valider |
-| **Q12** | Quel **fournisseur d'hébergement et quelle région** (compte cloud existant, contraintes de souveraineté) ? | Déploiement, coûts, latence, conformité | H11 |
+| #       | Question                                                                                                                                                                                                  | Ce qui est bloqué                                                                        | Réponse par défaut si sans réponse                                                       |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| **Q1**  | Confirmez-vous l'âge minimum à **18 ans révolus** pour les trois pays ?                                                                                                                                   | Règle de refus, KYC, CGU                                                                 | 18 ans                                                                                   |
+| **Q2**  | Un prestataire **KYC** est-il déjà identifié ou contractualisé ? Sinon, validez-vous la **revue humaine comme mode nominal au lancement** ?                                                               | Parcours de vérification, dimensionnement de l'équipe de vérification, date d'ouverture  | Revue humaine + adaptateur simulé                                                        |
+| **Q3**  | Un **agrégateur mobile money** est-il déjà identifié (couverture MTN MoMo, Orange Money, Moov, Wave selon les pays) ?                                                                                     | Module paiement, réconciliation, date d'activation du Premium                            | Fournisseur simulé, Premium derrière feature flag                                        |
+| **Q4**  | Quel **fournisseur SMS** pour les OTP, et quel budget mensuel plafond ?                                                                                                                                   | Inscription — **aucune ouverture publique sans ce point**                                | Simulé en dev, à contractualiser avant ouverture                                         |
+| **Q5**  | Quelle **entité juridique** exploite le service, dans quel pays, et un **conseil juridique** est-il mandaté ?                                                                                             | CGU, politique de confidentialité, conservation, mentions légales, contrats prestataires | Textes de substitution marqués « à valider »                                             |
+| **Q6**  | Quelles **durées de conservation** retenez-vous (pièces d'identité, messages, compte supprimé) ?                                                                                                          | Tâches de purge, politique de rétention                                                  | H6                                                                                       |
+| **Q7**  | Confirmez-vous la **politique de mise en relation exclusivement hommes/femmes** (cahier des charges §3.4) ? Cette règle a été validée juridiquement et au regard des règles des magasins d'applications ? | Modèle de préférences, algorithme de matching, revue des magasins                        | Implémentée comme politique **configurable**, activée conformément au cahier des charges |
+| **Q8**  | Quelle est la **grille tarifaire** (montants mensuel/trimestriel/annuel, prix du boost, devise) ?                                                                                                         | Plans d'abonnement, seed, écrans d'abonnement                                            | Plans de démonstration en « Mode test »                                                  |
+| **Q9**  | Combien de **modérateurs et d'agents de vérification** seront opérationnels au lancement, et sur quelle amplitude horaire ?                                                                               | Dimensionnement du SLA 24 h, stratégie d'ouverture par vagues                            | Ouverture par vagues avec quotas                                                         |
+| **Q10** | Ouverture **en une fois** aux 9 000 membres, ou **par vagues** ?                                                                                                                                          | Capacité, budget SMS, file de vérification, test de charge                               | Par vagues (recommandé)                                                                  |
+| **Q11** | Disposez-vous d'une **charte graphique** (logo, couleurs, typographie) ou devons-nous en proposer une ?                                                                                                   | Design system, écrans, magasins d'applications                                           | Proposition d'identité sobre et chaleureuse à valider                                    |
+| **Q12** | Quel **fournisseur d'hébergement et quelle région** (compte cloud existant, contraintes de souveraineté) ?                                                                                                | Déploiement, coûts, latence, conformité                                                  | H11                                                                                      |
 
 ---
 
@@ -476,21 +476,21 @@ Chaque lot suit le même rituel : objectif annoncé → fichiers listés → cod
 lint → typecheck → tests exécutés → correction → commandes de vérification → documentation → limitations restantes.
 **Aucun lot n'est déclaré terminé si le lint, le typage ou les tests échouent.**
 
-| Lot | Contenu | Livrables | Dépendances |
-|---|---|---|---|
-| **B** | **Conception** — architecture détaillée, structure du monorepo, modèle de données complet (37 entités : rôle, champs, relations, index, contraintes, suppression, sensibilité, conservation), schéma Prisma, spécification API OpenAPI, matrice rôles/permissions, parcours UX des 24 écrans, backlog priorisé avec user stories et critères d'acceptation, plan de tests, plan de sécurité (`SECURITY.md`), plan de déploiement, roadmap V1/V2, registre des risques | Documents | Phase A validée |
-| **C** | **Initialisation** — arborescence, pnpm + Turborepo, TypeScript strict, ESLint/Prettier, Docker Compose (PostgreSQL, Redis, MinIO, Mailpit), Prisma initialisé, NestJS amorcé, Next.js × 2, Expo, CI GitHub Actions, `.env.example`, scripts de développement | Monorepo démarrable | Lot B |
-| **D1** | Infrastructure & **authentification** — utilisateurs, OTP, sessions, appareils, JWT + refresh rotatif, rate limiting, récupération, erreurs centralisées, audit | Code + tests | Lot C |
-| **D2** | **Majorité & vérification d'identité** — date de naissance, calcul serveur, refus, dépôt de pièces, machine à états, adaptateur KYC simulé, file de revue, badge, conservation | Code + tests | D1 |
-| **D3** | **Profils & photos** — champs, préférences, centres d'intérêt, pipeline média, modération photo, complétion, statuts | Code + tests | D2 |
-| **D4** | **Découverte & matching** — score documenté, quotas, intérêts, matchs, exclusions, feature flags Premium | Code + tests | D3 |
-| **D5** | **Messagerie** — conversations, Socket.IO, statuts, pagination, anti-spam, pièces jointes, blocage, suppression logique | Code + tests | D4 |
-| **D6** | **Sécurité & modération** — signalements, cas, actions, SLA, détection par règles, comptes liés, tableau de bord | Code + tests | D5 |
-| **D7** | **Abonnements & paiements** — plans, `PaymentProvider` simulé, cycle de vie, webhooks idempotents, reçus, remboursement | Code + tests | D6 |
-| **D8** | **Notifications** — 4 canaux, 8 déclencheurs, préférences, file, réessais | Code + tests | D7 |
-| **D9** | **Back-office** — 7 sections, RBAC, audit append-only | Code + tests | D8 |
-| **D10** | **Analytics & migration WhatsApp** — événements pseudonymisés, 13 indicateurs, invitations traçables, campagnes, offre de lancement, anti-abus | Code + tests | D9 |
-| **E** | **Validation** — matrice de couverture des exigences, rapport de tests, audit de sécurité, liste des simulations, tâches avant production, procédure de déploiement, procédure de rollback, checklist de lancement | Documents | D10 |
+| Lot     | Contenu                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Livrables           | Dépendances     |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | --------------- |
+| **B**   | **Conception** — architecture détaillée, structure du monorepo, modèle de données complet (37 entités : rôle, champs, relations, index, contraintes, suppression, sensibilité, conservation), schéma Prisma, spécification API OpenAPI, matrice rôles/permissions, parcours UX des 24 écrans, backlog priorisé avec user stories et critères d'acceptation, plan de tests, plan de sécurité (`SECURITY.md`), plan de déploiement, roadmap V1/V2, registre des risques | Documents           | Phase A validée |
+| **C**   | **Initialisation** — arborescence, pnpm + Turborepo, TypeScript strict, ESLint/Prettier, Docker Compose (PostgreSQL, Redis, MinIO, Mailpit), Prisma initialisé, NestJS amorcé, Next.js × 2, Expo, CI GitHub Actions, `.env.example`, scripts de développement                                                                                                                                                                                                         | Monorepo démarrable | Lot B           |
+| **D1**  | Infrastructure & **authentification** — utilisateurs, OTP, sessions, appareils, JWT + refresh rotatif, rate limiting, récupération, erreurs centralisées, audit                                                                                                                                                                                                                                                                                                       | Code + tests        | Lot C           |
+| **D2**  | **Majorité & vérification d'identité** — date de naissance, calcul serveur, refus, dépôt de pièces, machine à états, adaptateur KYC simulé, file de revue, badge, conservation                                                                                                                                                                                                                                                                                        | Code + tests        | D1              |
+| **D3**  | **Profils & photos** — champs, préférences, centres d'intérêt, pipeline média, modération photo, complétion, statuts                                                                                                                                                                                                                                                                                                                                                  | Code + tests        | D2              |
+| **D4**  | **Découverte & matching** — score documenté, quotas, intérêts, matchs, exclusions, feature flags Premium                                                                                                                                                                                                                                                                                                                                                              | Code + tests        | D3              |
+| **D5**  | **Messagerie** — conversations, Socket.IO, statuts, pagination, anti-spam, pièces jointes, blocage, suppression logique                                                                                                                                                                                                                                                                                                                                               | Code + tests        | D4              |
+| **D6**  | **Sécurité & modération** — signalements, cas, actions, SLA, détection par règles, comptes liés, tableau de bord                                                                                                                                                                                                                                                                                                                                                      | Code + tests        | D5              |
+| **D7**  | **Abonnements & paiements** — plans, `PaymentProvider` simulé, cycle de vie, webhooks idempotents, reçus, remboursement                                                                                                                                                                                                                                                                                                                                               | Code + tests        | D6              |
+| **D8**  | **Notifications** — 4 canaux, 8 déclencheurs, préférences, file, réessais                                                                                                                                                                                                                                                                                                                                                                                             | Code + tests        | D7              |
+| **D9**  | **Back-office** — 7 sections, RBAC, audit append-only                                                                                                                                                                                                                                                                                                                                                                                                                 | Code + tests        | D8              |
+| **D10** | **Analytics & migration WhatsApp** — événements pseudonymisés, 13 indicateurs, invitations traçables, campagnes, offre de lancement, anti-abus                                                                                                                                                                                                                                                                                                                        | Code + tests        | D9              |
+| **E**   | **Validation** — matrice de couverture des exigences, rapport de tests, audit de sécurité, liste des simulations, tâches avant production, procédure de déploiement, procédure de rollback, checklist de lancement                                                                                                                                                                                                                                                    | Documents           | D10             |
 
 **Séquencement des façades.** Le web et le mobile sont construits **au fil de chaque tranche**, pas en bloc à la
 fin : chaque tranche D livre ses écrans web et mobile en même temps que ses endpoints. C'est la condition pour que

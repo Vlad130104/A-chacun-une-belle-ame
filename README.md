@@ -4,24 +4,25 @@ Plateforme SaaS de rencontres sérieuses, sécurisée et modérée, **exclusivem
 Conçue pour le Cameroun, le Bénin et la Côte d'Ivoire, à partir d'une communauté WhatsApp existante de plus de
 9 000 membres.
 
-> **État : conception (phase B) terminée. Le développement n'a pas encore commencé.**
-> Ce dépôt contient pour l'instant la documentation de conception et le schéma de données.
+> **État : initialisation (phase C) terminée.** Le monorepo démarre, la CI est en place, lint, typage, tests et
+> build sont verts. **Aucune fonctionnalité produit n'est encore implémentée** : l'inscription, la vérification, les
+> profils, le matching et la messagerie arrivent avec les tranches D1 à D10 du backlog.
 
 ## Documentation
 
 Tout se trouve dans **[`docs/`](./docs/README.md)** — commencez par le sommaire.
 
-| Document | Contenu |
-|---|---|
-| [Cadrage](./docs/00-phase-a-audit-cadrage.md) | Périmètre MVP, hypothèses, risques, 12 questions bloquantes |
-| [Architecture](./docs/01-architecture.md) | Monolithe modulaire NestJS, 17 modules, ports et adaptateurs |
-| [Décisions techniques](./docs/02-decisions-techniques.md) | 20 ADR |
-| [Modèle de données](./docs/03-modele-de-donnees.md) | 43 entités · [`prisma/schema.prisma`](./prisma/schema.prisma) |
-| [Matching](./docs/04-algorithme-de-matching.md) | Formule du score, documentée et testable |
-| [API](./docs/05-api.md) | Routes et autorisations · [`openapi.yaml`](./docs/api/openapi.yaml) |
-| [Backlog](./docs/08-backlog-mvp.md) | 74 user stories, critères d'acceptation |
-| [Sécurité](./SECURITY.md) | Modèle de menace, incidents, checklist avant production |
-| [Intégrations simulées](./docs/MOCKS.md) | Ce qui est simulé, et ce qui casse sans le vrai |
+| Document                                                  | Contenu                                                             |
+| --------------------------------------------------------- | ------------------------------------------------------------------- |
+| [Cadrage](./docs/00-phase-a-audit-cadrage.md)             | Périmètre MVP, hypothèses, risques, 12 questions bloquantes         |
+| [Architecture](./docs/01-architecture.md)                 | Monolithe modulaire NestJS, 17 modules, ports et adaptateurs        |
+| [Décisions techniques](./docs/02-decisions-techniques.md) | 20 ADR                                                              |
+| [Modèle de données](./docs/03-modele-de-donnees.md)       | 43 entités · [`prisma/schema.prisma`](./prisma/schema.prisma)       |
+| [Matching](./docs/04-algorithme-de-matching.md)           | Formule du score, documentée et testable                            |
+| [API](./docs/05-api.md)                                   | Routes et autorisations · [`openapi.yaml`](./docs/api/openapi.yaml) |
+| [Backlog](./docs/08-backlog-mvp.md)                       | 74 user stories, critères d'acceptation                             |
+| [Sécurité](./SECURITY.md)                                 | Modèle de menace, incidents, checklist avant production             |
+| [Intégrations simulées](./docs/MOCKS.md)                  | Ce qui est simulé, et ce qui casse sans le vrai                     |
 
 ## Stack
 

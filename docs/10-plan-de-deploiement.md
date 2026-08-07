@@ -4,14 +4,14 @@
 
 ## 1. Environnements
 
-| | `local` | `ci` | `staging` (recette) | `production` |
-|---|---|---|---|---|
-| Usage | Développement | Tests automatisés | Validation métier, charge | Service |
-| Infrastructure | Docker Compose | Conteneurs éphémères | Réduite, même topologie | Complète, redondée |
-| Données | Seed anonyme | Base éphémère | **Anonymisées** — jamais de copie de production | Réelles |
-| Fournisseurs | Tous simulés (MinIO, Mailpit réels) | Tous simulés, horloge figée | Bac à sable si disponible | Réels — **démarrage refusé si un port critique est simulé** |
-| Accès | Développeur | CI | Équipe + porteur de projet | Restreint, tracé |
-| Sauvegardes | Aucune | Aucune | Hebdomadaire | **Quotidienne chiffrée + restauration testée** |
+|                | `local`                             | `ci`                        | `staging` (recette)                             | `production`                                                |
+| -------------- | ----------------------------------- | --------------------------- | ----------------------------------------------- | ----------------------------------------------------------- |
+| Usage          | Développement                       | Tests automatisés           | Validation métier, charge                       | Service                                                     |
+| Infrastructure | Docker Compose                      | Conteneurs éphémères        | Réduite, même topologie                         | Complète, redondée                                          |
+| Données        | Seed anonyme                        | Base éphémère               | **Anonymisées** — jamais de copie de production | Réelles                                                     |
+| Fournisseurs   | Tous simulés (MinIO, Mailpit réels) | Tous simulés, horloge figée | Bac à sable si disponible                       | Réels — **démarrage refusé si un port critique est simulé** |
+| Accès          | Développeur                         | CI                          | Équipe + porteur de projet                      | Restreint, tracé                                            |
+| Sauvegardes    | Aucune                              | Aucune                      | Hebdomadaire                                    | **Quotidienne chiffrée + restauration testée**              |
 
 ---
 
@@ -28,12 +28,12 @@ pnpm dev                      # api :3000 · web :3001 · admin :3002 · expo :8
 
 `docker-compose.yml` fournit :
 
-| Service | Image | Port | Rôle |
-|---|---|---|---|
-| `postgres` | `postgres:16-alpine` | 5432 | Base, schémas `app` et `kyc` créés au démarrage |
-| `redis` | `redis:7-alpine` | 6379 | Cache, files BullMQ, présence, rate limiting |
-| `minio` | `minio/minio` | 9000/9001 | Stockage S3 local, **deux buckets séparés** `media` et `kyc` |
-| `mailpit` | `axllent/mailpit` | 1025/8025 | E-mails de test, consultables dans le navigateur |
+| Service    | Image                | Port      | Rôle                                                         |
+| ---------- | -------------------- | --------- | ------------------------------------------------------------ |
+| `postgres` | `postgres:16-alpine` | 5432      | Base, schémas `app` et `kyc` créés au démarrage              |
+| `redis`    | `redis:7-alpine`     | 6379      | Cache, files BullMQ, présence, rate limiting                 |
+| `minio`    | `minio/minio`        | 9000/9001 | Stockage S3 local, **deux buckets séparés** `media` et `kyc` |
+| `mailpit`  | `axllent/mailpit`    | 1025/8025 | E-mails de test, consultables dans le navigateur             |
 
 Aucune clé réelle n'est nécessaire pour développer : tous les ports externes ont une implémentation simulée.
 
@@ -43,11 +43,11 @@ Aucune clé réelle n'est nécessaire pour développer : tous les ports externes
 
 Trois images, chacune multi-étapes et sans dépendance de développement :
 
-| Image | Contenu | Point d'entrée |
-|---|---|---|
-| `acuba-api` | NestJS compilé + client Prisma | `main.js` (API) ou `worker.js` (workers), selon `PROCESS_ROLE` |
-| `acuba-web` | Next.js en mode `standalone` | `server.js` |
-| `acuba-admin` | Next.js en mode `standalone` | `server.js` |
+| Image         | Contenu                        | Point d'entrée                                                 |
+| ------------- | ------------------------------ | -------------------------------------------------------------- |
+| `acuba-api`   | NestJS compilé + client Prisma | `main.js` (API) ou `worker.js` (workers), selon `PROCESS_ROLE` |
+| `acuba-web`   | Next.js en mode `standalone`   | `server.js`                                                    |
+| `acuba-admin` | Next.js en mode `standalone`   | `server.js`                                                    |
 
 Règles : utilisateur non-root · système de fichiers en lecture seule sauf `/tmp` · aucun secret dans l'image ·
 image de base épinglée par empreinte · analyse de vulnérabilité de l'image bloquante en CI · étiquetage par
@@ -91,15 +91,15 @@ stockage média. **À x10** : 4 à 8 API, 3 workers par famille de file, réplic
 **Aucun secret dans le dépôt, jamais.** `.env.example` liste toutes les clés attendues avec des valeurs vides ou
 manifestement factices, et sert de documentation de configuration.
 
-| Catégorie | Variables |
-|---|---|
-| Base | `DATABASE_URL`, `KYC_DATABASE_URL` (rôle distinct), `REDIS_URL` |
-| Jetons | `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `ACCESS_TOKEN_TTL`, `REFRESH_TOKEN_TTL` |
-| Chiffrement | `ENCRYPTION_KEY`, `ENCRYPTION_KEY_PREVIOUS` (rotation), `HASH_SALT` |
-| Stockage | `S3_ENDPOINT`, `S3_MEDIA_BUCKET`, `S3_KYC_BUCKET`, clés d'accès distinctes par bucket |
-| Ports | `SMS_PROVIDER`, `KYC_PROVIDER`, `PAYMENT_PROVIDER`, `PUSH_PROVIDER`, `MAIL_PROVIDER` |
-| Métier | `MINIMUM_AGE`, `KYC_DOCUMENT_RETENTION_DAYS`, `MESSAGE_RETENTION_MONTHS`, `ACCOUNT_DELETION_GRACE_DAYS`, `DAILY_SUGGESTION_LIMIT_FREE` |
-| Sécurité | `CORS_ALLOWED_ORIGINS`, `RATE_LIMIT_*`, `ADMIN_SESSION_TTL` |
+| Catégorie   | Variables                                                                                                                              |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Base        | `DATABASE_URL`, `KYC_DATABASE_URL` (rôle distinct), `REDIS_URL`                                                                        |
+| Jetons      | `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `ACCESS_TOKEN_TTL`, `REFRESH_TOKEN_TTL`                                                           |
+| Chiffrement | `ENCRYPTION_KEY`, `ENCRYPTION_KEY_PREVIOUS` (rotation), `HASH_SALT`                                                                    |
+| Stockage    | `S3_ENDPOINT`, `S3_MEDIA_BUCKET`, `S3_KYC_BUCKET`, clés d'accès distinctes par bucket                                                  |
+| Ports       | `SMS_PROVIDER`, `KYC_PROVIDER`, `PAYMENT_PROVIDER`, `PUSH_PROVIDER`, `MAIL_PROVIDER`                                                   |
+| Métier      | `MINIMUM_AGE`, `KYC_DOCUMENT_RETENTION_DAYS`, `MESSAGE_RETENTION_MONTHS`, `ACCOUNT_DELETION_GRACE_DAYS`, `DAILY_SUGGESTION_LIMIT_FREE` |
+| Sécurité    | `CORS_ALLOWED_ORIGINS`, `RATE_LIMIT_*`, `ADMIN_SESSION_TTL`                                                                            |
 
 **Validation au démarrage** par un schéma Zod : une variable manquante, mal typée ou hors bornes **empêche le
 démarrage**. Une configuration invalide doit échouer bruyamment au lancement, jamais silencieusement à la première
@@ -134,18 +134,18 @@ nécessaire :
 
 ## 7. Déploiement
 
-| Étape | Action | Critère de passage |
-|---|---|---|
-| 1 | CI verte sur la branche principale | Tous les jobs, dont les 18 E2E |
-| 2 | Construction et étiquetage des images | Analyse de vulnérabilité sans alerte critique |
-| 3 | Déploiement automatique en recette | Santé verte, fumée E2E |
-| 4 | Validation métier en recette | Accord du porteur de projet |
-| 5 | Sauvegarde de production **avant** migration | Sauvegarde vérifiée, pas seulement créée |
-| 6 | Migration (job dédié) | Sortie sans erreur, durée conforme à la mesure de recette |
-| 7 | Déploiement progressif de l'API | 1 instance, 10 min d'observation, puis le reste |
-| 8 | Déploiement web et back-office | Santé verte |
-| 9 | Fumée en production | Inscription, connexion, suggestion, envoi de message (comptes de test) |
-| 10 | Observation 30 min | Taux d'erreur, latence p95, profondeur des files stables |
+| Étape | Action                                       | Critère de passage                                                     |
+| ----- | -------------------------------------------- | ---------------------------------------------------------------------- |
+| 1     | CI verte sur la branche principale           | Tous les jobs, dont les 18 E2E                                         |
+| 2     | Construction et étiquetage des images        | Analyse de vulnérabilité sans alerte critique                          |
+| 3     | Déploiement automatique en recette           | Santé verte, fumée E2E                                                 |
+| 4     | Validation métier en recette                 | Accord du porteur de projet                                            |
+| 5     | Sauvegarde de production **avant** migration | Sauvegarde vérifiée, pas seulement créée                               |
+| 6     | Migration (job dédié)                        | Sortie sans erreur, durée conforme à la mesure de recette              |
+| 7     | Déploiement progressif de l'API              | 1 instance, 10 min d'observation, puis le reste                        |
+| 8     | Déploiement web et back-office               | Santé verte                                                            |
+| 9     | Fumée en production                          | Inscription, connexion, suggestion, envoi de message (comptes de test) |
+| 10    | Observation 30 min                           | Taux d'erreur, latence p95, profondeur des files stables               |
 
 **Fenêtre recommandée :** mardi à jeudi, 10 h heure locale du marché principal — jamais un vendredi, jamais la nuit :
 un incident doit trouver une équipe disponible et un support joignable.
@@ -158,16 +158,19 @@ un incident doit trouver une équipe disponible et un support joignable.
 un incident prolongé sur une plateforme de confiance l'est beaucoup.
 
 ### Cas 1 — Code seul (aucune migration)
+
 1. Redéployer l'étiquette précédente (procédure automatisée, ≤ 5 min).
 2. Vérifier la santé et la fumée.
 3. Consigner l'incident.
 
 ### Cas 2 — Code + migration additive (expand)
+
 1. Redéployer le code précédent. La migration additive est **compatible** : la colonne ajoutée est simplement ignorée.
 2. Aucune action sur la base.
 3. Corriger, puis reprendre au déploiement suivant.
 
 ### Cas 3 — Code + migration destructive
+
 1. **Ne pas** rejouer la migration à l'envers dans la précipitation.
 2. Redéployer le code précédent **si** il reste compatible avec le schéma actuel.
 3. Sinon : mode maintenance → restauration de la sauvegarde pré-migration → redéploiement du code précédent →
@@ -175,10 +178,12 @@ un incident prolongé sur une plateforme de confiance l'est beaucoup.
 4. Post-mortem obligatoire : une migration destructive irrécupérable est un défaut de préparation, pas de chance.
 
 ### Cas 4 — Incident fonctionnel sans défaut de déploiement
+
 Désactiver la fonction par **feature flag** — pas de redéploiement, effet immédiat. C'est la raison d'être des flags
 (ADR-018) : ils transforment un rollback en interrupteur.
 
 ### Mode maintenance
+
 Page statique servie par le répartiteur, message en français, durée annoncée. L'API répond 503 avec un code métier
 stable. Les workers non concernés continuent (les purges et notifications ne doivent pas s'accumuler).
 
@@ -186,13 +191,13 @@ stable. Les workers non concernés continuent (les purges et notifications ne do
 
 ## 9. Sauvegardes et reprise
 
-| Élément | Fréquence | Rétention | Chiffrement |
-|---|---|---|---|
-| PostgreSQL — complète | Quotidienne | 30 jours | ✅ |
-| PostgreSQL — journaux (PITR) | Continu | 7 jours | ✅ |
-| Bucket média | Quotidienne (incrémentale) | 30 jours | ✅ |
-| Bucket KYC | Quotidienne | **Aligné sur la conservation des documents** — une sauvegarde ne doit pas ressusciter un document purgé | ✅ |
-| Secrets | À chaque modification | 90 jours | ✅ |
+| Élément                      | Fréquence                  | Rétention                                                                                               | Chiffrement |
+| ---------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------- | ----------- |
+| PostgreSQL — complète        | Quotidienne                | 30 jours                                                                                                | ✅          |
+| PostgreSQL — journaux (PITR) | Continu                    | 7 jours                                                                                                 | ✅          |
+| Bucket média                 | Quotidienne (incrémentale) | 30 jours                                                                                                | ✅          |
+| Bucket KYC                   | Quotidienne                | **Aligné sur la conservation des documents** — une sauvegarde ne doit pas ressusciter un document purgé | ✅          |
+| Secrets                      | À chaque modification      | 90 jours                                                                                                | ✅          |
 
 **Objectifs :** RPO ≤ 1 h (restauration au point dans le temps) · RTO ≤ 4 h.
 
@@ -206,19 +211,19 @@ rétention du bucket KYC est donc alignée sur la durée de conservation, et non
 
 ## 10. Observabilité et astreinte
 
-| Alerte | Seuil | Niveau |
-|---|---|---|
-| Taux d'erreur 5xx | > 1 % sur 5 min | S2 |
-| Latence p95 API | > 1 s sur 10 min | S3 |
-| Profondeur d'une file | > 1 000 ou plus vieux job > 15 min | S3 |
-| Dead-letter non vide | ≥ 1 | S3 |
-| Cas de modération P0 non pris | > 1 h | **S2** |
-| Cas de modération en dépassement de SLA | > 5 | S3 |
-| Consultation de documents KYC | > 20/h par compte | **S2** |
-| Échec de sauvegarde | 1 occurrence | **S1** |
-| Taux d'échec de paiement | > 20 % sur 1 h | S3 |
-| Espace disque base | > 80 % | S3 |
-| Dépense SMS | > 80 % du plafond | S3 |
+| Alerte                                  | Seuil                              | Niveau |
+| --------------------------------------- | ---------------------------------- | ------ |
+| Taux d'erreur 5xx                       | > 1 % sur 5 min                    | S2     |
+| Latence p95 API                         | > 1 s sur 10 min                   | S3     |
+| Profondeur d'une file                   | > 1 000 ou plus vieux job > 15 min | S3     |
+| Dead-letter non vide                    | ≥ 1                                | S3     |
+| Cas de modération P0 non pris           | > 1 h                              | **S2** |
+| Cas de modération en dépassement de SLA | > 5                                | S3     |
+| Consultation de documents KYC           | > 20/h par compte                  | **S2** |
+| Échec de sauvegarde                     | 1 occurrence                       | **S1** |
+| Taux d'échec de paiement                | > 20 % sur 1 h                     | S3     |
+| Espace disque base                      | > 80 %                             | S3     |
+| Dépense SMS                             | > 80 % du plafond                  | S3     |
 
 Astreinte : à définir avec le porteur de projet. **Au minimum, une personne joignable pour les alertes S1 pendant le
 mois qui suit l'ouverture** — c'est la période où un incident non traité coûte le plus cher en réputation.

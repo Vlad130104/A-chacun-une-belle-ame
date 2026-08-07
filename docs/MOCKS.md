@@ -1,8 +1,8 @@
 # Intégrations simulées — registre permanent
 
-> **État au terme de la phase B (conception) : aucun code n'a encore été écrit.**
-> Ce registre décrit les intégrations telles qu'elles seront livrées. Il sera mis à jour à chaque tranche de
-> développement, et la colonne « État » ne passera à « implémenté » qu'une fois le code livré et testé.
+> **État au terme de la phase C (initialisation).** Le socle technique est en place ; deux ports seulement sont
+> implémentés. Les autres n'existent qu'à l'état d'interface et seront livrés avec leur tranche verticale.
+> La colonne « État » ne passe à « livré » qu'une fois le code écrit **et** testé.
 
 **Engagement.** Aucune intégration externe ne sera jamais présentée comme fonctionnelle si elle repose encore sur une
 implémentation simulée — ni dans l'interface, ni dans la documentation, ni dans une démonstration.
@@ -11,18 +11,21 @@ implémentation simulée — ni dans l'interface, ni dans la documentation, ni d
 
 ## 1. Registre
 
-| Port | Implémentation simulée | État | Bloque l'ouverture publique ? | Question ouverte |
-|---|---|---|---|---|
-| `SmsProvider` | `ConsoleSmsProvider` — le code OTP est journalisé, aucun SMS n'est envoyé | ⬜ à développer (D1) | **🔴 OUI** — sans SMS réel, aucune inscription n'est possible | **Q4** |
-| `KycProvider` | `MockKycProvider` — décision simulée, complétée par la revue humaine au back-office | ⬜ à développer (D2) | 🟡 Non si la revue humaine est acceptée comme mode nominal | **Q2** |
-| `PaymentProvider` | `MockPaymentProvider` — toute réponse porte `testMode: true` | ⬜ à développer (D7) | 🟢 Non — ouverture possible en gratuit intégral | **Q3** |
-| `PushProvider` | `MockPushProvider` — notification journalisée, non envoyée | ⬜ à développer (D8) | 🟢 Non — repli sur in-app et e-mail | — |
-| `ContentModerationProvider` | `RuleBasedModerationProvider` — règles simples, pas d'analyse d'image | ⬜ à développer (D3) | 🟢 Non — revue humaine au MVP | — |
-| `MailProvider` | Mailpit en local — **réel** en recette et production | ⬜ à développer (D8) | 🟢 Non | — |
-| `StorageProvider` | MinIO en local — **réel** (S3 compatible) | ⬜ à développer (D3) | 🟢 Non | — |
-| `ClockProvider` | `FrozenClock` **en test uniquement** ; horloge système ailleurs | ⬜ à développer (D1) | — | — |
+| Port                        | Implémentation simulée                                                              | État                 | Bloque l'ouverture publique ?                                 | Question ouverte |
+| --------------------------- | ----------------------------------------------------------------------------------- | -------------------- | ------------------------------------------------------------- | ---------------- |
+| `SmsProvider`               | `ConsoleSmsProvider` — le code OTP est journalisé, aucun SMS n'est envoyé           | 🟨 simulé, livré     | **🔴 OUI** — sans SMS réel, aucune inscription n'est possible | **Q4**           |
+| `KycProvider`               | `MockKycProvider` — décision simulée, complétée par la revue humaine au back-office | ⬜ à développer (D2) | 🟡 Non si la revue humaine est acceptée comme mode nominal    | **Q2**           |
+| `PaymentProvider`           | `MockPaymentProvider` — toute réponse porte `testMode: true`                        | ⬜ à développer (D7) | 🟢 Non — ouverture possible en gratuit intégral               | **Q3**           |
+| `PushProvider`              | `MockPushProvider` — notification journalisée, non envoyée                          | ⬜ à développer (D8) | 🟢 Non — repli sur in-app et e-mail                           | —                |
+| `ContentModerationProvider` | `RuleBasedModerationProvider` — règles simples, pas d'analyse d'image               | ⬜ à développer (D3) | 🟢 Non — revue humaine au MVP                                 | —                |
+| `MailProvider`              | Mailpit en local — **réel** en recette et production                                | ⬜ à développer (D8) | 🟢 Non                                                        | —                |
+| `StorageProvider`           | MinIO en local — **réel** (S3 compatible)                                           | ⬜ à développer (D3) | 🟢 Non                                                        | —                |
+| `ClockProvider`             | `FrozenClock` **en test uniquement** ; horloge système ailleurs                     | 🟨 livré             | —                                                             | —                |
 
-Légende : ⬜ à développer · 🟨 simulé et livré · ✅ implémentation réelle en production.
+Légende : ⬜ à développer (interface non encore écrite) · 🟨 simulé et livré · ✅ implémentation réelle en production.
+
+Les interfaces des huit ports sont définies dès la phase C dans `apps/api/src/providers/ports.ts` ; seules les
+implémentations restent à écrire, tranche par tranche.
 
 ---
 
@@ -82,21 +85,32 @@ L'état réel — et non l'état documenté — est exposé par `GET /health/pro
 `ADMIN:system.read`. **Cette route est la source de vérité de ce document** : en cas de divergence, c'est elle qui
 fait foi et ce fichier doit être corrigé.
 
-Trois garde-fous seront implémentés avec les ports concernés :
+Trois garde-fous, dont deux sont **déjà actifs depuis la phase C** :
 
-1. Au démarrage, l'API journalise en `WARN` la liste des ports en mode simulé.
-2. Si `NODE_ENV=production` et qu'un port critique est simulé, **le démarrage échoue** — sauf
-   `ALLOW_MOCK_PROVIDERS_IN_PRODUCTION=true` posé délibérément.
-3. Toute réponse d'API issue d'un port simulé porte `testMode: true`, et l'interface affiche un bandeau que le client
-   ne peut pas masquer.
+1. ✅ Au démarrage, l'API journalise en `WARN` la liste des ports en mode simulé (`ProvidersModule`).
+2. ✅ Si `NODE_ENV=production` et qu'un port critique est simulé, **le démarrage échoue** — sauf
+   `ALLOW_MOCK_PROVIDERS_IN_PRODUCTION=true` posé délibérément. Comportement couvert par
+   `apps/api/src/config/env.schema.spec.ts`.
+3. ⬜ Toute réponse d'API issue d'un port simulé portera `testMode: true`, et l'interface affichera un bandeau que le
+   client ne peut pas masquer — à livrer avec les tranches concernées (D2, D7).
 
 ---
 
 ## 4. Ce qui n'est pas simulé
 
-Pour éviter toute ambiguïté, les éléments suivants sont **réels dès le développement local** : PostgreSQL, Redis,
-BullMQ, Socket.IO, le stockage S3 (via MinIO), l'envoi d'e-mails (via Mailpit), le chiffrement, le hachage des mots
-de passe, la génération et la rotation des jetons, et l'ensemble de la logique métier.
+Ces éléments sont **réels dès le développement local**, jamais simulés :
 
-**Aucune règle de sécurité n'est simulée.** Le contrôle d'âge, la vérification du match avant message, les gardes
-d'autorisation et le rate limiting fonctionnent réellement en développement comme en production.
+| Élément                                         | État à la phase C                                              |
+| ----------------------------------------------- | -------------------------------------------------------------- |
+| PostgreSQL, Redis, MinIO, Mailpit               | ✅ réels (Docker Compose)                                      |
+| Calcul d'âge et contrôle de majorité            | ✅ implémenté et testé (`packages/contracts/src/age.ts`)       |
+| Validation de configuration au démarrage        | ✅ implémentée et testée                                       |
+| Pagination par curseur                          | ✅ implémentée et testée                                       |
+| Inventaire des politiques d'autorisation        | ✅ test actif                                                  |
+| BullMQ, Socket.IO, chiffrement, hachage, jetons | ⬜ à livrer avec les tranches D1 et D5 — **pas encore écrits** |
+| Gardes d'autorisation, rate limiting            | ⬜ à livrer avec la tranche D1 — seule la déclaration existe   |
+
+**Aucune règle de sécurité ne sera simulée.** Lorsqu'elles seront écrites, le contrôle d'âge, la vérification du
+match avant message, les gardes d'autorisation et le rate limiting fonctionneront réellement en développement comme
+en production. À ce stade, ce qui n'est pas coché ci-dessus n'existe simplement pas encore — il ne s'agit ni d'une
+simulation ni d'une approximation.
