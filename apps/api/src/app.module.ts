@@ -8,6 +8,8 @@ import { HealthModule } from './modules/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { VerificationModule } from './modules/verification/verification.module';
 import { ProfilesModule } from './modules/profiles/profiles.module';
+import { ConversationsModule } from './modules/conversations/conversations.module';
+import { DiscoveryModule } from './modules/discovery/discovery.module';
 
 /**
  * Module racine.
@@ -57,6 +59,8 @@ import { ProfilesModule } from './modules/profiles/profiles.module';
     AuthModule,
     VerificationModule,
     ProfilesModule,
+    ConversationsModule,
+    DiscoveryModule,
   ],
 })
 export class AppModule {}

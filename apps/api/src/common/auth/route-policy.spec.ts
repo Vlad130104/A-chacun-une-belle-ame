@@ -13,6 +13,7 @@ import {
   ProfileController,
   ReferentialController,
 } from '../../modules/profiles/infrastructure/profiles.controller';
+import { DiscoveryController } from '../../modules/discovery/infrastructure/discovery.controller';
 import { AUTH_POLICY_KEY, type AuthPolicy } from './auth.decorator';
 
 /**
@@ -40,6 +41,7 @@ const CONTROLLERS = [
   PhotoController,
   ReferentialController,
   AdminPhotoModerationController,
+  DiscoveryController,
 ];
 
 /**
@@ -141,6 +143,27 @@ describe('inventaire des routes', () => {
     );
     expect(profil.length).toBeGreaterThanOrEqual(9);
     expect(profil.every((route) => route.policy?.level !== 'public')).toBe(true);
+  });
+
+  it('exige un compte vérifié pour toute la découverte', () => {
+    const decouverte = [
+      'GET /discovery/suggestions',
+      'POST /likes',
+      'GET /likes/sent',
+      'GET /likes/received',
+      'GET /matches',
+    ];
+    for (const signature of decouverte) {
+      const route = routes.find((candidate) => candidate.signature === signature);
+      expect(route?.policy?.level).toBe('verified');
+    }
+  });
+
+  it('laisse le blocage accessible sans vérification d’identité', () => {
+    // Le blocage est une fonction de sécurité : la fermer aux comptes non vérifiés
+    // priverait de protection ceux qui en ont le plus besoin.
+    const block = routes.find((route) => route.signature === 'POST /blocks');
+    expect(block?.policy?.level).toBe('auth');
   });
 
   it('n’expose aucune route d’authentification sensible en accès libre', () => {
