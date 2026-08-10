@@ -7,6 +7,12 @@ import {
   AdminVerificationController,
   VerificationController,
 } from '../../modules/verification/infrastructure/verification.controller';
+import {
+  AdminPhotoModerationController,
+  PhotoController,
+  ProfileController,
+  ReferentialController,
+} from '../../modules/profiles/infrastructure/profiles.controller';
 import { AUTH_POLICY_KEY, type AuthPolicy } from './auth.decorator';
 
 /**
@@ -30,6 +36,10 @@ const CONTROLLERS = [
   AuthController,
   VerificationController,
   AdminVerificationController,
+  ProfileController,
+  PhotoController,
+  ReferentialController,
+  AdminPhotoModerationController,
 ];
 
 /**
@@ -118,6 +128,19 @@ describe('inventaire des routes', () => {
     const kyc = routes.filter((route) => route.signature.includes('verification'));
     expect(kyc.length).toBeGreaterThanOrEqual(5);
     expect(kyc.every((route) => route.policy?.level !== 'public')).toBe(true);
+  });
+
+  it('réserve la file de modération photo à la permission moderation.content', () => {
+    const queue = routes.find((route) => route.signature === 'GET /admin/moderation/photos');
+    expect(queue?.policy?.permissions).toContain('moderation.content');
+  });
+
+  it('n’expose aucune route de profil ni de photo en accès libre', () => {
+    const profil = routes.filter(
+      (route) => route.signature.includes('/profile') || route.signature.includes('/media/photos'),
+    );
+    expect(profil.length).toBeGreaterThanOrEqual(9);
+    expect(profil.every((route) => route.policy?.level !== 'public')).toBe(true);
   });
 
   it('n’expose aucune route d’authentification sensible en accès libre', () => {

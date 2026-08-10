@@ -11,16 +11,16 @@ implémentation simulée — ni dans l'interface, ni dans la documentation, ni d
 
 ## 1. Registre
 
-| Port                        | Implémentation simulée                                                              | État                 | Bloque l'ouverture publique ?                                 | Question ouverte |
-| --------------------------- | ----------------------------------------------------------------------------------- | -------------------- | ------------------------------------------------------------- | ---------------- |
-| `SmsProvider`               | `ConsoleSmsProvider` — le code OTP est journalisé, aucun SMS n'est envoyé           | 🟨 simulé, livré     | **🔴 OUI** — sans SMS réel, aucune inscription n'est possible | **Q4**           |
-| `KycProvider`               | `MockKycProvider` — aucune décision automatique, revue humaine au back-office       | 🟨 simulé, livré     | 🟡 Non si la revue humaine est acceptée comme mode nominal    | **Q2**           |
-| `PaymentProvider`           | `MockPaymentProvider` — toute réponse porte `testMode: true`                        | ⬜ à développer (D7) | 🟢 Non — ouverture possible en gratuit intégral               | **Q3**           |
-| `PushProvider`              | `MockPushProvider` — notification journalisée, non envoyée                          | ⬜ à développer (D8) | 🟢 Non — repli sur in-app et e-mail                           | —                |
-| `ContentModerationProvider` | `RuleBasedModerationProvider` — règles simples, pas d'analyse d'image               | ⬜ à développer (D3) | 🟢 Non — revue humaine au MVP                                 | —                |
-| `MailProvider`              | Mailpit en local — **réel** en recette et production                                | ⬜ à développer (D8) | 🟢 Non                                                        | —                |
-| `StorageProvider`           | MinIO en local — **réel** (S3 compatible)                                           | ⬜ à développer (D3) | 🟢 Non                                                        | —                |
-| `ClockProvider`             | `FrozenClock` **en test uniquement** ; horloge système ailleurs                     | 🟨 livré             | —                                                             | —                |
+| Port                        | Implémentation simulée                                                        | État                 | Bloque l'ouverture publique ?                                 | Question ouverte |
+| --------------------------- | ----------------------------------------------------------------------------- | -------------------- | ------------------------------------------------------------- | ---------------- |
+| `SmsProvider`               | `ConsoleSmsProvider` — le code OTP est journalisé, aucun SMS n'est envoyé     | 🟨 simulé, livré     | **🔴 OUI** — sans SMS réel, aucune inscription n'est possible | **Q4**           |
+| `KycProvider`               | `MockKycProvider` — aucune décision automatique, revue humaine au back-office | 🟨 simulé, livré     | 🟡 Non si la revue humaine est acceptée comme mode nominal    | **Q2**           |
+| `PaymentProvider`           | `MockPaymentProvider` — toute réponse porte `testMode: true`                  | ⬜ à développer (D7) | 🟢 Non — ouverture possible en gratuit intégral               | **Q3**           |
+| `PushProvider`              | `MockPushProvider` — notification journalisée, non envoyée                    | ⬜ à développer (D8) | 🟢 Non — repli sur in-app et e-mail                           | —                |
+| `ContentModerationProvider` | `RuleBasedModerationProvider` — règles simples, pas d'analyse d'image         | ⬜ à développer (D3) | 🟢 Non — revue humaine au MVP                                 | —                |
+| `MailProvider`              | Mailpit en local — **réel** en recette et production                          | ⬜ à développer (D8) | 🟢 Non                                                        | —                |
+| `StorageProvider`           | MinIO en local — **réel** (S3 compatible)                                     | ⬜ à développer (D3) | 🟢 Non                                                        | —                |
+| `ClockProvider`             | `FrozenClock` **en test uniquement** ; horloge système ailleurs               | 🟨 livré             | —                                                             | —                |
 
 Légende : ⬜ à développer (interface non encore écrite) · 🟨 simulé et livré · ✅ implémentation réelle en production.
 
@@ -103,6 +103,7 @@ Ces éléments sont **réels dès le développement local**, jamais simulés :
 | Élément                                         | État à la phase C                                              |
 | ----------------------------------------------- | -------------------------------------------------------------- |
 | PostgreSQL, Redis, MinIO, Mailpit               | ✅ réels (Docker Compose)                                      |
+| Traitement d'image (EXIF, miniatures, WebP)     | ✅ réel — sharp, vérifié sur une vraie image                   |
 | Calcul d'âge et contrôle de majorité            | ✅ implémenté et testé (`packages/contracts/src/age.ts`)       |
 | Validation de configuration au démarrage        | ✅ implémentée et testée                                       |
 | Pagination par curseur                          | ✅ implémentée et testée                                       |

@@ -7,6 +7,7 @@ import { ProvidersModule } from './providers/providers.module';
 import { HealthModule } from './modules/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { VerificationModule } from './modules/verification/verification.module';
+import { ProfilesModule } from './modules/profiles/profiles.module';
 
 /**
  * Module racine.
@@ -55,6 +56,7 @@ import { VerificationModule } from './modules/verification/verification.module';
     HealthModule,
     AuthModule,
     VerificationModule,
+    ProfilesModule,
   ],
 })
 export class AppModule {}
