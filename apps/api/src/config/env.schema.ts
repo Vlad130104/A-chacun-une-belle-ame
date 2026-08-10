@@ -27,6 +27,18 @@ export const envSchema = z.object({
   API_GLOBAL_PREFIX: z.string().default('api/v1'),
   PROCESS_ROLE: z.enum(['api', 'worker', 'all']).default('all'),
 
+  // Secret de hachage des empreintes recherchables (numéro, code OTP, refresh token).
+  // Une valeur par défaut n'est acceptable qu'en développement : en production, la
+  // laisser vide reviendrait à rendre les empreintes reproductibles par un tiers.
+  HASH_SALT: z.string().min(16).default('sel-de-developpement-non-secret'),
+
+  // ── Stockage compatible S3 — deux buckets séparés (ADR-004) ────────────────
+  S3_ENDPOINT: z.string().url().default('http://localhost:9000'),
+  S3_MEDIA_BUCKET: z.string().min(3).default('acuba-media'),
+  S3_KYC_BUCKET: z.string().min(3).default('acuba-kyc'),
+  SIGNED_URL_TTL_SECONDS: z.coerce.number().int().positive().max(3600).default(300),
+  KYC_SIGNED_URL_TTL_SECONDS: z.coerce.number().int().positive().max(900).default(300),
+
   ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(900),
   REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(30),
   ADMIN_SESSION_TTL_HOURS: z.coerce.number().int().positive().default(8),
@@ -126,6 +138,13 @@ export function validateEnv(raw: Record<string, unknown>): Env {
           'ALLOW_MOCK_PROVIDERS_IN_PRODUCTION=true en connaissance de cause (voir docs/MOCKS.md).',
       ]);
     }
+  }
+
+  if (env.S3_MEDIA_BUCKET === env.S3_KYC_BUCKET) {
+    throw new EnvValidationError([
+      'S3_MEDIA_BUCKET et S3_KYC_BUCKET doivent être deux buckets distincts : ' +
+        'les pièces d’identité ne partagent jamais le stockage des photos de profil (ADR-004).',
+    ]);
   }
 
   if (env.MIN_PHOTOS_TO_PUBLISH > env.MAX_PHOTOS) {

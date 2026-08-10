@@ -20,7 +20,7 @@ export class SaltedHasher implements Hasher {
   private readonly salt: string;
 
   constructor(config: ConfigService<Env, true>) {
-    this.salt = config.get('HASH_SALT' as never) ?? 'sel-de-developpement-non-secret';
+    this.salt = config.get('HASH_SALT', { infer: true });
   }
 
   hash(value: string): string {

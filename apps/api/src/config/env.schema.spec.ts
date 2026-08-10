@@ -29,6 +29,23 @@ describe('validation de la configuration', () => {
     );
   });
 
+  describe('séparation des stockages', () => {
+    it('refuse un bucket unique pour les médias et les pièces d’identité', () => {
+      expect(() =>
+        validateEnv({ ...baseEnv, S3_MEDIA_BUCKET: 'acuba', S3_KYC_BUCKET: 'acuba' }),
+      ).toThrow(/buckets distincts/);
+    });
+
+    it('accepte deux buckets distincts', () => {
+      const env = validateEnv({
+        ...baseEnv,
+        S3_MEDIA_BUCKET: 'medias',
+        S3_KYC_BUCKET: 'identites',
+      });
+      expect(env.S3_KYC_BUCKET).toBe('identites');
+    });
+  });
+
   describe('garde-fou des intégrations simulées', () => {
     it('empêche le démarrage en production avec un port critique simulé', () => {
       expect(() =>

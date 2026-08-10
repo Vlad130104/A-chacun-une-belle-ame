@@ -3,6 +3,10 @@ import { describe, expect, it } from '@jest/globals';
 import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { HealthController } from '../../modules/health/health.controller';
 import { AuthController } from '../../modules/auth/infrastructure/auth.controller';
+import {
+  AdminVerificationController,
+  VerificationController,
+} from '../../modules/verification/infrastructure/verification.controller';
 import { AUTH_POLICY_KEY, type AuthPolicy } from './auth.decorator';
 
 /**
@@ -21,7 +25,12 @@ import { AUTH_POLICY_KEY, type AuthPolicy } from './auth.decorator';
  */
 
 /** Tous les contrôleurs de l'application. Un contrôleur absent n'est pas couvert. */
-const CONTROLLERS = [HealthController, AuthController];
+const CONTROLLERS = [
+  HealthController,
+  AuthController,
+  VerificationController,
+  AdminVerificationController,
+];
 
 /**
  * Liste de référence des routes publiques. Toute addition doit être justifiée :
@@ -98,6 +107,17 @@ describe('inventaire des routes', () => {
   it('protège la route d’état des intégrations par une permission back-office', () => {
     const providersRoute = routes.find((route) => route.signature === 'GET /health/providers');
     expect(providersRoute?.policy?.permissions).toContain('system.read');
+  });
+
+  it('réserve la file de vérification au rôle disposant de kyc.review', () => {
+    const queue = routes.find((route) => route.signature === 'GET /admin/verification/queue');
+    expect(queue?.policy?.permissions).toContain('kyc.review');
+  });
+
+  it('n’expose aucune route de vérification d’identité en accès libre', () => {
+    const kyc = routes.filter((route) => route.signature.includes('verification'));
+    expect(kyc.length).toBeGreaterThanOrEqual(5);
+    expect(kyc.every((route) => route.policy?.level !== 'public')).toBe(true);
   });
 
   it('n’expose aucune route d’authentification sensible en accès libre', () => {

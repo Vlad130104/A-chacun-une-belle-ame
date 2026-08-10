@@ -6,6 +6,7 @@ import { PrismaModule } from './infrastructure/prisma/prisma.module';
 import { ProvidersModule } from './providers/providers.module';
 import { HealthModule } from './modules/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { VerificationModule } from './modules/verification/verification.module';
 
 /**
  * Module racine.
@@ -53,6 +54,7 @@ import { AuthModule } from './modules/auth/auth.module';
     ProvidersModule,
     HealthModule,
     AuthModule,
+    VerificationModule,
   ],
 })
 export class AppModule {}
