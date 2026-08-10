@@ -5,6 +5,7 @@ import { validateEnv } from './config/env.schema';
 import { PrismaModule } from './infrastructure/prisma/prisma.module';
 import { ProvidersModule } from './providers/providers.module';
 import { HealthModule } from './modules/health/health.module';
+import { AuthModule } from './modules/auth/auth.module';
 
 /**
  * Module racine.
@@ -51,6 +52,7 @@ import { HealthModule } from './modules/health/health.module';
     PrismaModule,
     ProvidersModule,
     HealthModule,
+    AuthModule,
   ],
 })
 export class AppModule {}

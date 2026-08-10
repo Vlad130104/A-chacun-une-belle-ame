@@ -1,10 +1,8 @@
-import { beforeAll, describe, expect, it } from '@jest/globals';
-import { DiscoveryModule, DiscoveryService, MetadataScanner, Reflector } from '@nestjs/core';
-import { PATH_METADATA, METHOD_METADATA } from '@nestjs/common/constants';
-import { Module } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { Test } from '@nestjs/testing';
+import 'reflect-metadata';
+import { describe, expect, it } from '@jest/globals';
+import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { HealthController } from '../../modules/health/health.controller';
+import { AuthController } from '../../modules/auth/infrastructure/auth.controller';
 import { AUTH_POLICY_KEY, type AuthPolicy } from './auth.decorator';
 
 /**
@@ -17,15 +15,27 @@ import { AUTH_POLICY_KEY, type AuthPolicy } from './auth.decorator';
  *   2. Toute route publique doit figurer dans la liste de référence ci-dessous :
  *      ajouter une route publique exige une décision consciente en revue de code.
  *
- * Ce test parcourt les contrôleurs par réflexion : il n'a rien à mettre à jour quand
- * une route est ajoutée — il échoue, ce qui est le but.
+ * L'inventaire lit les métadonnées directement sur les classes, sans conteneur
+ * d'injection : ajouter un contrôleur ne demande donc pas de câbler ses dépendances
+ * ici, seulement de l'ajouter à la liste.
  */
+
+/** Tous les contrôleurs de l'application. Un contrôleur absent n'est pas couvert. */
+const CONTROLLERS = [HealthController, AuthController];
 
 /**
  * Liste de référence des routes publiques. Toute addition doit être justifiée :
  * une route publique est une surface d'attaque exposée sans authentification.
  */
-const ALLOWED_PUBLIC_ROUTES = new Set(['GET /health/live', 'GET /health/ready']);
+const ALLOWED_PUBLIC_ROUTES = new Set([
+  'GET /health/live',
+  'GET /health/ready',
+  // Inscription, validation OTP et rotation de token : par nature accessibles sans
+  // session, chacune protégée par une limitation de débit dédiée.
+  'POST /auth/register',
+  'POST /auth/otp/verify',
+  'POST /auth/refresh',
+]);
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'ALL', 'OPTIONS', 'HEAD'];
 
@@ -34,64 +44,41 @@ interface DiscoveredRoute {
   policy: AuthPolicy | undefined;
 }
 
-/**
- * Module de test regroupant tous les contrôleurs de l'application.
- * Chaque nouveau contrôleur doit y être ajouté — omission détectée en revue, car un
- * contrôleur absent d'ici n'est pas couvert par l'inventaire.
- */
-@Module({
-  imports: [DiscoveryModule],
-  controllers: [HealthController],
-  // L'inventaire n'instancie aucune dépendance réelle : il ne lit que les métadonnées.
-  providers: [{ provide: ConfigService, useValue: { get: () => undefined } }],
-})
-class RouteInventoryModule {}
+function inventory(): DiscoveredRoute[] {
+  const routes: DiscoveredRoute[] = [];
+
+  for (const controller of CONTROLLERS) {
+    const controllerPath = (Reflect.getMetadata(PATH_METADATA, controller) as string) ?? '';
+    const prototype = controller.prototype as unknown as Record<string, unknown>;
+
+    for (const methodName of Object.getOwnPropertyNames(prototype)) {
+      if (methodName === 'constructor') continue;
+
+      const handler = prototype[methodName];
+      if (typeof handler !== 'function') continue;
+
+      const methodPath = Reflect.getMetadata(PATH_METADATA, handler) as string | undefined;
+      if (methodPath === undefined) continue;
+
+      const verbIndex = (Reflect.getMetadata(METHOD_METADATA, handler) as number) ?? 0;
+      const verb = HTTP_METHODS[verbIndex] ?? 'GET';
+      const path = `/${[controllerPath, methodPath].filter((part) => part && part !== '/').join('/')}`;
+
+      routes.push({
+        signature: `${verb} ${path}`,
+        policy: Reflect.getMetadata(AUTH_POLICY_KEY, handler) as AuthPolicy | undefined,
+      });
+    }
+  }
+
+  return routes;
+}
 
 describe('inventaire des routes', () => {
-  let routes: DiscoveredRoute[];
+  const routes = inventory();
 
-  beforeAll(async () => {
-    // On ne compile que le graphe : aucune connexion réseau ni base n'est ouverte,
-    // car `compile()` n'exécute pas les hooks de cycle de vie.
-    const moduleRef = await Test.createTestingModule({
-      imports: [RouteInventoryModule],
-    }).compile();
-
-    const discovery = moduleRef.get(DiscoveryService);
-    const scanner = moduleRef.get(MetadataScanner);
-    const reflector = moduleRef.get(Reflector);
-
-    routes = [];
-
-    for (const wrapper of discovery.getControllers()) {
-      const instance = wrapper.instance as Record<string, unknown> | undefined;
-      const metatype = wrapper.metatype;
-      if (!instance || !metatype) continue;
-
-      const controllerPath = reflector.get<string>(PATH_METADATA, metatype) ?? '';
-      const prototype = Object.getPrototypeOf(instance) as object;
-
-      for (const methodName of scanner.getAllMethodNames(prototype)) {
-        const handler = instance[methodName];
-        if (typeof handler !== 'function') continue;
-
-        const methodPath = reflector.get<string>(PATH_METADATA, handler);
-        if (methodPath === undefined) continue;
-
-        const verbIndex = reflector.get<number>(METHOD_METADATA, handler) ?? 0;
-        const verb = HTTP_METHODS[verbIndex] ?? 'GET';
-        const path = `/${[controllerPath, methodPath].filter((p) => p && p !== '/').join('/')}`;
-
-        routes.push({
-          signature: `${verb} ${path}`,
-          policy: reflector.get<AuthPolicy>(AUTH_POLICY_KEY, handler),
-        });
-      }
-    }
-  });
-
-  it('découvre au moins une route', () => {
-    expect(routes.length).toBeGreaterThan(0);
+  it('découvre les routes de tous les contrôleurs déclarés', () => {
+    expect(routes.length).toBeGreaterThanOrEqual(10);
   });
 
   it('exige une politique d’autorisation sur chaque route', () => {
@@ -111,5 +98,13 @@ describe('inventaire des routes', () => {
   it('protège la route d’état des intégrations par une permission back-office', () => {
     const providersRoute = routes.find((route) => route.signature === 'GET /health/providers');
     expect(providersRoute?.policy?.permissions).toContain('system.read');
+  });
+
+  it('n’expose aucune route d’authentification sensible en accès libre', () => {
+    const sensibles = ['POST /auth/logout-all', 'GET /auth/sessions', 'GET /auth/me'];
+    for (const signature of sensibles) {
+      const route = routes.find((candidate) => candidate.signature === signature);
+      expect(route?.policy?.level).not.toBe('public');
+    }
   });
 });
