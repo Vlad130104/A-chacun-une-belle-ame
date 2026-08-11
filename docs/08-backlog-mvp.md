@@ -209,6 +209,29 @@ réception. Rien dans l'interface ne doit afficher « livré » tant que cette s
 - Une règle produit un `ModerationSignal` et **au plus** une mesure réversible ; elle ne peut ni suspendre ni bannir.
 - Un tableau de bord affiche le taux de faux positifs par règle, mesuré sur les cas classés sans suite.
 
+### État de livraison du lot D6
+
+| Story | État       | Précision                                                                                                                                          |
+| ----- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D6-01 | ✅ livré   | Une seule requête, aucun champ obligatoire hors catégorie, `AUTH` et non `VERIFIED`.                                                               |
+| D6-02 | ✅ livré   | Priorité par catégorie, montée irréversible, échéance recomptée depuis l'ouverture, réouverture d'un cas résolu récent.                            |
+| D6-03 | ✅ livré   | File triée priorité puis ancienneté, état SLA `ON_TIME` / `DUE_SOON` / `OVERDUE` proportionnel à la fenêtre.                                       |
+| D6-04 | ✅ livré   | Attribution exclusive, dossier complet avec antécédents tous cas confondus, consultation auditée.                                                  |
+| D6-05 | ✅ livré   | Les 10 actions, motif obligatoire, effets sur compte et contenu via des ports implémentés par les modules propriétaires.                           |
+| D6-06 | ✅ livré   | `BAN` exige `users.ban`, un second valideur **distinct**, et bloque l'identité par empreintes (ADR-013).                                           |
+| D6-07 | ✅ livré   | 9 règles pures, seuils entièrement en configuration, garde-fou qui refuse toute mesure non réversible.                                             |
+| D6-08 | ✅ livré   | Vérifié à trois niveaux : liste blanche d'actions automatisables, contrôle dans `checkAction`, test qui déclenche les 9 règles à la fois.          |
+| D6-09 | 🟨 partiel | La notification in-app est **écrite en base** ; aucun envoi push ni e-mail — file multi-canal en D8.                                               |
+| D6-10 | 🟨 partiel | `GET /admin/moderation/metrics` livre volumétrie, retards et délai **médian**. L'**alerte** sur dépassement suppose la file de notifications (D8). |
+
+**Non fait, dit explicitement :**
+
+- **Le tableau de bord des faux positifs par règle** (dernier point de D6-07) n'existe pas. Les données pour le
+  produire sont là — chaque `ModerationSignal` est rattaché à un cas dont l'issue est connue — mais l'écran est
+  du back-office, donc D9. Aucune règle ne doit être resserrée avant cette mesure.
+- **La levée automatique d'une sanction à échéance** : voir `docs/MOCKS.md`, réserve 3.
+- **Le verrou append-only du journal d'audit** est applicatif, pas structurel : `TODO(D9-07)`.
+
 ---
 
 ## Lot D7 — Abonnements et paiements (45 pts)

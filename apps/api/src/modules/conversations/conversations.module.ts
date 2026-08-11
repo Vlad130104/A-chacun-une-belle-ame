@@ -13,6 +13,8 @@ import {
   type MediaStorage,
 } from '../profiles/application/ports';
 import { CONVERSATION_GATEWAY } from '../discovery/application/ports';
+import { MESSAGE_MODERATION_GATEWAY } from '../moderation/application/ports';
+import { PrismaMessageModerationGateway } from './infrastructure/message-moderation.gateway';
 import {
   ATTACHMENT_PIPELINE,
   ATTACHMENT_STORAGE,
@@ -83,6 +85,13 @@ const buildConfig = (config: ConfigService<Env, true>): MessagingConfig => ({
       provide: MESSAGE_REPOSITORY,
       inject: [PrismaService],
       useFactory: (prisma: PrismaService) => new PrismaMessageRepository(prisma),
+    },
+    // Port déclaré par le module `moderation`, implémenté ici : la table
+    // `Message` appartient à `conversations`.
+    {
+      provide: MESSAGE_MODERATION_GATEWAY,
+      inject: [PrismaService],
+      useFactory: (prisma: PrismaService) => new PrismaMessageModerationGateway(prisma),
     },
 
     // Les deux ports média se branchent sur les implémentations déjà éprouvées
@@ -232,6 +241,6 @@ const buildConfig = (config: ConfigService<Env, true>): MessagingConfig => ({
     // route devient ainsi un contrôle réel, sur toute route qui le déclare.
     { provide: APP_GUARD, useClass: ConversationMemberGuard },
   ],
-  exports: [CONVERSATION_GATEWAY],
+  exports: [CONVERSATION_GATEWAY, MESSAGE_MODERATION_GATEWAY],
 })
 export class ConversationsModule {}

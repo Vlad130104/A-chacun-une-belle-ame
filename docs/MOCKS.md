@@ -1,6 +1,6 @@
 # Intégrations simulées — registre permanent
 
-> **État au terme de la tranche D5 (messagerie).** La colonne « État » ne passe à « livré » qu'une fois le code
+> **État au terme de la tranche D6 (sécurité et modération).** La colonne « État » ne passe à « livré » qu'une fois le code
 > écrit **et** testé. Les ports encore marqués « à développer » n'existent qu'à l'état d'interface : ils ne sont
 > ni simulés ni approximatifs, ils ne sont pas écrits.
 
@@ -118,6 +118,19 @@ Ces éléments sont **réels dès le développement local**, jamais simulés :
 **Aucune règle de sécurité n'est simulée.** Le contrôle d'âge, la vérification du match avant message, les gardes
 d'autorisation et le rate limiting fonctionnent réellement, en développement comme en production. Ce qui n'est pas
 coché ci-dessus n'existe simplement pas encore — il ne s'agit ni d'une simulation ni d'une approximation.
+
+### Trois réserves nommées, tranche D6
+
+1. **La notification d'une décision est écrite, pas envoyée.** La ligne `Notification` existe en base et sera lue
+   par le centre in-app. Aucun push ni e-mail ne part : la file d'envoi multi-canal est la tranche D8. Rien dans
+   l'interface ne doit laisser croire qu'un message a été poussé au membre.
+2. **Le journal d'audit est en ajout seul par convention applicative, pas encore par contrainte.** Aucun service
+   n'expose de mise à jour ni de suppression, et aucune route d'écriture n'existe. Le verrou définitif — un
+   déclencheur PostgreSQL interdisant `UPDATE` et `DELETE`, plus des droits de rôle restreints — est suivi en
+   `TODO(D9-07)`. Tant qu'il n'est pas posé, un accès direct à la base pourrait réécrire une ligne.
+3. **Une sanction temporaire ne se lève pas toute seule.** L'échéance est enregistrée sur l'action de modération,
+   mais aucune tâche planifiée ne rétablit le compte : la levée passe aujourd'hui par
+   `POST /admin/moderation/actions/{id}/revert`. La tâche automatique est en D8.
 
 **Réserve valable pour toutes les tranches livrées à ce jour.** Aucun de ces composants n'a encore été exécuté
 contre une vraie base PostgreSQL ni un vrai Redis : l'environnement de développement utilisé pour la génération

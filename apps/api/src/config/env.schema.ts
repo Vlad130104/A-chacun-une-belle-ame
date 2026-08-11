@@ -74,6 +74,38 @@ export const envSchema = z.object({
   MATCHING_MAX_CANDIDATES: z.coerce.number().int().positive().default(500),
   MATCHING_POLICY: z.enum(['HETERO', 'OPEN']).default('HETERO'),
 
+  // ── Modération (docs/08-backlog-mvp.md, lot D6) ────────────────────────────
+  //
+  // Les échéances SLA et les seuils de détection sont en configuration, jamais
+  // codés en dur : ils seront ajustés sur les données réelles sans redéploiement.
+  SLA_HOURS_P0: z.coerce.number().int().positive().default(2),
+  SLA_HOURS_P1: z.coerce.number().int().positive().default(6),
+  SLA_HOURS_P2: z.coerce.number().int().positive().default(24),
+  SLA_HOURS_P3: z.coerce.number().int().positive().default(72),
+
+  DAILY_REPORT_LIMIT: z.coerce.number().int().positive().default(10),
+  DAILY_REPORT_EVIDENCE_LIMIT: z.coerce.number().int().positive().default(20),
+  /** Un signalement de plus rouvre le cas résolu depuis moins de N jours. */
+  CASE_REOPEN_WINDOW_DAYS: z.coerce.number().int().positive().default(30),
+
+  // Seuils des 9 règles de détection (story D6-07).
+  DETECT_MONEY_REQUEST_COUNT: z.coerce.number().int().positive().default(3),
+  DETECT_MONEY_REQUEST_WINDOW_HOURS: z.coerce.number().int().positive().default(24),
+  DETECT_BULK_SIMILAR_COUNT: z.coerce.number().int().positive().default(5),
+  DETECT_BULK_SIMILAR_RATIO: z.coerce.number().min(0.5).max(1).default(0.9),
+  DETECT_ACCOUNT_CREATION_COUNT: z.coerce.number().int().positive().default(3),
+  DETECT_ACCOUNT_CREATION_WINDOW_DAYS: z.coerce.number().int().positive().default(30),
+  DETECT_DEVICE_CHANGE_COUNT: z.coerce.number().int().positive().default(5),
+  DETECT_DEVICE_CHANGE_WINDOW_DAYS: z.coerce.number().int().positive().default(7),
+  DETECT_LIKE_VOLUME_MULTIPLIER: z.coerce.number().positive().default(3),
+  DETECT_VERIFICATION_REFUSAL_COUNT: z.coerce.number().int().positive().default(3),
+  DETECT_MULTIPLE_REPORTS_COUNT: z.coerce.number().int().positive().default(3),
+  DETECT_MULTIPLE_REPORTS_WINDOW_DAYS: z.coerce.number().int().positive().default(7),
+  DETECT_SUSPICIOUS_LINK_COUNT: z.coerce.number().int().positive().default(3),
+  /** Cadence minimale considérée comme non humaine, en millisecondes entre actions. */
+  DETECT_AUTOMATION_MIN_INTERVAL_MS: z.coerce.number().int().positive().default(400),
+  DETECT_AUTOMATION_SAMPLE_SIZE: z.coerce.number().int().min(3).default(10),
+
   // ── Sécurité ───────────────────────────────────────────────────────────────
   CORS_ALLOWED_ORIGINS: z.string().default(''),
   RATE_LIMIT_GLOBAL_PER_MINUTE: z.coerce.number().int().positive().default(120),
@@ -138,6 +170,17 @@ export function validateEnv(raw: Record<string, unknown>): Env {
           'ALLOW_MOCK_PROVIDERS_IN_PRODUCTION=true en connaissance de cause (voir docs/MOCKS.md).',
       ]);
     }
+  }
+
+  // Les échéances SLA doivent rester ordonnées : un cas critique traité plus tard
+  // qu'un cas de spam inverserait silencieusement toute la file de modération.
+  const sla = [env.SLA_HOURS_P0, env.SLA_HOURS_P1, env.SLA_HOURS_P2, env.SLA_HOURS_P3];
+  const ordonnees = sla.every((heures, index) => index === 0 || sla[index - 1]! < heures);
+  if (!ordonnees) {
+    throw new EnvValidationError([
+      `les échéances SLA doivent être strictement croissantes de P0 à P3 (obtenu : ${sla.join(' < ')}). ` +
+        'Une échéance critique plus longue qu’une échéance basse inverserait la file de modération.',
+    ]);
   }
 
   if (env.S3_MEDIA_BUCKET === env.S3_KYC_BUCKET) {

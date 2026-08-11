@@ -50,6 +50,8 @@ beforeAll(async () => {
     await import('./modules/conversations/infrastructure/realtime.gateway');
   const { ConversationAccessService } =
     await import('./modules/conversations/application/conversation.use-cases');
+  const { AdminModerationController, ReportController } =
+    await import('./modules/moderation/infrastructure/moderation.controller');
 
   moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
 
@@ -71,6 +73,19 @@ beforeAll(async () => {
       nom: 'ConversationAccessService',
       classe: ConversationAccessService,
       instance: moduleRef.get(ConversationAccessService),
+    },
+    // La modération consomme des ports implémentés par trois autres modules
+    // (`auth`, `profiles`, `conversations`) : si l'un oubliait d'exporter le
+    // sien, le conteneur ne résoudrait pas et ce test tomberait.
+    {
+      nom: 'ReportController',
+      classe: ReportController,
+      instance: moduleRef.get(ReportController),
+    },
+    {
+      nom: 'AdminModerationController',
+      classe: AdminModerationController,
+      instance: moduleRef.get(AdminModerationController),
     },
   ];
 }, 180_000);

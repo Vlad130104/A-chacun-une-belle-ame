@@ -234,15 +234,49 @@ socket ouvert avant un blocage ne survit pas au blocage.
 | Méthode | Route                    | Politique | Rate limit | Description                                                 |
 | ------- | ------------------------ | --------- | ---------- | ----------------------------------------------------------- |
 | POST    | `/reports`               | `AUTH`    | 10/j       | Signale un profil, une photo, un message ou un comportement |
-| POST    | `/reports/{id}/evidence` | `OWNER`   | 20/j       | Capture jointe (bucket privé)                               |
+| POST    | `/reports/{id}/evidence` | `OWNER`   | 20/j       | Capture jointe (bucket privé, **aucune URL signée rendue**) |
 | GET     | `/reports/mine`          | `AUTH`    | 60/h       | Mes signalements et leur avancement                         |
 
 Un signalement crée ou enrichit un `ModerationCase`. **Priorité automatique** :
 `UNDERAGE_SUSPICION` → P0 (SLA 2 h) · `IDENTITY_THEFT`, `FINANCIAL_SOLICITATION`, `SCAM_SUSPICION`, `HARASSMENT`,
 `HATE_SPEECH` → P1 (6 h) · `SEXUAL_CONTENT`, `INAPPROPRIATE_PHOTO`, `FAKE_PROFILE` → P2 (24 h) · `SPAM`, `OTHER` → P3 (72 h).
+Les quatre échéances sont en configuration (`SLA_HOURS_P0..P3`) et doivent rester strictement croissantes : le
+démarrage échoue sinon, une échéance critique plus longue qu'une échéance basse inverserait toute la file.
 
 Un signalement est **toujours** accepté, même sur un membre déjà signalé — la déduplication se fait au niveau du cas,
 jamais à celui du signalant.
+
+**Ce que le signalant reçoit.** `POST /reports` renvoie `{ reportId, received: true }`, jamais l'identifiant du cas
+ni sa priorité : les rendre renseignerait sur l'historique du membre visé. `GET /reports/mine` expose le _statut_ du
+cas, jamais la décision prise — apprendre qu'un membre a été suspendu n'appartient pas au signalant.
+
+**Priorité d'un cas existant.** Elle ne peut que monter, et l'échéance est alors recalculée **depuis l'ouverture du
+cas**, pas depuis le nouveau signalement : un dossier ancien qui devient critique doit apparaître en retard, non se
+voir offrir un délai neuf. Un cas résolu depuis moins de `CASE_REOPEN_WINDOW_DAYS` (défaut 30) est rouvert plutôt
+que doublé.
+
+**Le niveau requis est `AUTH`, pas `VERIFIED`** : signaler est une fonction de sécurité, la réserver aux comptes
+vérifiés priverait de recours les membres qui viennent d'arriver — les plus exposés.
+
+### Back-office de modération — écarts assumés avec la rédaction initiale
+
+Trois différences constatées à l'implémentation (tranche D6) :
+
+- **`/escalate` et `/resolve` n'existent pas** comme routes distinctes. Escalader et classer sont deux des dix
+  actions du catalogue (`ESCALATED`, `DISMISSED`) : les sortir en routes séparées aurait créé deux chemins pour
+  changer l'état d'un cas, dont un seul serait passé par les contrôles de motif et d'attribution. Tout passe par
+  `POST /admin/moderation/cases/{id}/action`.
+- **`POST /admin/moderation/actions/{id}/revert`** s'ajoute : une sanction réversible doit pouvoir être levée, et
+  la levée est elle-même une écriture auditée. Le bannissement en est exclu par construction — il se lève par une
+  réintégration explicite, jamais en effaçant la sanction d'origine.
+- **`POST /admin/moderation/users/{id}/evaluate`** et **`GET /admin/moderation/metrics`** s'ajoutent pour les
+  stories D6-07 et D6-10. `evaluate` rejoue les 9 règles de détection : il produit des signaux et peut ouvrir un
+  cas, **il n'applique jamais de sanction** (ADR-012).
+
+**Le bannissement exige `users.ban` en plus de `moderation.act`, et un second valideur distinct.** Ces deux
+contrôles ne peuvent pas vivre dans la politique de route : elle est évaluée avant le corps de la requête et ignore
+donc l'action demandée. Ils sont faits côté serveur, dans le cas d'usage, à partir des permissions réelles de
+l'appelant.
 
 ---
 
@@ -295,21 +329,21 @@ Codes : `SUB_ALREADY_ACTIVE` · `SUB_PLAN_UNAVAILABLE` · `PAY_PROVIDER_ERROR` �
 
 Toutes les routes : rôle requis, **2FA obligatoire**, session 8 h, `AdminAuditLog` systématique.
 
-| Domaine         | Routes                                                                                                           | Permission                                                                           |
-| --------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| Tableau de bord | `GET /admin/dashboard`, `/admin/metrics`                                                                         | `analytics.read`                                                                     |
-| Utilisateurs    | `GET /admin/users`, `GET /admin/users/{id}`, `GET /admin/users/{id}/sessions`, `GET /admin/users/{id}/sanctions` | `users.read`                                                                         |
-| Sanctions       | `POST /admin/users/{id}/suspend`, `/ban`, `/restrict`, `/reinstate`, `/require-reverification`                   | `users.sanction` — `BAN` exige `users.ban` **et** un second valideur                 |
-| Vérification    | `GET /admin/verification/queue`, `GET /admin/verification/{id}`, `POST /admin/verification/{id}/decision`        | `kyc.review`                                                                         |
-| Documents KYC   | `GET /admin/verification/{id}/documents/{docId}/url`                                                             | `kyc.view_document` — **motif obligatoire, URL 5 min, audit nominatif**              |
-| Modération      | `GET /admin/moderation/cases`, `POST /admin/moderation/cases/{id}/assign`, `/action`, `/escalate`, `/resolve`    | `moderation.*`                                                                       |
-| Photos          | `GET /admin/moderation/photos`, `POST /admin/moderation/photos/{id}/decision`                                    | `moderation.content`                                                                 |
-| Contenus        | `GET/PUT /admin/content/{key}` (CGU, charte, confidentialité, modèles)                                           | `content.manage`                                                                     |
-| Commercial      | `GET/POST/PATCH /admin/plans`, `GET /admin/subscriptions`, `/transactions`, `POST /admin/payments/{id}/refund`   | `billing.*` — remboursement à quatre yeux                                            |
-| Campagnes       | `GET/POST /admin/campaigns`, `POST /admin/campaigns/{id}/invites`                                                | `campaign.manage`                                                                    |
-| Feature flags   | `GET/PATCH /admin/feature-flags`                                                                                 | `system.flags`                                                                       |
-| Audit           | `GET /admin/audit-logs`                                                                                          | `audit.read` — **lecture seule, aucune route d'écriture ou de suppression n'existe** |
-| Rôles           | `GET/POST/DELETE /admin/users/{id}/roles`                                                                        | `system.roles` (`SUPER_ADMIN` uniquement)                                            |
+| Domaine         | Routes                                                                                                                                                                      | Permission                                                                           |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Tableau de bord | `GET /admin/dashboard`, `/admin/metrics`                                                                                                                                    | `analytics.read`                                                                     |
+| Utilisateurs    | `GET /admin/users`, `GET /admin/users/{id}`, `GET /admin/users/{id}/sessions`, `GET /admin/users/{id}/sanctions`                                                            | `users.read`                                                                         |
+| Sanctions       | `POST /admin/users/{id}/suspend`, `/ban`, `/restrict`, `/reinstate`, `/require-reverification`                                                                              | `users.sanction` — `BAN` exige `users.ban` **et** un second valideur                 |
+| Vérification    | `GET /admin/verification/queue`, `GET /admin/verification/{id}`, `POST /admin/verification/{id}/decision`                                                                   | `kyc.review`                                                                         |
+| Documents KYC   | `GET /admin/verification/{id}/documents/{docId}/url`                                                                                                                        | `kyc.view_document` — **motif obligatoire, URL 5 min, audit nominatif**              |
+| Modération      | `GET /admin/moderation/cases`, `GET /cases/{id}`, `POST /cases/{id}/assign`, `/cases/{id}/action`, `POST /actions/{id}/revert`, `POST /users/{id}/evaluate`, `GET /metrics` | `moderation.read`, `moderation.assign`, `moderation.act`                             |
+| Photos          | `GET /admin/moderation/photos`, `POST /admin/moderation/photos/{id}/decision`                                                                                               | `moderation.content`                                                                 |
+| Contenus        | `GET/PUT /admin/content/{key}` (CGU, charte, confidentialité, modèles)                                                                                                      | `content.manage`                                                                     |
+| Commercial      | `GET/POST/PATCH /admin/plans`, `GET /admin/subscriptions`, `/transactions`, `POST /admin/payments/{id}/refund`                                                              | `billing.*` — remboursement à quatre yeux                                            |
+| Campagnes       | `GET/POST /admin/campaigns`, `POST /admin/campaigns/{id}/invites`                                                                                                           | `campaign.manage`                                                                    |
+| Feature flags   | `GET/PATCH /admin/feature-flags`                                                                                                                                            | `system.flags`                                                                       |
+| Audit           | `GET /admin/audit-logs`                                                                                                                                                     | `audit.read` — **lecture seule, aucune route d'écriture ou de suppression n'existe** |
+| Rôles           | `GET/POST/DELETE /admin/users/{id}/roles`                                                                                                                                   | `system.roles` (`SUPER_ADMIN` uniquement)                                            |
 
 ---
 

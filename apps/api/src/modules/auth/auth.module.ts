@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { ACCOUNT_SANCTION_GATEWAY } from '../moderation/application/ports';
+import { PrismaAccountSanctionGateway } from './infrastructure/account-sanction.gateway';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { APP_GUARD } from '@nestjs/core';
@@ -250,9 +252,20 @@ import {
         new RevokeSessionUseCase(sessions, clock),
     },
 
+    // Port déclaré par le module `moderation`, implémenté ici : la table `User`
+    // appartient à `auth`.
+    {
+      provide: ACCOUNT_SANCTION_GATEWAY,
+      inject: [PrismaService],
+      useFactory: (prisma: PrismaService) => new PrismaAccountSanctionGateway(prisma),
+    },
+
     // Garde global : toute route non déclarée `@Public()` est protégée par défaut.
     { provide: APP_GUARD, useClass: AuthGuard },
   ],
-  exports: [USER_REPOSITORY, TOKEN_SERVICE, HASHER],
+  // `ACCOUNT_SANCTION_GATEWAY` est déclaré par le module `moderation` et
+  // implémenté ici : la table `User` appartient à `auth`, la modération décide
+  // mais n'écrit pas elle-même dans les tables d'un autre module.
+  exports: [USER_REPOSITORY, TOKEN_SERVICE, HASHER, ACCOUNT_SANCTION_GATEWAY],
 })
 export class AuthModule {}

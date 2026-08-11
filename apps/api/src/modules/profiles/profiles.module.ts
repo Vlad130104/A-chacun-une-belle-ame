@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { PHOTO_MODERATION_GATEWAY } from '../moderation/application/ports';
+import { PrismaPhotoModerationGateway } from './infrastructure/photo-moderation.gateway';
 import { ConfigService } from '@nestjs/config';
 import type { Env } from '../../config/env.schema';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
@@ -58,6 +60,14 @@ const photoConfig = (config: ConfigService<Env, true>): PhotoConfig => ({
     SharpMediaPipeline,
     { provide: MEDIA_STORAGE, useExisting: MediaStorageAdapter },
     { provide: MEDIA_PIPELINE, useExisting: SharpMediaPipeline },
+
+    // Port déclaré par le module `moderation`, implémenté ici : la table `Photo`
+    // appartient à `profiles`.
+    {
+      provide: PHOTO_MODERATION_GATEWAY,
+      inject: [PrismaService],
+      useFactory: (prisma: PrismaService) => new PrismaPhotoModerationGateway(prisma),
+    },
 
     {
       provide: PROFILE_REPOSITORY,
@@ -157,6 +167,12 @@ const photoConfig = (config: ConfigService<Env, true>): PhotoConfig => ({
   // Le traitement d'image et le stockage média sont exposés pour que la messagerie
   // (D5) réutilise la même chaîne — format réel vérifié, EXIF supprimé — au lieu
   // d'en réimplémenter une seconde.
-  exports: [PROFILE_REPOSITORY, PHOTO_REPOSITORY, MEDIA_PIPELINE, MEDIA_STORAGE],
+  exports: [
+    PROFILE_REPOSITORY,
+    PHOTO_REPOSITORY,
+    MEDIA_PIPELINE,
+    MEDIA_STORAGE,
+    PHOTO_MODERATION_GATEWAY,
+  ],
 })
 export class ProfilesModule {}

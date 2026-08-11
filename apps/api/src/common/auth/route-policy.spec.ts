@@ -15,6 +15,10 @@ import {
 } from '../../modules/profiles/infrastructure/profiles.controller';
 import { DiscoveryController } from '../../modules/discovery/infrastructure/discovery.controller';
 import { ConversationsController } from '../../modules/conversations/infrastructure/conversations.controller';
+import {
+  AdminModerationController,
+  ReportController,
+} from '../../modules/moderation/infrastructure/moderation.controller';
 import { AUTH_POLICY_KEY, type AuthPolicy } from './auth.decorator';
 
 /**
@@ -44,6 +48,8 @@ const CONTROLLERS = [
   AdminPhotoModerationController,
   DiscoveryController,
   ConversationsController,
+  ReportController,
+  AdminModerationController,
 ];
 
 /**
@@ -217,6 +223,63 @@ describe('inventaire des routes', () => {
     );
     expect(messagerie.length).toBeGreaterThanOrEqual(9);
     expect(messagerie.every((route) => route.policy?.level !== 'public')).toBe(true);
+  });
+
+  it('laisse le signalement accessible sans vérification d’identité', () => {
+    // Signaler est une fonction de sécurité. La réserver aux comptes vérifiés
+    // priverait de recours ceux qui viennent d'arriver — les plus exposés.
+    const signaler = routes.find((route) => route.signature === 'POST /reports');
+    expect(signaler?.policy?.level).toBe('auth');
+  });
+
+  it('protège chaque route de modération par une permission back-office', () => {
+    const moderation = routes.filter((route) => route.signature.includes('/admin/moderation'));
+
+    expect(moderation.length).toBeGreaterThanOrEqual(7);
+    for (const route of moderation) {
+      expect({
+        signature: route.signature,
+        permissions: route.policy?.permissions ?? [],
+      }).toMatchObject({ permissions: expect.arrayContaining([expect.any(String)]) });
+      expect(route.policy?.level).not.toBe('public');
+    }
+  });
+
+  it('réserve l’application d’une action à la permission moderation.act', () => {
+    const action = routes.find(
+      (route) => route.signature === 'POST /admin/moderation/cases/:caseId/action',
+    );
+    expect(action?.policy?.permissions).toContain('moderation.act');
+  });
+
+  it('réserve l’attribution d’un cas à la permission moderation.assign', () => {
+    const attribuer = routes.find(
+      (route) => route.signature === 'POST /admin/moderation/cases/:caseId/assign',
+    );
+    expect(attribuer?.policy?.permissions).toContain('moderation.assign');
+  });
+
+  it('audite la consultation d’un dossier de modération', () => {
+    // Un dossier contient les signalements et l'historique de sanctions d'une
+    // personne : ce n'est pas une lecture anodine.
+    const dossier = routes.find(
+      (route) => route.signature === 'GET /admin/moderation/cases/:caseId',
+    );
+    expect(dossier?.policy?.audit).toBe('moderation.case.viewed');
+  });
+
+  it('n’expose aucune route d’écriture ni de suppression sur le journal d’audit', () => {
+    // Le journal est en ajout seul : la seule façon d'y entrer une ligne est une
+    // opération sensible réellement effectuée (docs/05-api.md §11).
+    const audit = routes.filter((route) => route.signature.includes('/audit-log'));
+    const ecritures = audit.filter(
+      (route) =>
+        route.signature.startsWith('POST ') ||
+        route.signature.startsWith('PUT ') ||
+        route.signature.startsWith('PATCH ') ||
+        route.signature.startsWith('DELETE '),
+    );
+    expect(ecritures).toEqual([]);
   });
 
   it('n’expose aucune route d’authentification sensible en accès libre', () => {
