@@ -295,6 +295,33 @@ réception. Rien dans l'interface ne doit afficher « livré » tant que cette s
 - Les types `OTP_CODE`, `SECURITY_ALERT`, `VERIFICATION_*`, `MODERATION_ACTION` sont refusés côté **serveur** en cas de tentative de désactivation (403 `NOTIF_MANDATORY_TYPE`).
 - L'interface les affiche verrouillés avec explication, mais l'interface n'est pas le contrôle : un appel direct à l'API est également refusé — c'est ce qui est testé.
 
+### État de livraison du lot D8
+
+| Story | État       | Précision                                                                                                                                                                                                                  |
+| ----- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D8-01 | 🟨 partiel | File BullMQ réelle, `jobId` déterministe, réessais pilotés par le domaine. **Mais aucun canal sortant n'aboutit** : push et e-mail sont simulés.                                                                           |
+| D8-02 | ✅ livré   | Les 8 déclencheurs sont définis, avec leurs canaux par défaut. Un test verrouille le compte et la couverture.                                                                                                              |
+| D8-03 | ✅ livré   | Grille complète rendue, y compris les combinaisons jamais enregistrées.                                                                                                                                                    |
+| D8-04 | ✅ livré   | 6 types verrouillés. Le refus est **côté serveur** : `resolveChannels` ignore la préférence, et `PUT /preferences` renvoie 403 `NOTIF_MANDATORY_TYPE`. Toute la mise à jour est rejetée si une seule entrée est interdite. |
+| D8-05 | ✅ livré   | Centre in-app paginé par curseur, compte de non-lues, marquage unitaire et global.                                                                                                                                         |
+| D8-06 | ✅ livré   | Contrainte unique `(userId, dedupeKey)`. Les messages d'une même conversation sont regroupés par heure.                                                                                                                    |
+
+**Deux décisions produit qui méritent d'être connues :**
+
+- **Le SMS n'est utilisé que pour l'OTP.** Canal coûteux sur les marchés visés : l'utiliser pour des notifications
+  d'usage reviendrait à faire payer le membre pour du marketing.
+- **Une notification par message serait insupportable.** Les messages d'une même conversation sont regroupés par
+  tranche horaire : un membre reçoit au plus une notification par conversation et par heure. Sans cela, il coupe le
+  canal — y compris pour ce qui compte.
+
+**Non fait, dit explicitement :**
+
+- **Aucun push ni e-mail ne part réellement** : voir `docs/MOCKS.md`. Le canal in-app, lui, fonctionne.
+- **Les deux tâches planifiées attendues** — clôture des périodes de grâce (D7) et levée des sanctions temporaires
+  à échéance (D6) — **ne sont pas livrées**. La file existe, les tâches qui l'utiliseraient non : elles ne font
+  partie d'aucune des six stories D8, et les ajouter pour pouvoir annoncer une réserve levée aurait été un
+  affichage. Elles restent déclenchables manuellement par leurs routes d'administration.
+
 ---
 
 ## Lot D9 — Back-office (40 pts)

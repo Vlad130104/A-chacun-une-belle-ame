@@ -1,6 +1,6 @@
 # Intégrations simulées — registre permanent
 
-> **État au terme de la tranche D7 (abonnements et paiements).** La colonne « État » ne passe à « livré » qu'une fois le code
+> **État au terme de la tranche D8 (notifications).** La colonne « État » ne passe à « livré » qu'une fois le code
 > écrit **et** testé. Les ports encore marqués « à développer » n'existent qu'à l'état d'interface : ils ne sont
 > ni simulés ni approximatifs, ils ne sont pas écrits.
 
@@ -145,6 +145,28 @@ simulé, et il l'est de façon volontairement stricte :
 Aucune référence de fournisseur n'a été inventée : celles produites en mode
 simulé portent le préfixe `mock_` et ne peuvent pas être confondues avec de
 vraies transactions dans un export comptable.
+
+### Ce que D8 lève, et ce qu'elle ne lève pas
+
+**Levé.** La file d'envoi existe pour de bon : BullMQ sur le Redis déjà présent,
+`jobId` déterministe, réessais pilotés par le domaine — un jeton push révoqué est
+abandonné immédiatement au lieu d'être retenté cinq fois. L'anti-doublon repose
+sur la contrainte unique `(userId, dedupeKey)`, et les préférences sont refusées
+côté serveur sur les types de sécurité.
+
+**Non levé, et il faut le dire clairement : aucun push ni aucun e-mail ne part.**
+Les deux fournisseurs sont simulés — le push est journalisé, le transport SMTP
+n'est pas branché (`TODO(D9-06)`). Ce que le membre reçoit réellement aujourd'hui,
+c'est la notification **in-app**, écrite en base et visible dans le centre de
+notifications. Ce n'est pas un repli dégradé inventé pour la circonstance : c'est
+le seul canal dont la livraison ne dépend d'aucun tiers, et c'est pourquoi il est
+présent dans les canaux par défaut de tous les types sauf l'OTP.
+
+**Non levé non plus** : la clôture automatique des périodes de grâce (D7) et la
+levée automatique des sanctions temporaires (D6) restent manuelles. La file est
+là, les tâches planifiées qui l'utiliseraient ne le sont pas encore — elles
+n'appartenaient pas au périmètre des six stories D8, et les inventer pour
+« lever une réserve » aurait été un affichage, pas une livraison.
 
 ### Trois réserves nommées, tranche D6
 

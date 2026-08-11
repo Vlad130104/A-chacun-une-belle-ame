@@ -24,6 +24,10 @@ import {
   BillingController,
   PaymentWebhookController,
 } from '../../modules/billing/infrastructure/billing.controller';
+import {
+  DevicesController,
+  NotificationsController,
+} from '../../modules/notifications/infrastructure/notifications.controller';
 import { AUTH_POLICY_KEY, type AuthPolicy } from './auth.decorator';
 
 /**
@@ -58,6 +62,8 @@ const CONTROLLERS = [
   BillingController,
   PaymentWebhookController,
   AdminBillingController,
+  NotificationsController,
+  DevicesController,
 ];
 
 /**
@@ -329,6 +335,23 @@ describe('inventaire des routes', () => {
     );
     expect(confirmer?.policy?.permissions).toContain('billing.manage');
     expect(confirmer?.policy?.audit).toBe('billing.payment.confirmed');
+  });
+
+  it('n’expose aucune route de notification ni d’appareil en accès libre', () => {
+    const notifications = routes.filter(
+      (route) => route.signature.includes('/notifications') || route.signature.includes('/devices'),
+    );
+    expect(notifications.length).toBeGreaterThanOrEqual(7);
+    expect(notifications.every((route) => route.policy?.level !== 'public')).toBe(true);
+  });
+
+  it('n’expose aucune route permettant de LIRE un jeton push', () => {
+    // Un jeton exfiltré permettrait d'envoyer des notifications à la place de
+    // la plateforme. Aucune route ne le rend : seule sa présence est signalée.
+    const lectures = routes.filter(
+      (route) => route.signature.startsWith('GET ') && route.signature.includes('token'),
+    );
+    expect(lectures).toEqual([]);
   });
 
   it('n’expose aucune route d’authentification sensible en accès libre', () => {

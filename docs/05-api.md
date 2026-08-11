@@ -339,6 +339,18 @@ Codes : `SUB_ALREADY_ACTIVE` · `SUB_PLAN_UNAVAILABLE` · `PAY_PROVIDER_ERROR` �
 | GET     | `/invites/{code}`            | `PUBLIC`       | Valide un code, incrémente les clics, retourne l'offre — **ne révèle jamais l'identité de l'invitant** |
 | GET     | `/me/referral`               | `VERIFIED`     | Mon code de parrainage et ses statistiques                                                             |
 
+### Notifications — précisions de la tranche D8
+
+- **`GET /notifications` ne renvoie que le canal `IN_APP`.** Les lignes `PUSH` et `EMAIL` existent en base comme
+  journal d'envoi ; ce ne sont pas des contenus destinés à être relus par le membre.
+- **Aucune route ne rend un jeton push.** `GET /devices` signale seulement `hasPushToken`. Un jeton exfiltré
+  permettrait d'envoyer des notifications à la place de la plateforme. Un test d'inventaire le vérifie.
+- **`PUT /notifications/preferences` rejette TOUTE la mise à jour** si une seule entrée tente de désactiver un
+  type obligatoire (`OTP_CODE`, `SECURITY_ALERT`, `VERIFICATION_*`, `MODERATION_ACTION`). Appliquer partiellement
+  laisserait le membre croire que sa demande a été suivie alors qu'une partie a été ignorée en silence.
+- **`POST /devices` reçoit une empreinte brute** et la hache côté serveur avec le sel de la plateforme. Conservée
+  en clair, elle permettrait de relier entre eux des comptes distincts créés depuis le même appareil (ADR-013).
+
 ---
 
 ## 10. Back-office — `/admin`

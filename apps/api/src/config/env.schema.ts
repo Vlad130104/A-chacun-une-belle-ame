@@ -74,6 +74,11 @@ export const envSchema = z.object({
   MATCHING_MAX_CANDIDATES: z.coerce.number().int().positive().default(500),
   MATCHING_POLICY: z.enum(['HETERO', 'OPEN']).default('HETERO'),
 
+  // ── Notifications (docs/08-backlog-mvp.md, lot D8) ─────────────────────────
+  NOTIFICATION_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(5),
+  NOTIFICATION_RETRY_BASE_MS: z.coerce.number().int().positive().default(30_000),
+  NOTIFICATION_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
+
   // ── Facturation (docs/08-backlog-mvp.md, lot D7) ───────────────────────────
   /** Jours pendant lesquels les droits restent ouverts après un échec de paiement. */
   PAYMENT_GRACE_PERIOD_DAYS: z.coerce.number().int().positive().default(7),

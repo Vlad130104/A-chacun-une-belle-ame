@@ -54,6 +54,8 @@ beforeAll(async () => {
     await import('./modules/moderation/infrastructure/moderation.controller');
   const { BillingController, PaymentWebhookController } =
     await import('./modules/billing/infrastructure/billing.controller');
+  const { NotificationsController } =
+    await import('./modules/notifications/infrastructure/notifications.controller');
 
   moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
 
@@ -100,6 +102,14 @@ beforeAll(async () => {
       nom: 'PaymentWebhookController',
       classe: PaymentWebhookController,
       instance: moduleRef.get(PaymentWebhookController),
+    },
+    // La file de notifications dépend du cas d'usage de distribution, qui
+    // dépend lui-même de la file : les réunir recréerait le cycle corrigé en
+    // D5. Si la découpe régressait, ce test se bloquerait ici.
+    {
+      nom: 'NotificationsController',
+      classe: NotificationsController,
+      instance: moduleRef.get(NotificationsController),
     },
   ];
 }, 180_000);
