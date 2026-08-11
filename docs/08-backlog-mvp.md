@@ -493,3 +493,35 @@ D5. Jamais D1, D2, D5-02, D6, ni la partie modération de D9.
 | BL-08 | Événements et billetterie                              | V1                           |
 | BL-09 | Matching comportemental                                | V2                           |
 | BL-10 | Internationalisation complète                          | V2                           |
+
+---
+
+## Phase E — validation transverse
+
+Relecture de la chaîne d'autorisation, des protections déclaratives et des sondes, après livraison de D1 à D10.
+Rapport complet : `docs/14-rapport-de-validation.md`.
+
+| ID   | Sujet                                                         | État             | Pts |
+| ---- | ------------------------------------------------------------- | ---------------- | :-: |
+| E-01 | Rôles relus en base et permissions réellement appliquées      | ✅ livré         |  8  |
+| E-02 | Limitation de débit appliquée, barèmes tenus et inventoriés   | ✅ livré         |  5  |
+| E-03 | Sonde de disponibilité qui interroge vraiment les dépendances | ✅ livré         |  3  |
+| E-04 | 2FA **exigée** à l'ouverture d'une session d'administration   | ⬜ **non livré** |  5  |
+| E-05 | Tâches planifiées : purges, fins de grâce, levées de sanction | ⬜ **non livré** |  8  |
+
+**E-01, E-02, E-03 — pourquoi ces trois-là et pas d'autres.** Ce sont les trois endroits où une intention déclarée
+n'était lue par personne : un champ `roles` dans le jeton, une clé `rateLimit` dans un décorateur, une route
+`/health/ready`. Aucun des 1 014 tests alors verts ne les traversait, parce qu'ils testaient les règles du domaine et
+non la chaîne qui les applique. Le garde d'autorisation — qui commande tout le reste — était le seul composant du
+projet sans test.
+
+**E-04 — pourquoi la 2FA n'est pas encore exigée.** Le contrôle suppose un type de session distinct : une session
+d'administration ouverte après second facteur, séparée de la session de membre. L'ajouter au garde existant sans
+cette séparation reviendrait à traiter comme administrateur toute session dont le compte porte un rôle, y compris
+celle ouverte depuis le téléphone personnel dans l'application grand public. La séparation est le vrai travail ;
+le contrôle en découle.
+
+**E-05 — pourquoi aucune tâche planifiée n'a été improvisée.** La file BullMQ existe depuis D8 et pourrait porter ces
+travaux. Les brancher sans les éprouver contre une vraie base produirait des suppressions non vérifiées sur des
+données de vérification d'identité et des abonnements — exactement le genre de tâche dont on ne découvre l'erreur
+qu'après. Elles viennent après le premier `docker compose up`.

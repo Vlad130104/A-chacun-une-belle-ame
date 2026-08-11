@@ -350,7 +350,7 @@ export class AssignCaseUseCase {
 export interface ApplyActionInput {
   moderatorId: string;
   moderatorRole: string;
-  /** Permissions réelles de l'appelant, relues du jeton par le garde. */
+  /** Permissions réelles de l'appelant, dérivées des rôles RELUS EN BASE par le garde. */
   actorPermissions: string[];
   caseId: string;
   action: ModerationActionType;

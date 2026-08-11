@@ -373,7 +373,11 @@ Codes : `SUB_ALREADY_ACTIVE` · `SUB_PLAN_UNAVAILABLE` · `PAY_PROVIDER_ERROR` �
 
 ## 10. Back-office — `/admin`
 
-Toutes les routes : rôle requis, **2FA obligatoire**, session 8 h, `AdminAuditLog` systématique.
+Toutes les routes : rôle requis, session 8 h, `AdminAuditLog` systématique.
+
+**Les rôles sont relus en base à chaque requête** (story E-01), jamais lus depuis le jeton : un rôle retiré cesse
+d'agir immédiatement, comme une suspension de compte (ADR-006). La 2FA est enrôlable et vérifiable, mais **n'est pas
+encore exigée à l'ouverture de session** — voir `docs/14-rapport-de-validation.md`.
 
 | Domaine         | Routes                                                                                                                                                                      | Permission                                                                           |
 | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
@@ -399,7 +403,7 @@ Toutes les routes : rôle requis, **2FA obligatoire**, session 8 h, `AdminAuditL
 | Route                   | Politique           | Usage                                                                   |
 | ----------------------- | ------------------- | ----------------------------------------------------------------------- |
 | `GET /health/live`      | `PUBLIC`            | Le process répond                                                       |
-| `GET /health/ready`     | `PUBLIC`            | PostgreSQL, Redis, stockage joignables                                  |
+| `GET /health/ready`     | `PUBLIC`            | Interroge PostgreSQL et Redis ; **503** si l'un manque (story E-03)     |
 | `GET /health/providers` | `ADMIN:system.read` | **État réel/simulé de chaque port** — la source de vérité de `MOCKS.md` |
 | `GET /metrics`          | réseau interne      | Métriques                                                               |
 

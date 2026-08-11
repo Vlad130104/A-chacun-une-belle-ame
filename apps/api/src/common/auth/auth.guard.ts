@@ -10,12 +10,19 @@ import { ErrorCode } from '@acuba/contracts';
 import type { Request } from 'express';
 import { BusinessError } from '../errors/business.error';
 import {
+  ROLE_READER,
   TOKEN_SERVICE,
   USER_REPOSITORY,
+  type RoleReader,
   type TokenService,
   type UserRepository,
 } from '../../modules/auth/application/ports';
 import { checkAccountAccess } from '../../modules/auth/domain/session-policy';
+import {
+  isAdminRole,
+  permissionsOf,
+  type AdminRole,
+} from '../../modules/backoffice/domain/permissions';
 import { AUTH_POLICY_KEY, type AuthPolicy } from './auth.decorator';
 
 export interface AuthenticatedUser {
@@ -23,7 +30,10 @@ export interface AuthenticatedUser {
   sessionId: string;
   accountStatus: string;
   verificationStatus: string;
-  roles: string[];
+  /** Rôles back-office RELUS EN BASE. Vide sur une route qui n'en demande aucun. */
+  roles: AdminRole[];
+  /** Permissions dérivées de ces rôles. Vide sur une route qui n'en demande aucune. */
+  permissions: string[];
 }
 
 declare module 'express' {
@@ -38,6 +48,15 @@ declare module 'express' {
  * Point clé (ADR-006) : le statut du compte et de la vérification est RELU EN BASE,
  * jamais lu depuis le JWT. Un compte suspendu à 10 h ne doit pas continuer à naviguer
  * jusqu'à 10 h 15 parce que son jeton reste valide.
+ *
+ * **Les rôles back-office suivent exactement la même règle** (story E-01). Ils ne
+ * figurent pas dans le jeton : un rôle retiré doit cesser d'agir immédiatement,
+ * pas à l'expiration du jeton. La lecture n'a lieu que si la route demande une
+ * permission — une route de membre ordinaire ne paie aucune requête
+ * supplémentaire.
+ *
+ * Une valeur de rôle inconnue du code est ÉCARTÉE plutôt que convertie : convertir
+ * accorderait des droits qu'aucune table ne décrit.
  */
 @Injectable()
 export class AuthGuard implements CanActivate {
@@ -45,6 +64,7 @@ export class AuthGuard implements CanActivate {
     private readonly reflector: Reflector,
     @Inject(TOKEN_SERVICE) private readonly tokens: TokenService,
     @Inject(USER_REPOSITORY) private readonly users: UserRepository,
+    @Inject(ROLE_READER) private readonly roles: RoleReader,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -77,11 +97,15 @@ export class AuthGuard implements CanActivate {
       throw BusinessError.forbidden(ErrorCode.AUTH_VERIFICATION_REQUIRED);
     }
 
-    if (policy.permissions !== undefined && policy.permissions.length > 0) {
-      // Les rôles back-office arrivent avec la tranche D9 : tant qu'ils n'existent pas,
-      // ces routes sont fermées plutôt qu'ouvertes.
-      const granted = new Set(claims.roles);
-      const autorise = policy.permissions.every((permission) => granted.has(permission));
+    const exigees = policy.permissions ?? [];
+    let roles: AdminRole[] = [];
+    let accordees = new Set<string>();
+
+    if (exigees.length > 0) {
+      roles = (await this.roles.activeRoles(user.id)).filter(isAdminRole);
+      accordees = permissionsOf(roles);
+
+      const autorise = exigees.every((permission) => accordees.has(permission));
       if (!autorise) throw BusinessError.forbidden(ErrorCode.AUTH_FORBIDDEN);
     }
 
@@ -90,15 +114,14 @@ export class AuthGuard implements CanActivate {
       sessionId: claims.sid,
       accountStatus: user.accountStatus,
       verificationStatus: user.verificationStatus,
-      roles: claims.roles,
+      roles,
+      permissions: [...accordees],
     };
 
     return true;
   }
 
-  private async readToken(
-    request: Request,
-  ): Promise<{ sub: string; sid: string; roles: string[] }> {
+  private async readToken(request: Request): Promise<{ sub: string; sid: string }> {
     const header = request.headers.authorization;
     if (header === undefined || !header.startsWith('Bearer ')) {
       throw BusinessError.unauthorized(ErrorCode.AUTH_TOKEN_EXPIRED);

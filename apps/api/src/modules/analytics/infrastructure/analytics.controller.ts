@@ -1,6 +1,6 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Auth, Public } from '../../../common/auth/auth.decorator';
+import { Auth } from '../../../common/auth/auth.decorator';
 import { CurrentUser, type AuthenticatedUser } from '../../../common/auth/auth.guard';
 import {
   GetFunnelUseCase,
@@ -35,7 +35,11 @@ const entier = (valeur: string | undefined, defaut: number, max: number): number
 export class InviteController {
   constructor(private readonly resolve: ResolveInviteUseCase) {}
 
-  @Public()
+  // `@Auth({ level: 'public' })` plutôt que `@Public()` : les deux posent la même
+  // métadonnée, mais seul le premier permet d'y joindre une clé de limitation de
+  // débit. Les empiler ferait perdre celle-ci — le dernier décorateur appliqué
+  // écrase l'autre.
+  @Auth({ level: 'public', rateLimit: 'invites.resolve' })
   @Get(':code')
   @ApiOperation({ summary: 'Vérifier un code d’invitation — ne révèle jamais qui l’a émis' })
   async getInvite(@Param('code') code: string): Promise<unknown> {

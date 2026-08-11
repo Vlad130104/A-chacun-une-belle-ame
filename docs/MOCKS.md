@@ -226,6 +226,23 @@ agrégats.
    mais aucune tâche planifiée ne rétablit le compte : la levée passe aujourd'hui par
    `POST /admin/moderation/actions/{id}/revert`. La tâche automatique est en D8.
 
+### Ce que la phase E corrige, et ce qu'elle laisse ouvert
+
+**Corrigé.** Trois défauts trouvés en relecture transverse, tous invisibles pour les tests d'alors — le détail est
+dans `docs/14-rapport-de-validation.md` :
+
+1. **Aucune route d'administration n'était accessible.** Le garde comparait les permissions exigées aux rôles portés
+   par le jeton, lequel était toujours émis vide. Les rôles sont désormais relus en base à chaque requête, et un rôle
+   retiré cesse d'agir immédiatement.
+2. **La limitation de débit était déclarative.** Quinze routes portaient une clé que personne ne lisait. Un garde
+   l'applique maintenant, avec un barème testé et un inventaire qui refuse les clés orphelines.
+3. **La sonde de disponibilité répondait « ok » sans rien vérifier.** Elle interroge PostgreSQL et Redis, et renvoie
+   503 quand l'un manque.
+
+**Toujours ouvert.** La 2FA n'est pas encore **exigée** à l'ouverture d'une session d'administration : l'enrôlement
+et la vérification fonctionnent, le contrôle manque dans le parcours de connexion. Et **aucune tâche planifiée
+n'existe** : les purges, les fins de période de grâce et les levées de sanction temporaire restent manuelles.
+
 **Réserve valable pour toutes les tranches livrées à ce jour.** Aucun de ces composants n'a encore été exécuté
 contre une vraie base PostgreSQL ni un vrai Redis : l'environnement de développement utilisé pour la génération
 ne dispose pas de Docker. Les règles sont couvertes par des tests unitaires et par la résolution complète du

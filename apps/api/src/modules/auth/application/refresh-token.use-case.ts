@@ -118,7 +118,6 @@ export class RefreshTokenUseCase {
       sid: rotated.id,
       accountStatus: user.accountStatus,
       verificationStatus: user.verificationStatus,
-      roles: [],
     });
 
     return {

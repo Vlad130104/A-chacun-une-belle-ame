@@ -222,3 +222,33 @@ export function requiresWrittenReason(permission: Permission): boolean {
 export function canGrantRoles(roles: AdminRole[]): boolean {
   return roles.includes('SUPER_ADMIN');
 }
+
+/**
+ * La valeur lue en base est-elle un rôle connu ?
+ *
+ * Le garde d'autorisation en a besoin : `UserRole.role` est une énumération
+ * PostgreSQL, mais rien n'empêche une migration future d'y ajouter une valeur
+ * que le code ne connaît pas encore. Une valeur inconnue doit être **écartée**,
+ * pas convertie de force en rôle : convertir accorderait des droits qu'aucune
+ * table ne décrit.
+ */
+export function isAdminRole(valeur: string): valeur is AdminRole {
+  return (ALL_ROLES as string[]).includes(valeur);
+}
+
+/**
+ * Rôle retenu pour l'AUDIT, quand un compte en porte plusieurs.
+ *
+ * On prend le **plus faible** des rôles réellement détenus, jamais le plus
+ * élevé : le journal ne doit pas surestimer le pouvoir de l'auteur d'une
+ * action. `ALL_ROLES` est ordonné du plus puissant au plus restreint, donc le
+ * dernier détenu est le plus faible.
+ *
+ * Sans rôle du tout, il n'y a rien à auditer comme rôle : la fonction rend
+ * `null` plutôt qu'un `SUPPORT` inventé, qui laisserait croire à une habilitation
+ * que la personne n'a pas.
+ */
+export function auditRole(roles: AdminRole[]): AdminRole | null {
+  const detenus = ALL_ROLES.filter((role) => roles.includes(role));
+  return detenus[detenus.length - 1] ?? null;
+}

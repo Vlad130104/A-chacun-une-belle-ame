@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { randomUUID } from 'node:crypto';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Logger as PinoLogger } from 'nestjs-pino';
@@ -12,7 +13,7 @@ import { GlobalExceptionFilter } from './common/errors/global-exception.filter';
 import type { Env } from './config/env.schema';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
   app.useLogger(app.get(PinoLogger));
 
   const config = app.get(ConfigService<Env, true>);
@@ -26,6 +27,16 @@ async function bootstrap(): Promise<void> {
   });
 
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'same-site' } }));
+
+  // Confiance dans le premier mandataire, et UN SEUL (story E-02).
+  //
+  // La limitation de débit des routes publiques compte par adresse IP : sans ce
+  // réglage, toutes les requêtes arrivant derrière un répartiteur de charge
+  // porteraient l'adresse du répartiteur, et un seul visiteur épuiserait le
+  // quota de tout le monde. Faire confiance à toute la chaîne
+  // (`trust proxy = true`) serait l'erreur inverse : n'importe qui pourrait
+  // alors forger `X-Forwarded-For` et se rendre indénombrable.
+  app.set('trust proxy', 1);
 
   // Corps brut conservé pour la vérification des signatures de webhook (ADR-010).
   //

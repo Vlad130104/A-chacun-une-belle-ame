@@ -38,6 +38,7 @@ import {
   ReferralController,
 } from '../../modules/analytics/infrastructure/analytics.controller';
 import { AUTH_POLICY_KEY, type AuthPolicy } from './auth.decorator';
+import { RATE_LIMIT_RULES } from './rate-limit-policy';
 
 /**
  * Test d'inventaire des routes — docs/09-plan-de-tests.md §2.
@@ -471,5 +472,43 @@ describe('inventaire des routes', () => {
     // un membre en cours d'onboarding qui fait venir quelqu'un rend service.
     const parrainage = routes.find((route) => route.signature === 'GET /referral/me');
     expect(parrainage?.policy?.level).toBe('auth');
+  });
+
+  it('déclare un barème pour CHAQUE clé de limitation de débit posée sur une route', () => {
+    // Le complément indispensable de la story E-02. Une clé mal orthographiée
+    // n'échouerait nulle part : la route retomberait sur le barème par défaut,
+    // et personne ne s'en apercevrait. Ce test transforme la faute de frappe en
+    // échec de CI.
+    const declarees = [
+      ...new Set(
+        routes
+          .map((route) => route.policy?.rateLimit)
+          .filter((cle): cle is string => cle !== undefined),
+      ),
+    ].sort();
+
+    const sansBareme = declarees.filter((cle) => RATE_LIMIT_RULES[cle] === undefined);
+
+    expect(declarees.length).toBeGreaterThanOrEqual(15);
+    expect(sansBareme).toEqual([]);
+  });
+
+  it('limite le débit de TOUTES les routes publiques', () => {
+    // Elles forment la seule surface atteignable sans jeton. Une route publique
+    // sans compteur est une invitation au balayage.
+    const publiquesSansLimite = routes
+      .filter((route) => route.policy?.level === 'public')
+      .filter((route) => route.policy?.rateLimit === undefined)
+      .map((route) => route.signature)
+      .filter(
+        (signature) =>
+          // Les sondes de santé sont interrogées en continu par l'orchestrateur :
+          // les limiter reviendrait à faire redémarrer le service par sa propre
+          // protection. Le webhook de paiement est authentifié par signature et
+          // rejoué volontairement par le prestataire en cas d'échec.
+          !signature.startsWith('GET /health/') && !signature.includes('/payments/webhook/'),
+      );
+
+    expect(publiquesSansLimite).toEqual([]);
   });
 });

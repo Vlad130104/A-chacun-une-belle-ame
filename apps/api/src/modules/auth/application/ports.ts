@@ -17,6 +17,7 @@ export const CONSENT_REPOSITORY = Symbol('ConsentRepository');
 export const PASSWORD_HASHER = Symbol('PasswordHasher');
 export const TOKEN_SERVICE = Symbol('TokenService');
 export const RATE_LIMITER = Symbol('RateLimiter');
+export const ROLE_READER = Symbol('RoleReader');
 export const HASHER = Symbol('Hasher');
 
 export interface UserRecord {
@@ -169,12 +170,23 @@ export interface Hasher {
   equals(hash: string, value: string): boolean;
 }
 
+/**
+ * Contenu du jeton d'accès.
+ *
+ * Il ne porte **aucun droit**. Ni rôle, ni permission : ce qu'un compte a le
+ * droit de faire est relu en base à chaque requête (ADR-006). Un jeton qui
+ * transporterait les rôles resterait valide jusqu'à son expiration, si bien
+ * qu'un rôle retiré à 10 h continuerait d'agir jusqu'à 10 h 15 — exactement ce
+ * que le projet refuse pour le statut du compte.
+ *
+ * Le jeton ne sert qu'à répondre à une question : « de quelle session s'agit-il,
+ * et pour quel compte ? »
+ */
 export interface AccessTokenClaims {
   sub: string;
   sid: string;
   accountStatus: string;
   verificationStatus: string;
-  roles: string[];
 }
 
 export interface TokenService {
@@ -184,6 +196,19 @@ export interface TokenService {
   generateRefreshToken(): string;
   generateOtpCode(): string;
   newId(): string;
+}
+
+/**
+ * Lecture des rôles back-office effectivement détenus.
+ *
+ * Déclaré ici parce que le consommateur est le garde d'autorisation, qui vit
+ * dans `common/auth`. Les ÉCRITURES de `UserRole` restent la propriété du module
+ * `backoffice` : ce port est en lecture seule, et n'expose aucune méthode
+ * permettant d'accorder ou de retirer un rôle.
+ */
+export interface RoleReader {
+  /** Rôles non révoqués d'un compte. Un membre ordinaire en a zéro. */
+  activeRoles(userId: string): Promise<string[]>;
 }
 
 export interface RateLimiter {

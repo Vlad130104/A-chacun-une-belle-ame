@@ -13,6 +13,8 @@ import { JwtModule } from '@nestjs/jwt';
 import { APP_GUARD } from '@nestjs/core';
 import type { Env } from '../../config/env.schema';
 import { AuthGuard } from '../../common/auth/auth.guard';
+import { CACHE_PROBE } from '../health/ports';
+import { RateLimitGuard } from '../../common/auth/rate-limit.guard';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import {
   CLOCK_PROVIDER,
@@ -28,6 +30,7 @@ import {
   OTP_REPOSITORY,
   PASSWORD_HASHER,
   RATE_LIMITER,
+  ROLE_READER,
   SESSION_REPOSITORY,
   TOKEN_SERVICE,
   USER_REPOSITORY,
@@ -62,6 +65,7 @@ import {
   PrismaConsentRepository,
   PrismaDeviceRepository,
   PrismaOtpRepository,
+  PrismaRoleReader,
   PrismaSessionRepository,
   PrismaUserRepository,
 } from './infrastructure/prisma.repositories';
@@ -111,11 +115,15 @@ import {
     Argon2PasswordHasher,
     JwtTokenService,
     RedisRateLimiter,
+    PrismaRoleReader,
 
     { provide: HASHER, useExisting: SaltedHasher },
     { provide: PASSWORD_HASHER, useExisting: Argon2PasswordHasher },
     { provide: TOKEN_SERVICE, useExisting: JwtTokenService },
     { provide: RATE_LIMITER, useExisting: RedisRateLimiter },
+    { provide: ROLE_READER, useExisting: PrismaRoleReader },
+    // Le module de santé sonde la connexion Redis RÉELLEMENT utilisée (story E-03).
+    { provide: CACHE_PROBE, useExisting: RedisRateLimiter },
 
     {
       provide: USER_REPOSITORY,
@@ -289,10 +297,14 @@ import {
 
     // Garde global : toute route non déclarée `@Public()` est protégée par défaut.
     { provide: APP_GUARD, useClass: AuthGuard },
+    // Enregistré APRÈS le garde d'authentification : il compte alors par compte
+    // plutôt que par adresse IP. Il ne dépend cependant pas de cet ordre — sans
+    // `request.user`, il retombe sur l'IP (story E-02).
+    { provide: APP_GUARD, useClass: RateLimitGuard },
   ],
   // `ACCOUNT_SANCTION_GATEWAY` est déclaré par le module `moderation` et
   // implémenté ici : la table `User` appartient à `auth`, la modération décide
   // mais n'écrit pas elle-même dans les tables d'un autre module.
-  exports: [USER_REPOSITORY, TOKEN_SERVICE, HASHER, ACCOUNT_SANCTION_GATEWAY],
+  exports: [USER_REPOSITORY, TOKEN_SERVICE, HASHER, ACCOUNT_SANCTION_GATEWAY, CACHE_PROBE],
 })
 export class AuthModule {}

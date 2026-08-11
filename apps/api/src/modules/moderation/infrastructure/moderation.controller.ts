@@ -12,6 +12,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import { Auth } from '../../../common/auth/auth.decorator';
+import { requireAuditRole } from '../../../common/auth/admin-role';
 import { CurrentUser, type AuthenticatedUser } from '../../../common/auth/auth.guard';
 import { ZodBody } from '../../../common/validation/zod.pipe';
 import type { CaseStatus } from '../domain/case-policy';
@@ -204,7 +205,7 @@ export class AdminModerationController {
     @CurrentUser() user: AuthenticatedUser,
     @Param('caseId') caseId: string,
   ): Promise<unknown> {
-    return this.detail.execute(user.id, primaryRole(user), caseId);
+    return this.detail.execute(user.id, requireAuditRole(user), caseId);
   }
 
   @Auth({ permissions: ['moderation.assign'], audit: 'moderation.case.assigned' })
@@ -218,7 +219,7 @@ export class AdminModerationController {
     const { assignTo } = body as { assignTo: string | null };
     return this.assign.execute({
       moderatorId: user.id,
-      moderatorRole: primaryRole(user),
+      moderatorRole: requireAuditRole(user),
       caseId,
       assignTo,
     });
@@ -243,8 +244,8 @@ export class AdminModerationController {
 
     return this.apply.execute({
       moderatorId: user.id,
-      moderatorRole: primaryRole(user),
-      actorPermissions: user.roles,
+      moderatorRole: requireAuditRole(user),
+      actorPermissions: user.permissions,
       caseId,
       action: input.action,
       reasonCode: input.reasonCode,
@@ -266,7 +267,7 @@ export class AdminModerationController {
     const { reasonCode } = body as { reasonCode: string };
     return this.revert.execute({
       moderatorId: user.id,
-      moderatorRole: primaryRole(user),
+      moderatorRole: requireAuditRole(user),
       actionId,
       reasonCode,
     });
@@ -285,15 +286,4 @@ export class AdminModerationController {
   async queueMetrics(): Promise<unknown> {
     return this.metrics.execute();
   }
-}
-
-/**
- * Rôle retenu pour l'audit.
- *
- * Un compte peut porter plusieurs rôles back-office ; l'audit en enregistre un.
- * On prend le premier déclaré, et `SUPPORT` par défaut — jamais un rôle plus
- * élevé que ce que l'appelant détient réellement.
- */
-function primaryRole(user: AuthenticatedUser): string {
-  return user.roles.find((role) => role === role.toUpperCase()) ?? 'SUPPORT';
 }

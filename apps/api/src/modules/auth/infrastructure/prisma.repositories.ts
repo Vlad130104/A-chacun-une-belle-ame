@@ -9,6 +9,7 @@ import type {
   DeviceRepository,
   OtpChallengeRecord,
   OtpChallengeRepository,
+  RoleReader,
   SessionRecord,
   SessionRepository,
   UserRecord,
@@ -359,5 +360,29 @@ export class PrismaConsentRepository implements ConsentRepository {
         channel: consent.channel,
       })),
     });
+  }
+}
+
+/**
+ * Lecture des rôles back-office (phase E, story E-01).
+ *
+ * Une seule requête, indexée sur `(userId)`, et seulement quand la route
+ * demande une permission — une route de membre ordinaire ne paie pas cette
+ * lecture.
+ *
+ * Les écritures de `UserRole` appartiennent au module `backoffice` ; ce dépôt
+ * n'expose que la lecture, précisément pour qu'aucun chemin d'élévation de
+ * droits ne passe par le module d'authentification.
+ */
+@Injectable()
+export class PrismaRoleReader implements RoleReader {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async activeRoles(userId: string): Promise<string[]> {
+    const lignes = await this.prisma.userRole.findMany({
+      where: { userId, revokedAt: null },
+      select: { role: true },
+    });
+    return lignes.map((ligne) => ligne.role);
   }
 }

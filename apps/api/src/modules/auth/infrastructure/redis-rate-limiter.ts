@@ -51,6 +51,17 @@ export class RedisRateLimiter implements RateLimiter, OnModuleDestroy {
     return { allowed: false, retryAfterSeconds: ttl > 0 ? ttl : windowSeconds };
   }
 
+  /**
+   * Sonde de disponibilité (story E-03).
+   *
+   * Exposée ici plutôt que dans un client Redis séparé : ouvrir une seconde
+   * connexion juste pour la sonde vérifierait la santé d'une connexion que le
+   * service n'utilise pas. On interroge celle qui sert réellement.
+   */
+  async ping(): Promise<void> {
+    await this.redis.ping();
+  }
+
   async reset(key: string): Promise<void> {
     await this.redis.del(`rl:${key}`);
   }

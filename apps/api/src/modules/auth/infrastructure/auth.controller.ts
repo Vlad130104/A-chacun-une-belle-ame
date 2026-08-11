@@ -2,7 +2,7 @@ import { Controller, Delete, Get, HttpCode, Param, Post, Req } from '@nestjs/com
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { registerSchema, verifyOtpSchema } from '@acuba/contracts';
 import type { Request } from 'express';
-import { Auth, Public } from '../../../common/auth/auth.decorator';
+import { Auth } from '../../../common/auth/auth.decorator';
 import { CurrentUser, type AuthenticatedUser } from '../../../common/auth/auth.guard';
 import { ZodBody } from '../../../common/validation/zod.pipe';
 import { RegisterUseCase } from '../application/register.use-case';
@@ -35,7 +35,11 @@ export class AuthController {
     private readonly revokeSession: RevokeSessionUseCase,
   ) {}
 
-  @Public()
+  // Limitation par IP : avant l'inscription il n'y a pas de compte à qui imputer
+  // les appels. Un second compteur, par empreinte de NUMÉRO, vit dans le cas
+  // d'usage — les deux sont nécessaires : l'un freine le balayage depuis une
+  // machine, l'autre le harcèlement d'un numéro depuis plusieurs.
+  @Auth({ level: 'public', rateLimit: 'auth.register' })
   @Post('register')
   @HttpCode(202)
   @ApiOperation({ summary: 'Inscription par numéro de téléphone' })
@@ -63,7 +67,7 @@ export class AuthController {
     });
   }
 
-  @Public()
+  @Auth({ level: 'public', rateLimit: 'auth.otp.verify' })
   @Post('otp/verify')
   @ApiOperation({ summary: 'Valider un code OTP et ouvrir une session' })
   async postVerifyOtp(
@@ -95,7 +99,7 @@ export class AuthController {
     });
   }
 
-  @Public()
+  @Auth({ level: 'public', rateLimit: 'auth.refresh' })
   @Post('refresh')
   @ApiOperation({ summary: 'Rotation du refresh token' })
   async postRefresh(

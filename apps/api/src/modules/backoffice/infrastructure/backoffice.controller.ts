@@ -2,6 +2,7 @@ import { Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import { Auth } from '../../../common/auth/auth.decorator';
+import { requireAuditRole } from '../../../common/auth/admin-role';
 import { CurrentUser, type AuthenticatedUser } from '../../../common/auth/auth.guard';
 import { ZodBody } from '../../../common/validation/zod.pipe';
 import { ALL_ROLES, type AdminRole } from '../domain/permissions';
@@ -30,22 +31,6 @@ const confirmSchema = z.object({ code: z.string().length(6) }).strict();
 
 const limite = (valeur: string | undefined, defaut: number, max: number): number =>
   Math.min(Number(valeur ?? defaut) || defaut, max);
-
-/**
- * Rôle retenu pour l'audit.
- *
- * On prend le rôle le PLUS FAIBLE que l'appelant détient réellement, jamais un
- * rôle qu'il n'a pas : le journal ne doit pas surestimer le pouvoir de l'auteur
- * d'une action.
- */
-function primaryRole(user: AuthenticatedUser): string {
-  const detenus = ALL_ROLES.filter((role) => user.roles.includes(role));
-  return detenus[detenus.length - 1] ?? 'SUPPORT';
-}
-
-function adminRoles(user: AuthenticatedUser): AdminRole[] {
-  return ALL_ROLES.filter((role) => user.roles.includes(role));
-}
 
 /**
  * Back-office (tranche D9).
@@ -90,7 +75,7 @@ export class BackofficeController {
   ): Promise<unknown> {
     return this.search.execute({
       actorUserId: user.id,
-      actorRole: primaryRole(user),
+      actorRole: requireAuditRole(user),
       phone,
       email,
       userId,
@@ -108,7 +93,7 @@ export class BackofficeController {
   ): Promise<unknown> {
     return this.userDetail.execute({
       actorUserId: user.id,
-      actorRole: primaryRole(user),
+      actorRole: requireAuditRole(user),
       userId,
     });
   }
@@ -133,7 +118,7 @@ export class BackofficeController {
   ): Promise<unknown> {
     return this.auditLog.execute({
       actorUserId: user.id,
-      actorRole: primaryRole(user),
+      actorRole: requireAuditRole(user),
       actorFilter: actor,
       action,
       targetId,
@@ -160,7 +145,7 @@ export class BackofficeController {
     const { role } = body as { role: AdminRole };
     return this.rolesUseCase.grant({
       actorUserId: user.id,
-      actorRoles: adminRoles(user),
+      actorRoles: user.roles,
       targetUserId: userId,
       role,
     });
@@ -177,7 +162,7 @@ export class BackofficeController {
     const { role } = body as { role: AdminRole };
     return this.rolesUseCase.revoke({
       actorUserId: user.id,
-      actorRoles: adminRoles(user),
+      actorRoles: user.roles,
       targetUserId: userId,
       role,
     });
@@ -201,7 +186,7 @@ export class BackofficeController {
     const input = body as z.infer<typeof flagSchema>;
     return this.flags.update({
       actorUserId: user.id,
-      actorRole: primaryRole(user),
+      actorRole: requireAuditRole(user),
       key,
       ...(input.enabled === undefined ? {} : { enabled: input.enabled }),
       ...(input.rolloutPercentage === undefined
@@ -252,7 +237,7 @@ export class AdminTwoFactorController {
     const { code } = body as { code: string };
     return this.twoFactor.confirmEnrollment({
       userId: user.id,
-      actorRole: primaryRole(user),
+      actorRole: requireAuditRole(user),
       code,
     });
   }

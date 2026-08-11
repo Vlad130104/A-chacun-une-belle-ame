@@ -175,7 +175,6 @@ export class VerifyOtpUseCase {
       sid: session.id,
       accountStatus: user?.accountStatus ?? 'ACTIVE',
       verificationStatus: user?.verificationStatus ?? 'NOT_STARTED',
-      roles: [],
     });
 
     await this.users.touchLastActive(userId, now);
