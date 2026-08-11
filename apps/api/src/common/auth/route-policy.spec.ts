@@ -14,6 +14,7 @@ import {
   ReferentialController,
 } from '../../modules/profiles/infrastructure/profiles.controller';
 import { DiscoveryController } from '../../modules/discovery/infrastructure/discovery.controller';
+import { ConversationsController } from '../../modules/conversations/infrastructure/conversations.controller';
 import { AUTH_POLICY_KEY, type AuthPolicy } from './auth.decorator';
 
 /**
@@ -42,6 +43,7 @@ const CONTROLLERS = [
   ReferentialController,
   AdminPhotoModerationController,
   DiscoveryController,
+  ConversationsController,
 ];
 
 /**
@@ -164,6 +166,57 @@ describe('inventaire des routes', () => {
     // priverait de protection ceux qui en ont le plus besoin.
     const block = routes.find((route) => route.signature === 'POST /blocks');
     expect(block?.policy?.level).toBe('auth');
+  });
+
+  it('exige l’appartenance à la conversation sur chaque route de messagerie', () => {
+    // La règle centrale du produit (story D5-02). Le drapeau est rendu exécutoire
+    // par `ConversationMemberGuard` ; sans lui il ne serait qu'une décoration.
+    const messagerie = [
+      'GET /conversations/:conversationId',
+      'GET /conversations/:conversationId/messages',
+      'POST /conversations/:conversationId/messages',
+      'POST /conversations/:conversationId/attachments',
+      'POST /conversations/:conversationId/read',
+      'PATCH /conversations/:conversationId/mute',
+      'PATCH /conversations/:conversationId/archive',
+    ];
+
+    for (const signature of messagerie) {
+      const route = routes.find((candidate) => candidate.signature === signature);
+      expect(route?.policy).toMatchObject({ level: 'verified', conversationMember: true });
+    }
+  });
+
+  it('n’expose AUCUNE route permettant d’écrire à un membre par son identifiant', () => {
+    // C'est la propriété structurelle qui rend la promesse tenable : l'unique porte
+    // d'entrée de la messagerie est une conversation, et une conversation n'existe
+    // que par un match. Toute route d'envoi doit donc être ancrée sur
+    // `/conversations/:conversationId`.
+    const routesEnvoi = routes.filter(
+      (route) =>
+        route.signature.startsWith('POST ') &&
+        (route.signature.includes('message') || route.signature.includes('attachment')),
+    );
+
+    expect(routesEnvoi.length).toBeGreaterThanOrEqual(2);
+    for (const route of routesEnvoi) {
+      expect(route.signature).toContain('/conversations/:conversationId/');
+      expect(route.policy?.conversationMember).toBe(true);
+    }
+  });
+
+  it('exige un compte vérifié pour la liste des conversations', () => {
+    const liste = routes.find((route) => route.signature === 'GET /conversations');
+    expect(liste?.policy?.level).toBe('verified');
+  });
+
+  it('n’expose aucune route de messagerie en accès libre', () => {
+    const messagerie = routes.filter(
+      (route) =>
+        route.signature.includes('/conversations') || route.signature.includes('/messages'),
+    );
+    expect(messagerie.length).toBeGreaterThanOrEqual(9);
+    expect(messagerie.every((route) => route.policy?.level !== 'public')).toBe(true);
   });
 
   it('n’expose aucune route d’authentification sensible en accès libre', () => {

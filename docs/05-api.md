@@ -174,8 +174,24 @@ match existe ET match.status = ACTIVE
   ET les deux comptes sont ACTIVE et VERIFIED
 ```
 
-Toute violation → `MSG_NO_MATCH` (403). Il n'existe **aucune** route permettant d'écrire à quelqu'un par son
-identifiant : la seule porte d'entrée est une conversation, et une conversation n'existe que par un match.
+Il n'existe **aucune** route permettant d'écrire à quelqu'un par son identifiant : la seule porte d'entrée est
+une conversation, et une conversation n'existe que par un match. Un test d'inventaire des routes vérifie cette
+propriété à chaque exécution de la suite.
+
+**Réponses en cas de violation** — corrigé en tranche D5 par rapport à la rédaction initiale, qui prévoyait
+`MSG_NO_MATCH` (403) dans tous les cas :
+
+| Situation                                                          | Réponse                       |
+| ------------------------------------------------------------------ | ----------------------------- |
+| Conversation inexistante **ou** appelant non membre                | `404 NOT_FOUND`               |
+| Match rompu, blocage, compte non actif, vérification révoquée      | `403 MSG_NO_MATCH`            |
+| Conversation verrouillée (blocage, unmatch, modération, archivage) | `403 MSG_CONVERSATION_LOCKED` |
+| Série de messages sans réponse au-delà de la limite                | `403 MSG_AWAITING_REPLY`      |
+
+Pourquoi la première ligne diffère de la rédaction d'origine : répondre `403` sur une conversation existante et
+`404` sur une conversation inexistante donnerait un oracle permettant d'énumérer les conversations d'autrui.
+Les deux cas renvoient donc la même réponse. Les quatre motifs de la deuxième ligne restent délibérément
+indistincts : les séparer révélerait qu'un blocage existe ou qu'un compte a été suspendu.
 
 **Anti-spam** : au-delà de `MSG_UNANSWERED_LIMIT` (défaut 20) messages consécutifs sans réponse dans une même
 conversation, l'envoi est bloqué (`MSG_AWAITING_REPLY`). Protège contre le harcèlement par volume.
@@ -188,11 +204,28 @@ conversation, l'envoi est bloqué (`MSG_AWAITING_REPLY`). Protège contre le har
 | →    | `message:send`                 | `{ conversationId, body, clientIdempotencyKey }`              |
 | →    | `typing:start` / `typing:stop` | `{ conversationId }`                                          |
 | →    | `message:read`                 | `{ conversationId, messageId }`                               |
-| ←    | `message:new`                  | message sérialisé                                             |
-| ←    | `message:status`               | `{ messageId, status }`                                       |
+| ←    | `message:new`                  | message sérialisé, sans clé de stockage                       |
+| ←    | `message:status`               | `{ messageIds, status }`                                      |
+| ←    | `message:deleted`              | `{ messageId }`                                               |
 | ←    | `match:new`                    | `{ matchId, conversationId, profile }`                        |
 | ←    | `notification:new`             | notification in-app                                           |
 | ←    | `conversation:locked`          | `{ conversationId, reason }` — blocage, unmatch ou modération |
+
+Deux écarts assumés par rapport à la rédaction initiale, constatés à l'implémentation :
+
+- `message:status` transporte `messageIds` (pluriel). Marquer une conversation comme lue bascule en général
+  plusieurs messages d'un coup ; émettre un événement par message multiplierait le trafic sur les réseaux
+  précisément visés par le projet.
+- `message:deleted` s'ajoute : sans lui, un message supprimé resterait affiché chez le destinataire jusqu'au
+  rechargement de l'historique.
+
+`match:new` et `notification:new` sont déclarés ici mais **émis par les tranches ultérieures** (D8) : la
+messagerie ne les produit pas encore.
+
+**Authentification du socket.** Le jeton d'accès est passé dans `handshake.auth.token` et vérifié à la
+connexion ; un socket sans jeton valide est fermé sans détail. L'appartenance à la conversation est ensuite
+**relue en base** à chaque `conversation:join`, `message:send`, `message:read` et indicateur de saisie : un
+socket ouvert avant un blocage ne survit pas au blocage.
 
 ---
 

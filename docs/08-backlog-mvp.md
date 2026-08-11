@@ -4,7 +4,7 @@
 Une story n'est **terminée** que si : code livré, tests unitaires et d'intégration verts, test d'autorisation présent,
 lint et typage sans erreur, documentation à jour.
 
-Total MVP : **74 stories**, **412 points**. Vélocité supposée de 40 points par sprint de 2 semaines pour une équipe de
+Total MVP : **75 stories**, **414 points** (D5-10 ajoutée en cours de tranche D5). Vélocité supposée de 40 points par sprint de 2 semaines pour une équipe de
 3 développeurs → **≈ 10 sprints, soit 5 mois** hors phase de conception. Cohérent avec le « 3 à 4 mois » du cahier
 des charges à condition d'ajouter un quatrième développeur ou de retirer les lots D7 et D10 du périmètre initial.
 
@@ -142,7 +142,7 @@ des charges à condition d'ajouter un quatrième développeur ou de retirer les 
 
 ---
 
-## Lot D5 — Messagerie (50 pts)
+## Lot D5 — Messagerie (52 pts)
 
 | ID    | Story                                                                                  | Prio | Pts |
 | ----- | -------------------------------------------------------------------------------------- | :--: | :-: |
@@ -155,13 +155,35 @@ des charges à condition d'ajouter un quatrième développeur ou de retirer les 
 | D5-07 | En tant que plateforme, je veux limiter les messages sans réponse                      |  M   |  3  |
 | D5-08 | En tant que membre, je veux supprimer un de mes messages                               |  S   |  3  |
 | D5-09 | En tant que membre en réseau instable, je veux que mes envois ne se dupliquent pas     |  M   |  5  |
+| D5-10 | En tant que membre, je veux savoir qu'un message a été _reçu_ avant d'être lu          |  S   |  2  |
+
+_Le lot passe de 50 à 52 points : D5-10 a été isolée en cours d'implémentation plutôt que laissée implicite dans D5-03._
 
 **D5-02 — La règle centrale du produit**
 
-- L'envoi est refusé (403 `MSG_NO_MATCH`) si : pas de match, match `UNMATCHED`, conversation verrouillée, blocage dans un sens ou l'autre, compte non actif, compte non vérifié.
-- La règle est appliquée par un **garde unique**, partagé entre la route HTTP et l'événement Socket.IO — un test vérifie que les deux canaux refusent identiquement.
+- L'envoi est refusé si : pas de match, match `UNMATCHED`, conversation verrouillée, blocage dans un sens ou l'autre, compte non actif, compte non vérifié. Codes détaillés dans docs/05-api.md §6.
+- La règle est appliquée par un **garde unique**, partagé entre la route HTTP et l'événement Socket.IO — les deux canaux passent par la même instance de `ConversationAccessService`.
 - Aucune route de l'API ne permet d'écrire à un membre par son identifiant : test d'inventaire des routes.
 - Un blocage verrouille la conversation en moins d'une seconde et émet `conversation:locked` aux deux membres.
+
+### État de livraison du lot D5
+
+| Story | État       | Précision                                                                                                                                                                      |
+| ----- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| D5-01 | ✅ livré   | Passerelle Socket.IO `/ws`, jeton vérifié à la connexion, adhésion relue en base à chaque événement.                                                                           |
+| D5-02 | ✅ livré   | Règle en fonction pure, service d'accès unique, garde HTTP + canal temps réel, test d'inventaire des routes.                                                                   |
+| D5-03 | ✅ livré   | `SENT → DELIVERED → READ`, sans régression possible ; accusé émis uniquement sur changement réel.                                                                              |
+| D5-04 | ✅ livré   | Curseur opaque `(createdAt, id)` sur l'index composite, aucun `OFFSET`.                                                                                                        |
+| D5-05 | ✅ livré   | Même chaîne image que les photos de profil ; aucune URL livrée avant approbation.                                                                                              |
+| D5-06 | 🟨 partiel | **Bloquer** depuis la conversation fonctionne (`POST /blocks`, livré en D4). **Signaler** un message dépend de `POST /reports`, livré en D6-01 : la route n'existe pas encore. |
+| D5-07 | ✅ livré   | Série consécutive sans réponse, remise à zéro dès que l'autre membre écrit.                                                                                                    |
+| D5-08 | ✅ livré   | Suppression logique : corps effacé, ligne conservée pour la modération.                                                                                                        |
+| D5-09 | ✅ livré   | Contrainte unique `(senderId, clientIdempotencyKey)` comme arbitre ; la ré-émission ne rediffuse pas.                                                                          |
+
+**Reporté explicitement (D5-10)** : la remise `DELIVERED`, distincte de `SENT`, n'est pas encore émise à la
+réception par le socket du destinataire — un message passe aujourd'hui de `SENT` à `READ`. La colonne, la
+transition et le test existent déjà (`advanceDeliveryStatus`) ; il manque l'accusé émis par le client à la
+réception. Rien dans l'interface ne doit afficher « livré » tant que cette story n'est pas faite.
 
 ---
 

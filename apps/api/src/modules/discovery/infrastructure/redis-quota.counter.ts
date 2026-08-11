@@ -1,8 +1,8 @@
-import { Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 import type { Env } from '../../../config/env.schema';
-import type { ClockProvider } from '../../../providers/ports';
+import { CLOCK_PROVIDER, type ClockProvider } from '../../../providers/ports';
 import type { QuotaCounter } from '../application/ports';
 
 /**
@@ -19,7 +19,9 @@ export class RedisQuotaCounter implements QuotaCounter, OnModuleDestroy {
 
   constructor(
     config: ConfigService<Env, true>,
-    private readonly clock: ClockProvider,
+    // `ClockProvider` est une interface : elle n'existe pas à l'exécution, Nest ne
+    // peut donc pas la résoudre par son type. Le jeton est obligatoire.
+    @Inject(CLOCK_PROVIDER) private readonly clock: ClockProvider,
   ) {
     this.redis = new Redis(config.get('REDIS_URL', { infer: true }), {
       maxRetriesPerRequest: 2,

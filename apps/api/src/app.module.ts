@@ -14,9 +14,9 @@ import { DiscoveryModule } from './modules/discovery/discovery.module';
 /**
  * Module racine.
  *
- * Les 17 modules de domaine seront ajoutés ici au fil des tranches verticales
- * (docs/08-backlog-mvp.md). À ce stade, seuls le socle technique et la route de
- * santé existent.
+ * Les 17 modules de domaine sont ajoutés ici au fil des tranches verticales
+ * (docs/08-backlog-mvp.md). Livrés à ce jour : socle technique, santé,
+ * authentification, vérification d'identité, profils, découverte et messagerie.
  */
 @Module({
   imports: [
@@ -44,6 +44,9 @@ import { DiscoveryModule } from './modules/discovery/discovery.module';
             '*.token',
             '*.documentUrl',
             '*.storageKey',
+            // Le corps d'un message n'entre jamais dans un log applicatif : il n'est
+            // lisible que par la modération, rattaché à un signalement (ADR-008).
+            '*.body',
           ],
           censor: '[REDACTED]',
         },

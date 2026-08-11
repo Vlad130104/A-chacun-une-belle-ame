@@ -1,8 +1,8 @@
 # Intégrations simulées — registre permanent
 
-> **État au terme de la phase C (initialisation).** Le socle technique est en place ; deux ports seulement sont
-> implémentés. Les autres n'existent qu'à l'état d'interface et seront livrés avec leur tranche verticale.
-> La colonne « État » ne passe à « livré » qu'une fois le code écrit **et** testé.
+> **État au terme de la tranche D5 (messagerie).** La colonne « État » ne passe à « livré » qu'une fois le code
+> écrit **et** testé. Les ports encore marqués « à développer » n'existent qu'à l'état d'interface : ils ne sont
+> ni simulés ni approximatifs, ils ne sont pas écrits.
 
 **Engagement.** Aucune intégration externe ne sera jamais présentée comme fonctionnelle si elle repose encore sur une
 implémentation simulée — ni dans l'interface, ni dans la documentation, ni dans une démonstration.
@@ -17,9 +17,9 @@ implémentation simulée — ni dans l'interface, ni dans la documentation, ni d
 | `KycProvider`               | `MockKycProvider` — aucune décision automatique, revue humaine au back-office | 🟨 simulé, livré     | 🟡 Non si la revue humaine est acceptée comme mode nominal    | **Q2**           |
 | `PaymentProvider`           | `MockPaymentProvider` — toute réponse porte `testMode: true`                  | ⬜ à développer (D7) | 🟢 Non — ouverture possible en gratuit intégral               | **Q3**           |
 | `PushProvider`              | `MockPushProvider` — notification journalisée, non envoyée                    | ⬜ à développer (D8) | 🟢 Non — repli sur in-app et e-mail                           | —                |
-| `ContentModerationProvider` | `RuleBasedModerationProvider` — règles simples, pas d'analyse d'image         | ⬜ à développer (D3) | 🟢 Non — revue humaine au MVP                                 | —                |
+| `ContentModerationProvider` | `RuleBasedModerationProvider` — règles simples, pas d'analyse d'image         | ⬜ à développer (D6) | 🟢 Non — revue humaine au MVP                                 | —                |
 | `MailProvider`              | Mailpit en local — **réel** en recette et production                          | ⬜ à développer (D8) | 🟢 Non                                                        | —                |
-| `StorageProvider`           | MinIO en local — **réel** (S3 compatible)                                     | ⬜ à développer (D3) | 🟢 Non                                                        | —                |
+| `StorageProvider`           | MinIO en local — **réel** (S3 compatible)                                     | 🟨 livré             | 🟢 Non                                                        | —                |
 | `ClockProvider`             | `FrozenClock` **en test uniquement** ; horloge système ailleurs               | 🟨 livré             | —                                                             | —                |
 
 Légende : ⬜ à développer (interface non encore écrite) · 🟨 simulé et livré · ✅ implémentation réelle en production.
@@ -100,18 +100,27 @@ Trois garde-fous, dont deux sont **déjà actifs depuis la phase C** :
 
 Ces éléments sont **réels dès le développement local**, jamais simulés :
 
-| Élément                                         | État à la phase C                                              |
-| ----------------------------------------------- | -------------------------------------------------------------- |
-| PostgreSQL, Redis, MinIO, Mailpit               | ✅ réels (Docker Compose)                                      |
-| Traitement d'image (EXIF, miniatures, WebP)     | ✅ réel — sharp, vérifié sur une vraie image                   |
-| Calcul d'âge et contrôle de majorité            | ✅ implémenté et testé (`packages/contracts/src/age.ts`)       |
-| Validation de configuration au démarrage        | ✅ implémentée et testée                                       |
-| Pagination par curseur                          | ✅ implémentée et testée                                       |
-| Inventaire des politiques d'autorisation        | ✅ test actif                                                  |
-| BullMQ, Socket.IO, chiffrement, hachage, jetons | ⬜ à livrer avec les tranches D1 et D5 — **pas encore écrits** |
-| Gardes d'autorisation, rate limiting            | ⬜ à livrer avec la tranche D1 — seule la déclaration existe   |
+| Élément                                     | État à la phase C                                           |
+| ------------------------------------------- | ----------------------------------------------------------- |
+| PostgreSQL, Redis, MinIO, Mailpit           | ✅ réels (Docker Compose)                                   |
+| Traitement d'image (EXIF, miniatures, WebP) | ✅ réel — sharp, vérifié sur une vraie image                |
+| Calcul d'âge et contrôle de majorité        | ✅ implémenté et testé (`packages/contracts/src/age.ts`)    |
+| Validation de configuration au démarrage    | ✅ implémentée et testée                                    |
+| Pagination par curseur                      | ✅ implémentée et testée                                    |
+| Inventaire des politiques d'autorisation    | ✅ test actif                                               |
+| Hachage (Argon2id), jetons JWT, rotation    | ✅ réels — livrés en D1                                     |
+| Gardes d'autorisation, rate limiting Redis  | ✅ réels — livrés en D1                                     |
+| Socket.IO — messagerie temps réel           | ✅ réel — livré en D5, jeton vérifié à la connexion         |
+| Règle « pas de message sans match mutuel »  | ✅ réelle — appliquée identiquement en HTTP et en Socket.IO |
+| Résolution du graphe d'injection            | ✅ test actif (`app.module.spec.ts`)                        |
+| BullMQ — files de tâches asynchrones        | ⬜ à livrer avec la tranche D8 — **pas encore écrit**       |
 
-**Aucune règle de sécurité ne sera simulée.** Lorsqu'elles seront écrites, le contrôle d'âge, la vérification du
-match avant message, les gardes d'autorisation et le rate limiting fonctionneront réellement en développement comme
-en production. À ce stade, ce qui n'est pas coché ci-dessus n'existe simplement pas encore — il ne s'agit ni d'une
-simulation ni d'une approximation.
+**Aucune règle de sécurité n'est simulée.** Le contrôle d'âge, la vérification du match avant message, les gardes
+d'autorisation et le rate limiting fonctionnent réellement, en développement comme en production. Ce qui n'est pas
+coché ci-dessus n'existe simplement pas encore — il ne s'agit ni d'une simulation ni d'une approximation.
+
+**Réserve valable pour toutes les tranches livrées à ce jour.** Aucun de ces composants n'a encore été exécuté
+contre une vraie base PostgreSQL ni un vrai Redis : l'environnement de développement utilisé pour la génération
+ne dispose pas de Docker. Les règles sont couvertes par des tests unitaires et par la résolution complète du
+conteneur d'injection ; les dépôts Prisma et les compteurs Redis, eux, ne seront confirmés qu'au premier
+`docker compose up`.

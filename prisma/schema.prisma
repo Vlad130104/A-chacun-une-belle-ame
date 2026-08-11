@@ -240,6 +240,8 @@ enum SignalType {
   MULTIPLE_REPORTS
   SUSPICIOUS_LINK
   AUTOMATED_BEHAVIOR
+  /// Partage de coordonnées dans un message : jamais bloquant, seulement signalé.
+  CONTACT_SHARING
 
   @@schema("app")
 }

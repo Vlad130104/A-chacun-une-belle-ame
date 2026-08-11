@@ -154,6 +154,9 @@ const photoConfig = (config: ConfigService<Env, true>): PhotoConfig => ({
       ) => new ListModerationQueueUseCase(photos, storage, photoConfig(config)),
     },
   ],
-  exports: [PROFILE_REPOSITORY, PHOTO_REPOSITORY],
+  // Le traitement d'image et le stockage média sont exposés pour que la messagerie
+  // (D5) réutilise la même chaîne — format réel vérifié, EXIF supprimé — au lieu
+  // d'en réimplémenter une seconde.
+  exports: [PROFILE_REPOSITORY, PHOTO_REPOSITORY, MEDIA_PIPELINE, MEDIA_STORAGE],
 })
 export class ProfilesModule {}
