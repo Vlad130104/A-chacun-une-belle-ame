@@ -132,6 +132,13 @@ export interface PlanSeed {
  * n'est pas inventée ici. Rappel ADR-009 : XAF et XOF n'ont pas de sous-unité —
  * 5 000 F CFA se stocke `5000`.
  */
+/**
+ * Les clés de `entitlements` doivent correspondre EXACTEMENT au type
+ * `Entitlements` du module `billing` : la lecture est défensive, une clé mal
+ * nommée retombe silencieusement sur la valeur gratuite. Autrement dit, une
+ * faute de frappe ici ne casse rien — elle vend un plan qui n'ouvre aucun droit.
+ * Un test du module billing verrouille cette correspondance.
+ */
 export const PLANS: PlanSeed[] = [
   {
     code: 'premium_monthly',
@@ -145,8 +152,9 @@ export const PLANS: PlanSeed[] = [
       dailySuggestions: 30,
       dailyLikes: 50,
       advancedFilters: true,
-      seeReceivedInterests: true,
-      monthlyBoosts: 1,
+      seeInterestSenders: true,
+      includedBoosts: 1,
+      readReceipts: true,
     },
     sortOrder: 1,
   },
@@ -162,8 +170,9 @@ export const PLANS: PlanSeed[] = [
       dailySuggestions: 30,
       dailyLikes: 50,
       advancedFilters: true,
-      seeReceivedInterests: true,
-      monthlyBoosts: 1,
+      seeInterestSenders: true,
+      includedBoosts: 1,
+      readReceipts: true,
     },
     sortOrder: 2,
   },
@@ -179,8 +188,9 @@ export const PLANS: PlanSeed[] = [
       dailySuggestions: 30,
       dailyLikes: 50,
       advancedFilters: true,
-      seeReceivedInterests: true,
-      monthlyBoosts: 2,
+      seeInterestSenders: true,
+      includedBoosts: 2,
+      readReceipts: true,
     },
     sortOrder: 3,
   },
@@ -192,7 +202,10 @@ export const PLANS: PlanSeed[] = [
     priceMinor: 1000,
     currency: 'XAF',
     countryCode: null,
-    entitlements: { boostHours: 24, multiplier: 2 },
+    // Un boost n'ouvre aucun droit d'abonnement : sa durée et son coefficient
+    // vivent sur la table `Boost`, pilotés par BOOST_DURATION_HOURS et
+    // BOOST_MULTIPLIER. Laisser des droits ici les rendrait permanents.
+    entitlements: {},
     sortOrder: 4,
   },
 ];

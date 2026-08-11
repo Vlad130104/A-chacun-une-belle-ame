@@ -19,6 +19,11 @@ import {
   AdminModerationController,
   ReportController,
 } from '../../modules/moderation/infrastructure/moderation.controller';
+import {
+  AdminBillingController,
+  BillingController,
+  PaymentWebhookController,
+} from '../../modules/billing/infrastructure/billing.controller';
 import { AUTH_POLICY_KEY, type AuthPolicy } from './auth.decorator';
 
 /**
@@ -50,6 +55,9 @@ const CONTROLLERS = [
   ConversationsController,
   ReportController,
   AdminModerationController,
+  BillingController,
+  PaymentWebhookController,
+  AdminBillingController,
 ];
 
 /**
@@ -64,6 +72,11 @@ const ALLOWED_PUBLIC_ROUTES = new Set([
   'POST /auth/register',
   'POST /auth/otp/verify',
   'POST /auth/refresh',
+  // Webhook de paiement : le fournisseur ne possède aucun jeton de session.
+  // L'authentification EST la signature, vérifiée avant toute lecture
+  // exploitable du corps (ADR-010). Une signature invalide renvoie 401 sans
+  // aucune écriture métier — vérifié par un test dédié du module billing.
+  'POST /payments/webhook/:provider',
 ]);
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'ALL', 'OPTIONS', 'HEAD'];
@@ -280,6 +293,42 @@ describe('inventaire des routes', () => {
         route.signature.startsWith('DELETE '),
     );
     expect(ecritures).toEqual([]);
+  });
+
+  it('n’expose qu’une seule route de paiement en accès libre : le webhook', () => {
+    const paiement = routes.filter(
+      (route) => route.signature.includes('/payments') || route.signature.includes('/subscription'),
+    );
+    const publiques = paiement
+      .filter((route) => route.policy?.level === 'public')
+      .map((route) => route.signature);
+
+    expect(publiques).toEqual(['POST /payments/webhook/:provider']);
+  });
+
+  it('exige un compte vérifié pour souscrire', () => {
+    // Payer suppose un compte dont l'identité est établie : sinon un compte
+    // jetable pourrait acheter de la visibilité.
+    const souscrire = routes.find((route) => route.signature === 'POST /subscriptions');
+    expect(souscrire?.policy?.level).toBe('verified');
+  });
+
+  it('réserve le remboursement à la permission billing.refund et l’audite', () => {
+    const rembourser = routes.find(
+      (route) => route.signature === 'POST /admin/payments/:paymentId/refund',
+    );
+    expect(rembourser?.policy?.permissions).toContain('billing.refund');
+    expect(rembourser?.policy?.audit).toBe('billing.payment.refunded');
+  });
+
+  it('réserve la confirmation manuelle d’un paiement à billing.manage et l’audite', () => {
+    // Route de régularisation : elle crédite un abonnement sans passer par le
+    // fournisseur. Elle doit être tracée nominativement.
+    const confirmer = routes.find(
+      (route) => route.signature === 'POST /admin/payments/:paymentId/confirm',
+    );
+    expect(confirmer?.policy?.permissions).toContain('billing.manage');
+    expect(confirmer?.policy?.audit).toBe('billing.payment.confirmed');
   });
 
   it('n’expose aucune route d’authentification sensible en accès libre', () => {

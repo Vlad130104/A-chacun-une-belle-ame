@@ -52,6 +52,8 @@ beforeAll(async () => {
     await import('./modules/conversations/application/conversation.use-cases');
   const { AdminModerationController, ReportController } =
     await import('./modules/moderation/infrastructure/moderation.controller');
+  const { BillingController, PaymentWebhookController } =
+    await import('./modules/billing/infrastructure/billing.controller');
 
   moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
 
@@ -86,6 +88,18 @@ beforeAll(async () => {
       nom: 'AdminModerationController',
       classe: AdminModerationController,
       instance: moduleRef.get(AdminModerationController),
+    },
+    // La facturation dépend de `PAYMENT_PROVIDER`, sélectionné par configuration :
+    // si le fournisseur simulé n'était pas fourni, le conteneur ne résoudrait pas.
+    {
+      nom: 'BillingController',
+      classe: BillingController,
+      instance: moduleRef.get(BillingController),
+    },
+    {
+      nom: 'PaymentWebhookController',
+      classe: PaymentWebhookController,
+      instance: moduleRef.get(PaymentWebhookController),
     },
   ];
 }, 180_000);

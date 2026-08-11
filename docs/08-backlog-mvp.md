@@ -254,6 +254,29 @@ réception. Rien dans l'interface ne doit afficher « livré » tant que cette s
 - Le traitement asynchrone utilise un `jobId` déterministe ; **rejouer 10 fois le même événement produit exactement un crédit d'abonnement** — c'est le test E2E n° 14.
 - Un événement en échec est rejouable depuis le back-office sans effet de bord.
 
+### État de livraison du lot D7
+
+| Story | État       | Précision                                                                                                                                        |
+| ----- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| D7-01 | ✅ livré   | `MockPaymentProvider` : `testMode` serveur, signature **toujours refusée**, références préfixées `mock_`.                                        |
+| D7-02 | ✅ livré   | Souscription mensuelle, trimestrielle, annuelle ; renouvellement anticipé empilé sur le reliquat.                                                |
+| D7-03 | ✅ livré   | Mobile money : seuls l'opérateur et les 4 derniers chiffres sont conservés.                                                                      |
+| D7-04 | ✅ livré   | Signature avant lecture, unicité `(provider, providerEventId)`, transition conditionnée à l'état courant. **Rejeu ×10 → un seul crédit**, testé. |
+| D7-05 | 🟨 partiel | Historique paginé avec numéro de reçu livré. **Le reçu PDF n'existe pas** — voir ci-dessous.                                                     |
+| D7-06 | ✅ livré   | Annulation = drapeau, jamais coupure : les droits courent jusqu'à l'échéance.                                                                    |
+| D7-07 | ✅ livré   | Période de grâce configurable ; les droits restent ouverts pendant la grâce.                                                                     |
+| D7-08 | ✅ livré   | Remboursement total ou partiel, second valideur **distinct** obligatoire, appel fournisseur seulement après validation.                          |
+
+**Non fait, dit explicitement :**
+
+- **Le reçu PDF de D7-05.** Le numéro de reçu est attribué (`ACUBA-AAAAMM-NNNNNN`) et l'historique l'expose, mais
+  `GET /payments/{id}/receipt` ne rend aucun PDF : la génération de document est un travail à part entière, et
+  produire un justificatif comptable faux serait pire que ne pas en produire. Reporté en `TODO(D9-05)`.
+- **La clôture automatique des périodes de grâce.** La règle et le cas d'usage existent et sont testés ; le
+  déclenchement passe aujourd'hui par `POST /admin/subscriptions/expire-grace`. La tâche planifiée est en D8.
+- **L'encaissement réel** : voir la réserve dédiée dans `docs/MOCKS.md`. Tant que `PAYMENT_PROVIDER=mock`,
+  aucun webhook n'est authentifiable, donc aucun crédit ne peut arriver de l'extérieur.
+
 ---
 
 ## Lot D8 — Notifications (30 pts)

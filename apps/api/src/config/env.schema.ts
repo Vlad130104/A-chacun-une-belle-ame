@@ -74,6 +74,12 @@ export const envSchema = z.object({
   MATCHING_MAX_CANDIDATES: z.coerce.number().int().positive().default(500),
   MATCHING_POLICY: z.enum(['HETERO', 'OPEN']).default('HETERO'),
 
+  // ── Facturation (docs/08-backlog-mvp.md, lot D7) ───────────────────────────
+  /** Jours pendant lesquels les droits restent ouverts après un échec de paiement. */
+  PAYMENT_GRACE_PERIOD_DAYS: z.coerce.number().int().positive().default(7),
+  BOOST_DURATION_HOURS: z.coerce.number().int().positive().default(24),
+  BOOST_MULTIPLIER: z.coerce.number().min(1).max(10).default(2),
+
   // ── Modération (docs/08-backlog-mvp.md, lot D6) ────────────────────────────
   //
   // Les échéances SLA et les seuils de détection sont en configuration, jamais

@@ -298,6 +298,22 @@ l'appelant.
 **Tant que `PAYMENT_PROVIDER=mock`**, toutes les réponses portent `"testMode": true` et l'interface affiche un
 bandeau « Mode test — aucun paiement réel ». Non désactivable côté client.
 
+### Écarts assumés, tranche D7
+
+- **`GET /payments/{id}/receipt` n'est pas livré.** Le numéro de reçu est attribué et exposé dans l'historique ;
+  la génération du PDF est reportée (`TODO(D9-05)`). Produire un justificatif comptable inexact serait pire que
+  ne pas en produire du tout.
+- **`POST /admin/payments/{id}/confirm` s'ajoute**, sous `billing.manage` et auditée. Elle n'était pas au
+  catalogue : elle existe parce que le fournisseur simulé refuse toute signature de webhook, donc aucun crédit ne
+  peut arriver de l'extérieur. C'est la seule façon d'éprouver le parcours payant de bout en bout aujourd'hui.
+- **`POST /admin/subscriptions/expire-grace` s'ajoute** pour déclencher à la main la clôture des périodes de
+  grâce, en attendant la tâche planifiée de D8.
+
+**Le webhook est la seule route publique du domaine paiement**, et c'est une nécessité : le fournisseur ne
+possède aucun jeton de session. L'authentification **est** la signature, vérifiée sur le corps **brut** — une
+signature porte sur les octets reçus, pas sur un JSON ré-sérialisé dont l'ordre des clés diffère. Une signature
+invalide renvoie `401` sans aucune écriture métier, pas même un journal d'événement.
+
 Codes : `SUB_ALREADY_ACTIVE` · `SUB_PLAN_UNAVAILABLE` · `PAY_PROVIDER_ERROR` · `PAY_DUPLICATE_IDEMPOTENCY_KEY` ·
 `PAY_AMOUNT_MISMATCH` · `PAY_CURRENCY_UNSUPPORTED` · `PAY_REFUND_NOT_ALLOWED`.
 

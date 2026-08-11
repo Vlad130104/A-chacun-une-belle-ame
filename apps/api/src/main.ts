@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Logger as PinoLogger } from 'nestjs-pino';
 import helmet from 'helmet';
+import express from 'express';
 import type { NextFunction, Request, Response } from 'express';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/errors/global-exception.filter';
@@ -25,6 +26,24 @@ async function bootstrap(): Promise<void> {
   });
 
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'same-site' } }));
+
+  // Corps brut conservé pour la vérification des signatures de webhook (ADR-010).
+  //
+  // Une signature porte sur les OCTETS reçus. Ré-sérialiser le JSON analysé
+  // changerait l'ordre des clés et les espaces, et invaliderait toute signature
+  // pourtant authentique. On garde donc le tampon d'origine, et uniquement sur
+  // les routes de webhook : ailleurs, conserver le corps brut n'a aucun intérêt
+  // et double la mémoire consommée par requête.
+  app.use(
+    express.json({
+      limit: '1mb',
+      verify: (req: Request & { rawBody?: Buffer }, _res, buf: Buffer) => {
+        if (req.originalUrl.includes('/payments/webhook/')) {
+          req.rawBody = Buffer.from(buf);
+        }
+      },
+    }),
+  );
 
   // CORS restrictif : uniquement les origines explicitement déclarées.
   const origins = config

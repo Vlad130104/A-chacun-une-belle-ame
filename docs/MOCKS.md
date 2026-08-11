@@ -1,6 +1,6 @@
 # Intégrations simulées — registre permanent
 
-> **État au terme de la tranche D6 (sécurité et modération).** La colonne « État » ne passe à « livré » qu'une fois le code
+> **État au terme de la tranche D7 (abonnements et paiements).** La colonne « État » ne passe à « livré » qu'une fois le code
 > écrit **et** testé. Les ports encore marqués « à développer » n'existent qu'à l'état d'interface : ils ne sont
 > ni simulés ni approximatifs, ils ne sont pas écrits.
 
@@ -11,16 +11,16 @@ implémentation simulée — ni dans l'interface, ni dans la documentation, ni d
 
 ## 1. Registre
 
-| Port                        | Implémentation simulée                                                        | État                 | Bloque l'ouverture publique ?                                 | Question ouverte |
-| --------------------------- | ----------------------------------------------------------------------------- | -------------------- | ------------------------------------------------------------- | ---------------- |
-| `SmsProvider`               | `ConsoleSmsProvider` — le code OTP est journalisé, aucun SMS n'est envoyé     | 🟨 simulé, livré     | **🔴 OUI** — sans SMS réel, aucune inscription n'est possible | **Q4**           |
-| `KycProvider`               | `MockKycProvider` — aucune décision automatique, revue humaine au back-office | 🟨 simulé, livré     | 🟡 Non si la revue humaine est acceptée comme mode nominal    | **Q2**           |
-| `PaymentProvider`           | `MockPaymentProvider` — toute réponse porte `testMode: true`                  | ⬜ à développer (D7) | 🟢 Non — ouverture possible en gratuit intégral               | **Q3**           |
-| `PushProvider`              | `MockPushProvider` — notification journalisée, non envoyée                    | ⬜ à développer (D8) | 🟢 Non — repli sur in-app et e-mail                           | —                |
-| `ContentModerationProvider` | `RuleBasedModerationProvider` — règles simples, pas d'analyse d'image         | ⬜ à développer (D6) | 🟢 Non — revue humaine au MVP                                 | —                |
-| `MailProvider`              | Mailpit en local — **réel** en recette et production                          | ⬜ à développer (D8) | 🟢 Non                                                        | —                |
-| `StorageProvider`           | MinIO en local — **réel** (S3 compatible)                                     | 🟨 livré             | 🟢 Non                                                        | —                |
-| `ClockProvider`             | `FrozenClock` **en test uniquement** ; horloge système ailleurs               | 🟨 livré             | —                                                             | —                |
+| Port                        | Implémentation simulée                                                              | État                 | Bloque l'ouverture publique ?                                 | Question ouverte |
+| --------------------------- | ----------------------------------------------------------------------------------- | -------------------- | ------------------------------------------------------------- | ---------------- |
+| `SmsProvider`               | `ConsoleSmsProvider` — le code OTP est journalisé, aucun SMS n'est envoyé           | 🟨 simulé, livré     | **🔴 OUI** — sans SMS réel, aucune inscription n'est possible | **Q4**           |
+| `KycProvider`               | `MockKycProvider` — aucune décision automatique, revue humaine au back-office       | 🟨 simulé, livré     | 🟡 Non si la revue humaine est acceptée comme mode nominal    | **Q2**           |
+| `PaymentProvider`           | `MockPaymentProvider` — `testMode: true`, **signature de webhook toujours refusée** | 🟨 simulé, livré     | 🟡 Non pour ouvrir en gratuit ; **🔴 OUI pour encaisser**     | **Q3**           |
+| `PushProvider`              | `MockPushProvider` — notification journalisée, non envoyée                          | ⬜ à développer (D8) | 🟢 Non — repli sur in-app et e-mail                           | —                |
+| `ContentModerationProvider` | `RuleBasedModerationProvider` — règles simples, pas d'analyse d'image               | ⬜ à développer (D6) | 🟢 Non — revue humaine au MVP                                 | —                |
+| `MailProvider`              | Mailpit en local — **réel** en recette et production                                | ⬜ à développer (D8) | 🟢 Non                                                        | —                |
+| `StorageProvider`           | MinIO en local — **réel** (S3 compatible)                                           | 🟨 livré             | 🟢 Non                                                        | —                |
+| `ClockProvider`             | `FrozenClock` **en test uniquement** ; horloge système ailleurs                     | 🟨 livré             | —                                                             | —                |
 
 Légende : ⬜ à développer (interface non encore écrite) · 🟨 simulé et livré · ✅ implémentation réelle en production.
 
@@ -118,6 +118,33 @@ Ces éléments sont **réels dès le développement local**, jamais simulés :
 **Aucune règle de sécurité n'est simulée.** Le contrôle d'âge, la vérification du match avant message, les gardes
 d'autorisation et le rate limiting fonctionnent réellement, en développement comme en production. Ce qui n'est pas
 coché ci-dessus n'existe simplement pas encore — il ne s'agit ni d'une simulation ni d'une approximation.
+
+### La réserve la plus importante du registre : le paiement
+
+**Aucun argent ne peut circuler aujourd'hui.** Tout le produit payant est écrit,
+testé et vérifiable — plans, souscription, période de grâce, reçus,
+remboursements à quatre yeux, idempotence des webhooks — mais le fournisseur est
+simulé, et il l'est de façon volontairement stricte :
+
+- `verifyWebhookSignature()` renvoie **toujours `false`**. Sans secret partagé
+  avec un prestataire, aucune signature n'est vérifiable ; renvoyer `true`
+  reviendrait à offrir un crédit d'abonnement gratuit à qui connaît l'URL du
+  webhook. **Conséquence directe : en mode simulé, aucun webhook n'est traité.**
+- Le crédit d'un abonnement passe donc par `POST /admin/payments/{id}/confirm`,
+  route de régularisation soumise à `billing.manage` et auditée nominativement.
+- Chaque réponse porte `testMode: true`, produit **par le serveur**. L'interface
+  doit afficher un bandeau « Mode test — aucun paiement réel » que le client ne
+  peut pas désactiver.
+- Le drapeau `payments.enabled` est à `false` dans le seed : la souscription
+  payante reste fermée tant qu'aucun agrégateur n'est contractualisé.
+
+**Ce qu'il faudra faire le jour où les identifiants du prestataire arriveront :**
+écrire une classe à côté de `MockPaymentProvider`, l'enregistrer dans
+`providers.module.ts`, poser `PAYMENT_PROVIDER=live`. Rien dans `domain/` ni dans
+`application/` ne bouge — c'est précisément ce que cette architecture achète.
+Aucune référence de fournisseur n'a été inventée : celles produites en mode
+simulé portent le préfixe `mock_` et ne peuvent pas être confondues avec de
+vraies transactions dans un export comptable.
 
 ### Trois réserves nommées, tranche D6
 

@@ -3,8 +3,15 @@ import { ConfigService } from '@nestjs/config';
 import type { Env } from '../config/env.schema';
 import { listSimulatedProviders } from '../config/env.schema';
 import { ConsoleSmsProvider } from './console-sms.provider';
+import { MockPaymentProvider } from './mock-payment.provider';
 import { SystemClock } from './system-clock.provider';
-import { CLOCK_PROVIDER, SMS_PROVIDER, type SmsProvider } from './ports';
+import {
+  CLOCK_PROVIDER,
+  PAYMENT_PROVIDER,
+  SMS_PROVIDER,
+  type PaymentProvider,
+  type SmsProvider,
+} from './ports';
 
 /**
  * Sélection des implémentations de ports.
@@ -20,6 +27,7 @@ import { CLOCK_PROVIDER, SMS_PROVIDER, type SmsProvider } from './ports';
 @Module({
   providers: [
     ConsoleSmsProvider,
+    MockPaymentProvider,
     SystemClock,
     {
       provide: SMS_PROVIDER,
@@ -41,9 +49,29 @@ import { CLOCK_PROVIDER, SMS_PROVIDER, type SmsProvider } from './ports';
         }
       },
     },
+    {
+      provide: PAYMENT_PROVIDER,
+      inject: [ConfigService, MockPaymentProvider],
+      useFactory: (
+        config: ConfigService<Env, true>,
+        mockPayment: MockPaymentProvider,
+      ): PaymentProvider => {
+        const selected = config.get('PAYMENT_PROVIDER', { infer: true });
+        switch (selected) {
+          case 'mock':
+            return mockPayment;
+          case 'live':
+            // Aucun prestataire n'est contractualisé : ne pas inventer d'intégration.
+            throw new Error(
+              "PAYMENT_PROVIDER=live demandé mais aucune implémentation réelle n'existe encore. " +
+                'Voir docs/MOCKS.md et la question Q3 du cadrage.',
+            );
+        }
+      },
+    },
     { provide: CLOCK_PROVIDER, useExisting: SystemClock },
   ],
-  exports: [SMS_PROVIDER, CLOCK_PROVIDER],
+  exports: [SMS_PROVIDER, PAYMENT_PROVIDER, CLOCK_PROVIDER],
 })
 export class ProvidersModule {
   private readonly logger = new Logger(ProvidersModule.name);
