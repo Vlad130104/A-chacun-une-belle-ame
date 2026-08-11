@@ -56,6 +56,8 @@ beforeAll(async () => {
     await import('./modules/billing/infrastructure/billing.controller');
   const { NotificationsController } =
     await import('./modules/notifications/infrastructure/notifications.controller');
+  const { BackofficeController } =
+    await import('./modules/backoffice/infrastructure/backoffice.controller');
 
   moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
 
@@ -110,6 +112,11 @@ beforeAll(async () => {
       nom: 'NotificationsController',
       classe: NotificationsController,
       instance: moduleRef.get(NotificationsController),
+    },
+    {
+      nom: 'BackofficeController',
+      classe: BackofficeController,
+      instance: moduleRef.get(BackofficeController),
     },
   ];
 }, 180_000);

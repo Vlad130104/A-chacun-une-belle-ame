@@ -23,6 +23,9 @@ export const envSchema = z.object({
   KYC_DATABASE_URL: z.string().url().optional(),
   REDIS_URL: z.string().url(),
 
+  /** Nom affiché dans les applications d'authentification à l'enrôlement 2FA. */
+  APP_NAME: z.string().min(3).max(60).default('A Chacun Une Belle Ame'),
+
   API_PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   API_GLOBAL_PREFIX: z.string().default('api/v1'),
   PROCESS_ROLE: z.enum(['api', 'worker', 'all']).default('all'),

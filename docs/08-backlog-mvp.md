@@ -343,6 +343,34 @@ réception. Rien dans l'interface ne doit afficher « livré » tant que cette s
 - Aucune route d'écriture, de modification ou de suppression sur ce journal n'existe — test d'inventaire.
 - Le rôle PostgreSQL applicatif n'a ni `UPDATE` ni `DELETE` sur la table — test d'intégration qui tente et attend un refus.
 
+### État de livraison du lot D9
+
+| Story | État             | Précision                                                                                                                                                                                                                                                   |
+| ----- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D9-01 | 🟨 partiel       | TOTP livré et **vérifié contre les vecteurs normatifs de la RFC 4226**, enrôlement en deux temps, secret rendu une seule fois. **Le back-office n'est pas un domaine séparé** et la 2FA n'est pas encore exigée à l'ouverture de session — voir ci-dessous. |
+| D9-02 | ✅ livré         | Les 10 indicateurs, en agrégats seulement : aucun membre n'y est nommé.                                                                                                                                                                                     |
+| D9-03 | ✅ livré         | Recherche par empreinte de numéro, dossier complet, **toute consultation auditée**.                                                                                                                                                                         |
+| D9-04 | ✅ livré en D6   | Les routes de sanction vivent dans le module `moderation`, avec leurs garde-fous (quatre yeux sur le bannissement). Les dupliquer ici aurait créé un second chemin moins contrôlé.                                                                          |
+| D9-05 | ⬜ **non livré** | La gestion de contenu (CGU, charte, modèles) exige une table versionnée qui n'existe pas au modèle de données. Priorité `S`.                                                                                                                                |
+| D9-06 | 🟨 partiel       | Consultation des transactions livrée en D7 (`GET /payments`, `/admin/payments/…`). **L'édition des offres et des prix n'est pas livrée** : modifier un prix en production sans double validation ni historique serait imprudent.                            |
+| D9-07 | ✅ livré         | Migration `audit_append_only` : déclencheur PostgreSQL refusant `UPDATE`/`DELETE` **et** retrait des droits au rôle applicatif. L'écriture d'audit n'est plus tolérante à l'échec.                                                                          |
+| D9-08 | ✅ livré         | Rôles et feature flags, avec deux garde-fous : on ne modifie pas ses propres rôles, on ne retire pas le dernier super-administrateur.                                                                                                                       |
+
+**Correction d'une décision de D6.** L'écriture d'audit y attrapait ses erreurs et poursuivait, au motif qu'une
+sanction légitime ne devait pas échouer faute de trace. Le raisonnement était faux et D9-07 tranche dans l'autre
+sens : une action sensible sans trace est exactement ce qu'un abus produirait. **Si l'audit ne peut pas être écrit,
+l'action n'a pas lieu.**
+
+**Non fait, dit explicitement :**
+
+- **Le back-office n'est pas une application séparée.** Les routes `/admin/*` vivent dans la même API, protégées
+  par permission. Un domaine distinct (`admin.acuba.*`), une politique de cookies propre et un réseau restreint
+  sont un travail d'infrastructure, pas de code applicatif — à traiter au déploiement.
+- **La 2FA n'est pas encore EXIGÉE à l'ouverture de session.** L'enrôlement, la vérification et l'activation
+  fonctionnent ; il manque le contrôle dans le parcours de connexion administrateur, qui suppose un type de session
+  distinct. Reporté en `TODO(E-02)`.
+- **D9-05 en entier**, et **l'édition des offres de D9-06**.
+
 ---
 
 ## Lot D10 — Analytics et migration WhatsApp (37 pts)

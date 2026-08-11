@@ -14,6 +14,7 @@ import { AuditModule } from './modules/audit/audit.module';
 import { ModerationModule } from './modules/moderation/moderation.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { BackofficeModule } from './modules/backoffice/backoffice.module';
 
 /**
  * Module racine.
@@ -21,7 +22,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
  * Les 17 modules de domaine sont ajoutés ici au fil des tranches verticales
  * (docs/08-backlog-mvp.md). Livrés à ce jour : socle technique, santé,
  * authentification, vérification d'identité, profils, découverte, messagerie,
- * audit, modération, facturation et notifications.
+ * audit, modération, facturation, notifications et back-office.
  */
 @Module({
   imports: [
@@ -73,6 +74,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     ModerationModule,
     BillingModule,
     NotificationsModule,
+    BackofficeModule,
   ],
 })
 export class AppModule {}

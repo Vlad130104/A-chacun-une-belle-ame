@@ -1,6 +1,6 @@
 # Intégrations simulées — registre permanent
 
-> **État au terme de la tranche D8 (notifications).** La colonne « État » ne passe à « livré » qu'une fois le code
+> **État au terme de la tranche D9 (back-office).** La colonne « État » ne passe à « livré » qu'une fois le code
 > écrit **et** testé. Les ports encore marqués « à développer » n'existent qu'à l'état d'interface : ils ne sont
 > ni simulés ni approximatifs, ils ne sont pas écrits.
 
@@ -173,10 +173,11 @@ n'appartenaient pas au périmètre des six stories D8, et les inventer pour
 1. **La notification d'une décision est écrite, pas envoyée.** La ligne `Notification` existe en base et sera lue
    par le centre in-app. Aucun push ni e-mail ne part : la file d'envoi multi-canal est la tranche D8. Rien dans
    l'interface ne doit laisser croire qu'un message a été poussé au membre.
-2. **Le journal d'audit est en ajout seul par convention applicative, pas encore par contrainte.** Aucun service
-   n'expose de mise à jour ni de suppression, et aucune route d'écriture n'existe. Le verrou définitif — un
-   déclencheur PostgreSQL interdisant `UPDATE` et `DELETE`, plus des droits de rôle restreints — est suivi en
-   `TODO(D9-07)`. Tant qu'il n'est pas posé, un accès direct à la base pourrait réécrire une ligne.
+2. ~~Le journal d'audit est en ajout seul par convention applicative.~~ **Levé en D9.** La migration
+   `20260920000000_audit_append_only` pose un déclencheur PostgreSQL qui refuse `UPDATE` et `DELETE`, et retire
+   ces droits au rôle applicatif. Réserve résiduelle honnête : un super-utilisateur PostgreSQL peut désactiver un
+   déclencheur. La protection vise l'erreur et l'abus ordinaire ; contre un administrateur de base malveillant, le
+   rempart est l'export vers un stockage externe, prévu en V1.
 3. **Une sanction temporaire ne se lève pas toute seule.** L'échéance est enregistrée sur l'action de modération,
    mais aucune tâche planifiée ne rétablit le compte : la levée passe aujourd'hui par
    `POST /admin/moderation/actions/{id}/revert`. La tâche automatique est en D8.

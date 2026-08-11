@@ -28,6 +28,10 @@ import {
   DevicesController,
   NotificationsController,
 } from '../../modules/notifications/infrastructure/notifications.controller';
+import {
+  AdminTwoFactorController,
+  BackofficeController,
+} from '../../modules/backoffice/infrastructure/backoffice.controller';
 import { AUTH_POLICY_KEY, type AuthPolicy } from './auth.decorator';
 
 /**
@@ -64,6 +68,8 @@ const CONTROLLERS = [
   AdminBillingController,
   NotificationsController,
   DevicesController,
+  BackofficeController,
+  AdminTwoFactorController,
 ];
 
 /**
@@ -352,6 +358,44 @@ describe('inventaire des routes', () => {
       (route) => route.signature.startsWith('GET ') && route.signature.includes('token'),
     );
     expect(lectures).toEqual([]);
+  });
+
+  it('n’expose AUCUNE route d’écriture sur le journal d’audit', () => {
+    // Le journal est en ajout seul. Deux verrous PostgreSQL le garantissent en
+    // base ; ce test garantit qu'aucune route ne tente même de l'écrire.
+    const journal = routes.filter((route) => route.signature.includes('audit-log'));
+
+    expect(journal.length).toBeGreaterThanOrEqual(1);
+    for (const route of journal) {
+      expect({ signature: route.signature, lecture: route.signature.startsWith('GET ') }).toEqual({
+        signature: route.signature,
+        lecture: true,
+      });
+    }
+  });
+
+  it('réserve le journal d’audit à la permission audit.read', () => {
+    const journal = routes.find((route) => route.signature === 'GET /admin/audit-logs');
+    expect(journal?.policy?.permissions).toContain('audit.read');
+  });
+
+  it('réserve la gestion des rôles et des flags à leurs permissions dédiées', () => {
+    const roles = routes.filter((route) => route.signature.includes('/roles'));
+    expect(roles.length).toBeGreaterThanOrEqual(2);
+    for (const route of roles) {
+      expect(route.policy?.permissions).toContain('system.roles');
+    }
+
+    const flags = routes.filter((route) => route.signature.includes('feature-flags'));
+    for (const route of flags) {
+      expect(route.policy?.permissions).toContain('system.flags');
+    }
+  });
+
+  it('n’expose aucune route de back-office en accès libre', () => {
+    const admin = routes.filter((route) => route.signature.includes('/admin/'));
+    expect(admin.length).toBeGreaterThanOrEqual(15);
+    expect(admin.every((route) => route.policy?.level !== 'public')).toBe(true);
   });
 
   it('n’expose aucune route d’authentification sensible en accès libre', () => {
