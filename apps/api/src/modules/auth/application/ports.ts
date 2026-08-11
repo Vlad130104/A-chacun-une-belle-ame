@@ -31,6 +31,8 @@ export interface UserRecord {
   verificationStatus: string;
   failedLoginCount: number;
   lockedUntil: Date | null;
+  /** Lien d'invitation rattaché à l'inscription, s'il y en avait un (story D10-02). */
+  usedInviteId: string | null;
 }
 
 export interface CreateUserInput {

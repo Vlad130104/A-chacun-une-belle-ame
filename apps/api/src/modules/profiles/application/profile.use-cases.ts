@@ -1,6 +1,7 @@
 import { ErrorCode } from '@acuba/contracts';
 import { BusinessError } from '../../../common/errors/business.error';
 import type { ClockProvider } from '../../../providers/ports';
+import type { AnalyticsTracker } from '../../analytics/application/ports';
 import { computeCompletion, type CompletionResult } from '../domain/profile-completion';
 import {
   canChangeStatus,
@@ -41,6 +42,7 @@ export class ProfileService {
     private readonly photos: PhotoRepository,
     private readonly referentials: ReferentialRepository,
     private readonly clock: ClockProvider,
+    private readonly analytics: AnalyticsTracker,
     private readonly config: ProfileConfig,
   ) {}
 
@@ -111,6 +113,16 @@ export class ProfileService {
     }
 
     await this.profiles.setStatus(profile.id, 'ACTIVE', this.clock.now());
+
+    // Dernière marche du tunnel : le profil est publié, la personne est
+    // réellement présente sur la plateforme. Deux mesures agrégées, aucun
+    // contenu de profil.
+    await this.analytics.track({
+      userId,
+      name: 'profile.completed',
+      properties: { completionRate: vue.completion.rate, photoCount: approvedPhotoCount },
+    });
+
     return this.decorate({ ...profile, status: 'ACTIVE' }, userId);
   }
 

@@ -35,6 +35,15 @@ export const envSchema = z.object({
   // laisser vide reviendrait à rendre les empreintes reproductibles par un tiers.
   HASH_SALT: z.string().min(16).default('sel-de-developpement-non-secret'),
 
+  // Secret du pseudonyme analytique (ADR-021). DISTINCT de HASH_SALT, et la
+  // distinction n'est pas cosmétique : l'analytique part vers des outils de
+  // visualisation, le sel des empreintes non. Les confondre reviendrait à
+  // exporter la clé qui permet de retrouver un membre par son numéro.
+  ANALYTICS_HMAC_SECRET: z
+    .string()
+    .min(16)
+    .default('pseudonyme-analytique-de-developpement-non-secret'),
+
   // ── Stockage compatible S3 — deux buckets séparés (ADR-004) ────────────────
   S3_ENDPOINT: z.string().url().default('http://localhost:9000'),
   S3_MEDIA_BUCKET: z.string().min(3).default('acuba-media'),
@@ -201,6 +210,14 @@ export function validateEnv(raw: Record<string, unknown>): Env {
     throw new EnvValidationError([
       'S3_MEDIA_BUCKET et S3_KYC_BUCKET doivent être deux buckets distincts : ' +
         'les pièces d’identité ne partagent jamais le stockage des photos de profil (ADR-004).',
+    ]);
+  }
+
+  if (env.ANALYTICS_HMAC_SECRET === env.HASH_SALT) {
+    throw new EnvValidationError([
+      'ANALYTICS_HMAC_SECRET et HASH_SALT doivent être deux secrets distincts : ' +
+        'les pseudonymes analytiques quittent le serveur vers des outils de ' +
+        'visualisation, le sel des empreintes recherchables jamais (ADR-021).',
     ]);
   }
 

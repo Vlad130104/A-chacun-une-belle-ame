@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import type { Env } from '../../config/env.schema';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { CLOCK_PROVIDER, KYC_PROVIDER, type ClockProvider } from '../../providers/ports';
+import { AnalyticsModule } from '../analytics/analytics.module';
+import { ANALYTICS_TRACKER, type AnalyticsTracker } from '../analytics/application/ports';
 import {
   DOCUMENT_STORAGE,
   VERIFICATION_REPOSITORY,
@@ -44,6 +46,7 @@ const buildConfig = (config: ConfigService<Env, true>): VerificationConfig => ({
  * (docs/MOCKS.md).
  */
 @Module({
+  imports: [AnalyticsModule],
   controllers: [VerificationController, AdminVerificationController],
   providers: [
     KycDocumentStorageAdapter,
@@ -95,19 +98,29 @@ const buildConfig = (config: ConfigService<Env, true>): VerificationConfig => ({
     },
     {
       provide: SubmitVerificationUseCase,
-      inject: [VERIFICATION_REPOSITORY, VERIFICATION_USER_GATEWAY],
-      useFactory: (repository: VerificationRepository, users: VerificationUserGateway) =>
-        new SubmitVerificationUseCase(repository, users),
+      inject: [VERIFICATION_REPOSITORY, VERIFICATION_USER_GATEWAY, ANALYTICS_TRACKER],
+      useFactory: (
+        repository: VerificationRepository,
+        users: VerificationUserGateway,
+        analytics: AnalyticsTracker,
+      ) => new SubmitVerificationUseCase(repository, users, analytics),
     },
     {
       provide: DecideVerificationUseCase,
-      inject: [VERIFICATION_REPOSITORY, VERIFICATION_USER_GATEWAY, CLOCK_PROVIDER, ConfigService],
+      inject: [
+        VERIFICATION_REPOSITORY,
+        VERIFICATION_USER_GATEWAY,
+        CLOCK_PROVIDER,
+        ANALYTICS_TRACKER,
+        ConfigService,
+      ],
       useFactory: (
         repository: VerificationRepository,
         users: VerificationUserGateway,
         clock: ClockProvider,
+        analytics: AnalyticsTracker,
         config: ConfigService<Env, true>,
-      ) => new DecideVerificationUseCase(repository, users, clock, buildConfig(config)),
+      ) => new DecideVerificationUseCase(repository, users, clock, analytics, buildConfig(config)),
     },
     {
       provide: PurgeDocumentsUseCase,

@@ -1,4 +1,11 @@
 import { Module } from '@nestjs/common';
+import { AnalyticsModule } from '../analytics/analytics.module';
+import {
+  ANALYTICS_TRACKER,
+  INVITE_RESOLVER,
+  type AnalyticsTracker,
+  type InviteResolver,
+} from '../analytics/application/ports';
 import { ACCOUNT_SANCTION_GATEWAY } from '../moderation/application/ports';
 import { PrismaAccountSanctionGateway } from './infrastructure/account-sanction.gateway';
 import { ConfigService } from '@nestjs/config';
@@ -68,6 +75,7 @@ import {
  */
 @Module({
   imports: [
+    AnalyticsModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService<Env, true>) => {
@@ -154,6 +162,8 @@ import {
         SMS_PROVIDER,
         CLOCK_PROVIDER,
         RATE_LIMITER,
+        INVITE_RESOLVER,
+        ANALYTICS_TRACKER,
         ConfigService,
       ],
       useFactory: (
@@ -166,15 +176,30 @@ import {
         sms: SmsProvider,
         clock: ClockProvider,
         limiter: RateLimiter,
+        invites: InviteResolver,
+        analytics: AnalyticsTracker,
         config: ConfigService<Env, true>,
       ) =>
-        new RegisterUseCase(users, otp, blocked, consents, hasher, tokens, sms, clock, limiter, {
-          minimumAge: config.get('MINIMUM_AGE', { infer: true }),
-          otpTtlSeconds: config.get('OTP_TTL_SECONDS', { infer: true }),
-          otpMaxAttempts: config.get('OTP_MAX_ATTEMPTS', { infer: true }),
-          otpRateLimitPerWindow: config.get('RATE_LIMIT_OTP_PER_10_MIN', { infer: true }),
-          otpRateWindowSeconds: 600,
-        }),
+        new RegisterUseCase(
+          users,
+          otp,
+          blocked,
+          consents,
+          hasher,
+          tokens,
+          sms,
+          clock,
+          limiter,
+          invites,
+          analytics,
+          {
+            minimumAge: config.get('MINIMUM_AGE', { infer: true }),
+            otpTtlSeconds: config.get('OTP_TTL_SECONDS', { infer: true }),
+            otpMaxAttempts: config.get('OTP_MAX_ATTEMPTS', { infer: true }),
+            otpRateLimitPerWindow: config.get('RATE_LIMIT_OTP_PER_10_MIN', { infer: true }),
+            otpRateWindowSeconds: 600,
+          },
+        ),
     },
     {
       provide: VerifyOtpUseCase,
@@ -186,6 +211,7 @@ import {
         HASHER,
         TOKEN_SERVICE,
         CLOCK_PROVIDER,
+        ANALYTICS_TRACKER,
         ConfigService,
       ],
       useFactory: (
@@ -196,9 +222,10 @@ import {
         hasher: Hasher,
         tokens: TokenService,
         clock: ClockProvider,
+        analytics: AnalyticsTracker,
         config: ConfigService<Env, true>,
       ) =>
-        new VerifyOtpUseCase(otp, users, sessions, devices, hasher, tokens, clock, {
+        new VerifyOtpUseCase(otp, users, sessions, devices, hasher, tokens, clock, analytics, {
           accessTokenTtlSeconds: config.get('ACCESS_TOKEN_TTL_SECONDS', { infer: true }),
           refreshTokenTtlDays: config.get('REFRESH_TOKEN_TTL_DAYS', { infer: true }),
         }),

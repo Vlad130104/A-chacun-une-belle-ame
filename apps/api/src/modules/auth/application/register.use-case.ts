@@ -1,6 +1,7 @@
 import { ErrorCode } from '@acuba/contracts';
 import { BusinessError } from '../../../common/errors/business.error';
 import type { ClockProvider, SmsProvider } from '../../../providers/ports';
+import type { AnalyticsTracker, InviteResolver } from '../../analytics/application/ports';
 import { PhoneNumber } from '../domain/phone-number';
 import { decideRegistration } from '../domain/registration-policy';
 import type {
@@ -17,7 +18,8 @@ export interface RegisterCommand {
   phoneE164: string;
   birthDate: string;
   gender: 'FEMALE' | 'MALE';
-  inviteId: string | null;
+  /** Code d'invitation saisi ou porté par le lien ; résolu côté serveur (story D10-02). */
+  inviteCode: string | null;
   consents: Array<{ type: string; documentVersion: string; granted: boolean }>;
   ipV4: string | null;
   deviceFingerprint: string | null;
@@ -59,6 +61,8 @@ export class RegisterUseCase {
     private readonly sms: SmsProvider,
     private readonly clock: ClockProvider,
     private readonly limiter: RateLimiter,
+    private readonly invites: InviteResolver,
+    private readonly analytics: AnalyticsTracker,
     private readonly config: RegisterConfig,
   ) {}
 
@@ -103,6 +107,14 @@ export class RegisterUseCase {
       throw BusinessError.conflict(ErrorCode.AUTH_PHONE_ALREADY_USED);
     }
 
+    // Le code est résolu ICI, jamais accepté tel quel : le client envoie une
+    // chaîne, le serveur décide si elle correspond à un lien utilisable. Un code
+    // invalide n'empêche pas l'inscription — il est simplement ignoré. Refuser
+    // l'inscription pour un code périmé ferait perdre la personne, alors que le
+    // seul enjeu est de savoir d'où elle vient.
+    const invitation =
+      command.inviteCode === null ? null : await this.invites.resolveForSignup(command.inviteCode);
+
     const user =
       existing ??
       (await this.users.create({
@@ -112,9 +124,18 @@ export class RegisterUseCase {
         gender: command.gender,
         countryCode: phone.countryCode?.replace('+', '') ?? null,
         accountStatus: 'PENDING_OTP',
-        usedInviteId: command.inviteId,
+        usedInviteId: invitation?.inviteId ?? null,
         registrationIpV4: command.ipV4,
       }));
+
+    await this.analytics.track({
+      userId: user.id,
+      name: 'signup.started',
+      campaignCode: invitation?.campaignCode ?? null,
+      ...(invitation?.campaignCode == null
+        ? {}
+        : { properties: { campaignCode: invitation.campaignCode } }),
+    });
 
     await this.consents.recordMany(
       user.id,

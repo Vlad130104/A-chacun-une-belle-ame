@@ -337,7 +337,7 @@ Codes : `SUB_ALREADY_ACTIVE` · `SUB_PLAN_UNAVAILABLE` · `PAY_PROVIDER_ERROR` �
 | POST    | `/privacy/delete`            | `AUTH`         | Suppression avec 30 j de grâce                                                                         |
 | DELETE  | `/privacy/delete`            | `AUTH`         | **Annule** la suppression pendant la grâce                                                             |
 | GET     | `/invites/{code}`            | `PUBLIC`       | Valide un code, incrémente les clics, retourne l'offre — **ne révèle jamais l'identité de l'invitant** |
-| GET     | `/me/referral`               | `VERIFIED`     | Mon code de parrainage et ses statistiques                                                             |
+| GET     | `/referral/me`               | `AUTH`         | Mon code de parrainage et ses **compteurs** — jamais l'identité des filleuls                           |
 
 ### Notifications — précisions de la tranche D8
 
@@ -350,6 +350,24 @@ Codes : `SUB_ALREADY_ACTIVE` · `SUB_PLAN_UNAVAILABLE` · `PAY_PROVIDER_ERROR` �
   laisserait le membre croire que sa demande a été suivie alors qu'une partie a été ignorée en silence.
 - **`POST /devices` reçoit une empreinte brute** et la hache côté serveur avec le sel de la plateforme. Conservée
   en clair, elle permettrait de relier entre eux des comptes distincts créés depuis le même appareil (ADR-013).
+
+### Migration et parrainage — précisions de la tranche D10
+
+- **`GET /invites/{code}` est la seule route publique du lot**, et elle est en lecture. Elle ne révèle ni l'invitant
+  — un code circule par capture d'écran, exposer son émetteur exposerait cette personne — ni la cause d'un refus :
+  code inexistant, expiré, révoqué ou saturé rendent **la même réponse**. Distinguer les cas permettrait de
+  cartographier les campagnes en essayant des codes au hasard.
+- **Elle ne crée aucun compte.** Les 9 000 personnes du groupe WhatsApp ne sont pas une base à transférer : chacune
+  s'inscrit et consent elle-même.
+- **`GET /referral/me` exige `AUTH`, pas `VERIFIED`** — divergence assumée avec la version initiale de ce document.
+  Partager un lien n'est pas une fonction du produit réservée aux comptes vérifiés, et un membre en cours
+  d'onboarding qui fait venir quelqu'un rend service à la communauté. La route ne rend que des **comptes** de clics
+  et d'inscriptions, jamais l'identité des filleuls : le parrainage ne crée aucun droit de regard sur les autres.
+- **Le code d'invitation est résolu côté serveur** à l'inscription (`POST /auth/register`, champ `inviteCode`).
+  Le client envoie une chaîne ; le serveur décide si elle correspond à un lien utilisable. Un code invalide
+  **n'empêche pas l'inscription**, il est simplement ignoré — refuser pour un code périmé ferait perdre la personne.
+- **Aucune route d'ingestion d'événement analytique n'existe.** Le tunnel est alimenté exclusivement côté serveur,
+  aux moments où l'étape est réellement franchie. Un test d'inventaire le vérifie.
 
 ---
 
@@ -368,7 +386,8 @@ Toutes les routes : rôle requis, **2FA obligatoire**, session 8 h, `AdminAuditL
 | Photos          | `GET /admin/moderation/photos`, `POST /admin/moderation/photos/{id}/decision`                                                                                               | `moderation.content`                                                                 |
 | Contenus        | `GET/PUT /admin/content/{key}` (CGU, charte, confidentialité, modèles)                                                                                                      | `content.manage`                                                                     |
 | Commercial      | `GET/POST/PATCH /admin/plans`, `GET /admin/subscriptions`, `/transactions`, `POST /admin/payments/{id}/refund`                                                              | `billing.*` — remboursement à quatre yeux                                            |
-| Campagnes       | `GET/POST /admin/campaigns`, `POST /admin/campaigns/{id}/invites`                                                                                                           | `campaign.manage`                                                                    |
+| Campagnes       | `GET /admin/campaigns` **livré** ; `POST /admin/campaigns`, `POST /admin/campaigns/{id}/invites` non livrés                                                                 | `analytics.read` en lecture ; `campaign.manage` pour l'écriture, à la livraison      |
+| Analytique      | `GET /admin/analytics/funnel`, `GET /admin/analytics/indicators`                                                                                                            | `analytics.read` — **agrégats uniquement, aucun événement unitaire**                 |
 | Feature flags   | `GET/PATCH /admin/feature-flags`                                                                                                                                            | `system.flags`                                                                       |
 | Audit           | `GET /admin/audit-logs`                                                                                                                                                     | `audit.read` — **lecture seule, aucune route d'écriture ou de suppression n'existe** |
 | Rôles           | `GET/POST/DELETE /admin/users/{id}/roles`                                                                                                                                   | `system.roles` (`SUPER_ADMIN` uniquement)                                            |

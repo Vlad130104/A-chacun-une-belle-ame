@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { ClockProvider, SmsProvider } from '../../../providers/ports';
+import type { AnalyticsTracker, InviteResolver } from '../../analytics/application/ports';
+import type { EventName } from '../../analytics/domain/event-schema';
 import type {
   BlockedIdentityRepository,
   ConsentRepository,
@@ -109,6 +111,7 @@ export class InMemoryUserRepository implements UserRepository {
       verificationStatus: 'NOT_STARTED',
       failedLoginCount: 0,
       lockedUntil: null,
+      usedInviteId: input.usedInviteId,
     };
     this.users.set(user.id, user);
     return Promise.resolve(user);
@@ -321,5 +324,34 @@ export class PermissiveRateLimiter implements RateLimiter {
   reset(key: string): Promise<void> {
     this.blockedKeys.delete(key);
     return Promise.resolve();
+  }
+}
+
+/**
+ * Traceur analytique de test.
+ *
+ * Il enregistre les événements sans jamais échouer : les tests d'inscription
+ * vérifient le parcours, pas l'analytique. Une doublure qui rejetterait
+ * masquerait la garantie même du traceur réel — ne pas interrompre le service.
+ */
+export class RecordingAnalyticsTracker implements AnalyticsTracker {
+  readonly events: { userId: string | null; name: EventName }[] = [];
+
+  track(input: { userId: string | null; name: EventName }): Promise<void> {
+    this.events.push({ userId: input.userId, name: input.name });
+    return Promise.resolve();
+  }
+}
+
+/** Résolveur d'invitation de test : rend ce qu'on lui a demandé de rendre. */
+export class StubInviteResolver implements InviteResolver {
+  readonly demandes: string[] = [];
+  reponse: { inviteId: string; campaignCode: string | null } | null = null;
+
+  resolveForSignup(
+    code: string,
+  ): Promise<{ inviteId: string; campaignCode: string | null } | null> {
+    this.demandes.push(code);
+    return Promise.resolve(this.reponse);
   }
 }

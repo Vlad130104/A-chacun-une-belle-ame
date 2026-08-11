@@ -1,6 +1,7 @@
 import { ErrorCode } from '@acuba/contracts';
 import { BusinessError } from '../../../common/errors/business.error';
 import type { ClockProvider } from '../../../providers/ports';
+import type { AnalyticsTracker } from '../../analytics/application/ports';
 import { remainingAttempts, verifyOtpChallenge } from '../domain/otp-challenge';
 import { checkAccountAccess } from '../domain/session-policy';
 import type {
@@ -57,6 +58,7 @@ export class VerifyOtpUseCase {
     private readonly hasher: Hasher,
     private readonly tokens: TokenService,
     private readonly clock: ClockProvider,
+    private readonly analytics: AnalyticsTracker,
     private readonly config: VerifyOtpConfig,
   ) {}
 
@@ -121,6 +123,16 @@ export class VerifyOtpUseCase {
     }
     if (user.accountStatus === 'PENDING_OTP') {
       await this.users.updateAccountStatus(user.id, 'ACTIVE');
+
+      // Deuxième marche du tunnel, et seulement ici : un compte existe vraiment
+      // à partir du moment où le numéro est prouvé. Compter l'inscription au
+      // formulaire gonflerait les statistiques d'un nombre de comptes qui
+      // n'ouvriront jamais.
+      await this.analytics.track({
+        userId: user.id,
+        name: 'signup.completed',
+        properties: { hasInvite: user.usedInviteId !== null },
+      });
     }
 
     return this.openSession(user.id, command, now);

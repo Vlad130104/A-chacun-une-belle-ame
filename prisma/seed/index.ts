@@ -81,7 +81,7 @@ async function seedFlags(): Promise<void> {
 }
 
 async function seedCampagneMigration(): Promise<void> {
-  await prisma.campaign.upsert({
+  const campagne = await prisma.campaign.upsert({
     where: { code: 'whatsapp-lancement' },
     update: {},
     create: {
@@ -96,7 +96,22 @@ async function seedCampagneMigration(): Promise<void> {
       active: true,
     },
   });
-  console.log('  1 campagne de migration');
+  // Un lien d'invitation générique pour la campagne : sans lui, le tunnel de
+  // migration n'a aucune première marche à mesurer en développement.
+  await prisma.referralInvite.upsert({
+    where: { code: 'BELLEAME2026' },
+    update: {},
+    create: {
+      code: 'BELLEAME2026',
+      campaignId: campagne.id,
+      // Volume large mais BORNÉ : un lien sans plafond se retrouverait un jour
+      // publié hors du groupe, et l'offre de lancement partirait avec.
+      maxUses: 9_000,
+      expiresAt: new Date('2026-12-31T23:59:59.000Z'),
+    },
+  });
+
+  console.log('  1 campagne de migration et son lien d’invitation');
 }
 
 async function main(): Promise<void> {

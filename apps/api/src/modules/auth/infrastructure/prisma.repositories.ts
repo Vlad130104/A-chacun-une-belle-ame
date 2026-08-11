@@ -35,6 +35,7 @@ const USER_FIELDS = {
   verificationStatus: true,
   failedLoginCount: true,
   lockedUntil: true,
+  usedInviteId: true,
 } as const;
 
 @Injectable()

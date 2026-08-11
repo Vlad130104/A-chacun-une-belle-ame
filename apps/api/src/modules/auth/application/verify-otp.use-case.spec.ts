@@ -10,6 +10,7 @@ import {
   InMemoryOtpRepository,
   InMemorySessionRepository,
   InMemoryUserRepository,
+  RecordingAnalyticsTracker,
 } from './test-doubles';
 
 describe('validation du code OTP', () => {
@@ -18,6 +19,7 @@ describe('validation du code OTP', () => {
   let sessions: InMemorySessionRepository;
   let devices: InMemoryDeviceRepository;
   let clock: FakeClock;
+  let analytics: RecordingAnalyticsTracker;
   let useCase: VerifyOtpUseCase;
   let hasher: FakeHasher;
 
@@ -71,6 +73,7 @@ describe('validation du code OTP', () => {
     devices = new InMemoryDeviceRepository();
     clock = new FakeClock();
     hasher = new FakeHasher();
+    analytics = new RecordingAnalyticsTracker();
 
     useCase = new VerifyOtpUseCase(
       otp,
@@ -80,6 +83,7 @@ describe('validation du code OTP', () => {
       hasher,
       new FakeTokenService(),
       clock,
+      analytics,
       {
         accessTokenTtlSeconds: 900,
         refreshTokenTtlDays: 30,
@@ -194,6 +198,26 @@ describe('validation du code OTP', () => {
       await preparerDefi('BANNED');
       await attendreCode(useCase.execute(commande()));
       expect(sessions.sessions.size).toBe(0);
+    });
+  });
+
+  describe('tunnel de migration (story D10-04)', () => {
+    it('compte l’inscription au moment où le numéro est PROUVÉ', async () => {
+      // Compter l'ouverture du formulaire gonflerait les statistiques d'un
+      // nombre de comptes qui n'ouvriront jamais.
+      const user = await preparerDefi('PENDING_OTP');
+
+      await useCase.execute(commande());
+
+      expect(analytics.events).toEqual([{ userId: user.id, name: 'signup.completed' }]);
+    });
+
+    it('ne recompte PAS un compte déjà actif qui se reconnecte', async () => {
+      await preparerDefi('ACTIVE');
+
+      await useCase.execute(commande());
+
+      expect(analytics.events).toEqual([]);
     });
   });
 });

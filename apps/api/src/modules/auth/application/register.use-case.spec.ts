@@ -11,7 +11,9 @@ import {
   InMemoryOtpRepository,
   InMemoryUserRepository,
   PermissiveRateLimiter,
+  RecordingAnalyticsTracker,
   RecordingSmsProvider,
+  StubInviteResolver,
 } from './test-doubles';
 
 describe('inscription', () => {
@@ -22,13 +24,15 @@ describe('inscription', () => {
   let sms: RecordingSmsProvider;
   let limiter: PermissiveRateLimiter;
   let clock: FakeClock;
+  let invites: StubInviteResolver;
+  let analytics: RecordingAnalyticsTracker;
   let useCase: RegisterUseCase;
 
   const commande = (surcharge: Partial<RegisterCommand> = {}): RegisterCommand => ({
     phoneE164: '+237690000000',
     birthDate: '1990-05-20',
     gender: 'FEMALE',
-    inviteId: null,
+    inviteCode: null,
     consents: [
       { type: 'TERMS_OF_SERVICE', documentVersion: '1.0', granted: true },
       { type: 'PRIVACY_POLICY', documentVersion: '1.0', granted: true },
@@ -57,6 +61,8 @@ describe('inscription', () => {
     sms = new RecordingSmsProvider();
     limiter = new PermissiveRateLimiter();
     clock = new FakeClock();
+    invites = new StubInviteResolver();
+    analytics = new RecordingAnalyticsTracker();
 
     useCase = new RegisterUseCase(
       users,
@@ -68,6 +74,8 @@ describe('inscription', () => {
       sms,
       clock,
       limiter,
+      invites,
+      analytics,
       {
         minimumAge: 18,
         otpTtlSeconds: 300,
@@ -203,6 +211,45 @@ describe('inscription', () => {
     it('fixe l’expiration selon la configuration', async () => {
       const resultat = await useCase.execute(commande());
       expect(resultat.expiresAt.getTime() - clock.now().getTime()).toBe(300_000);
+    });
+  });
+
+  describe('rattachement à un lien d’invitation (story D10-02)', () => {
+    it('résout le code CÔTÉ SERVEUR et rattache le compte au lien', async () => {
+      // Le client envoie une chaîne ; c'est le serveur qui décide si elle
+      // correspond à un lien utilisable. Aucun identifiant interne ne transite.
+      invites.reponse = { inviteId: 'invite-1', campaignCode: 'whatsapp-01' };
+
+      await useCase.execute(commande({ inviteCode: 'WHATSAPP01' }));
+
+      expect(invites.demandes).toEqual(['WHATSAPP01']);
+      expect([...users.users.values()][0]?.usedInviteId).toBe('invite-1');
+    });
+
+    it('n’INTERROGE pas le résolveur quand aucun code n’est fourni', async () => {
+      await useCase.execute(commande());
+      expect(invites.demandes).toEqual([]);
+    });
+
+    it('laisse l’inscription aboutir malgré un code invalide', async () => {
+      // Refuser l'inscription pour un code périmé ferait perdre la personne,
+      // alors que le seul enjeu est de savoir d'où elle vient.
+      invites.reponse = null;
+
+      const resultat = await useCase.execute(commande({ inviteCode: 'CODE-PERIME' }));
+
+      expect(resultat.challengeId).toBeDefined();
+      expect([...users.users.values()][0]?.usedInviteId).toBeNull();
+    });
+
+    it('émet la première marche du tunnel de migration', async () => {
+      invites.reponse = { inviteId: 'invite-1', campaignCode: 'whatsapp-01' };
+
+      await useCase.execute(commande({ inviteCode: 'WHATSAPP01' }));
+
+      expect(analytics.events).toEqual([
+        { userId: [...users.users.values()][0]?.id, name: 'signup.started' },
+      ]);
     });
   });
 });

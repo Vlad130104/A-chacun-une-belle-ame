@@ -398,6 +398,49 @@ l'action n'a pas lieu.**
 - `subjectHash` est un HMAC de l'identifiant avec un secret serveur : les cohortes restent calculables, la ré-identification ne l'est pas depuis les seules données analytiques.
 - Aucun contenu de message, aucune photo, aucun numéro ne figure jamais dans un événement — test de liste noire de clés.
 
+### État de livraison du lot D10
+
+| Story  | État             | Précision                                                                                                                                                                                                                                             |
+| ------ | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D10-01 | ✅ livré         | `GET /invites/:code`, seule route publique du lot. Elle ne révèle **ni l'invitant, ni la cause d'un refus** : inexistant, expiré, révoqué et saturé rendent la même réponse. Compteur de clics incrémenté, aucun compte créé.                         |
+| D10-02 | 🟨 partiel       | Le rattachement au lien est livré : le code est **résolu côté serveur** à l'inscription et écrit dans `User.usedInviteId`. **L'abonnement promotionnel n'est pas accordé** — voir D10-08 ci-dessous.                                                  |
+| D10-03 | 🟨 partiel       | Les règles anti-abus sont écrites et testées (numéro **et** empreinte de pièce, compte banni exclu, consommation conditionnelle en base). Elles ne sont **pas encore branchées**, faute d'un moment où l'empreinte de pièce est connue — voir D10-08. |
+| D10-04 | ✅ livré         | Les six marches sont émises **côté serveur**, au moment où l'étape est réellement franchie. Comptage en **sujets distincts**, pas en événements : un membre qui ouvre trois fois le lien ne compte qu'une fois.                                       |
+| D10-05 | ✅ livré         | Liste blanche de propriétés **et** liste noire de noms, les deux. Le nom d'événement est en plus typé (`EventName`) : un événement non déclaré ne compile pas. `subjectHash` = HMAC avec un secret distinct de `HASH_SALT` (ADR-021).                 |
+| D10-06 | ✅ livré         | 14 indicateurs agrégés (un de plus que le cahier des charges : le taux d'activité à 7 jours). Aucune route ne rend d'événement unitaire ni d'identifiant de membre.                                                                                   |
+| D10-07 | ✅ livré         | `GET /referral/me`. Le code est tiré sur un alphabet sans ambiguïté visuelle — il sera lu au téléphone. Les statistiques rendues sont des **comptes**, jamais des identités.                                                                          |
+| D10-08 | ⬜ **non livré** | **Nouvelle story** : accorder l'abonnement promotionnel à l'approbation KYC. Priorité `S`, 5 pts.                                                                                                                                                     |
+
+**D10-08 — Offre de lancement accordée à la vérification (nouvelle story, non livrée)**
+
+L'offre ne peut pas être accordée à l'inscription, et le découvrir a été le principal enseignement de ce lot. Deux
+raisons, dans cet ordre :
+
+1. **Elle contredirait la règle du produit.** Aucun compte n'est pleinement activé sans vérification d'identité ;
+   offrir du Premium à un compte non vérifié reviendrait à ouvrir une fonction payante avant la vérification.
+2. **L'anti-abus ne fonctionnerait pas.** Le dédoublonnage repose sur l'empreinte de la pièce d'identité — le numéro
+   seul se change pour quelques centaines de francs, la pièce non. Or cette empreinte n'existe qu'après le dépôt du
+   document. Accorder à l'inscription reviendrait à ne dédoublonner que sur le numéro, c'est-à-dire à ne pas
+   dédoublonner.
+
+`ConsumeInviteUseCase` est donc écrit et couvert par des tests, mais **délibérément pas enregistré** dans le
+conteneur d'injection : l'enregistrer laisserait croire que l'offre fonctionne. Le travail restant est de le brancher
+à l'approbation KYC et de faire créer l'abonnement promotionnel par le module `billing`, qui est propriétaire de la
+table `Subscription`.
+
+**Non fait, dit explicitement :**
+
+- **Aucune route d'ingestion d'événement.** Le tunnel est alimenté exclusivement côté serveur. Une route publique
+  d'écriture serait à la fois une surface d'abus — bourrage de statistiques — et une source de mesures fausses,
+  puisque le client peut mentir. Un test d'inventaire vérifie qu'aucune n'existe.
+- **Aucune purge automatique des événements.** `purgeAt` est calculé et écrit à chaque événement, mais le travail
+  périodique qui supprime les lignes échues n'est pas livré. Sans lui, la rétention de 14 mois est une intention,
+  pas un fait — à traiter avec les autres purges en phase E.
+- **Aucun export analytique.** Pas de connecteur, pas de tableau de bord externe : seules les routes
+  `/admin/analytics/*` lisent les agrégats.
+
+---
+
 ---
 
 ## Ordre d'exécution et dépendances

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from '@jest/globals';
 import { ErrorCode } from '@acuba/contracts';
 import { BusinessError } from '../../../common/errors/business.error';
-import { FakeClock } from '../../auth/application/test-doubles';
+import { FakeClock, RecordingAnalyticsTracker } from '../../auth/application/test-doubles';
 import {
   DecideVerificationUseCase,
   PurgeDocumentsUseCase,
@@ -40,6 +40,7 @@ describe('vérification d’identité', () => {
   let storage: InMemoryKycStorage;
   let users: InMemoryUserGateway;
   let clock: FakeClock;
+  let analytics: RecordingAnalyticsTracker;
 
   let demarrer: StartVerificationUseCase;
   let deposer: UploadDocumentUseCase;
@@ -52,11 +53,12 @@ describe('vérification d’identité', () => {
     storage = new InMemoryKycStorage();
     users = new InMemoryUserGateway();
     clock = new FakeClock();
+    analytics = new RecordingAnalyticsTracker();
 
     demarrer = new StartVerificationUseCase(repository, clock, CONFIG);
     deposer = new UploadDocumentUseCase(repository, storage, CONFIG);
-    soumettre = new SubmitVerificationUseCase(repository, users);
-    decider = new DecideVerificationUseCase(repository, users, clock, CONFIG);
+    soumettre = new SubmitVerificationUseCase(repository, users, analytics);
+    decider = new DecideVerificationUseCase(repository, users, clock, analytics, CONFIG);
     purger = new PurgeDocumentsUseCase(repository, storage, clock);
   });
 
@@ -385,6 +387,58 @@ describe('vérification d’identité', () => {
       clock.advanceDays(91);
       await purger.execute();
       expect(await purger.execute()).toEqual({ purged: 0 });
+    });
+  });
+
+  describe('tunnel de migration (story D10-04)', () => {
+    it('mesure le dépôt par le TYPE de pièce, jamais par son numéro', async () => {
+      await preparerDossier();
+
+      expect(analytics.events).toEqual([{ userId: 'user-1', name: 'verification.submitted' }]);
+    });
+
+    it('mesure l’approbation, qui est la marche décisive du parcours', async () => {
+      const requestId = await preparerDossier();
+      analytics.events.length = 0;
+
+      await decider.execute({
+        requestId,
+        agentUserId: 'agent-1',
+        outcome: 'APPROVE',
+        reasonCode: 'DOCUMENT_VALIDE',
+      });
+
+      expect(analytics.events).toEqual([{ userId: 'user-1', name: 'verification.approved' }]);
+    });
+
+    it('mesure aussi le refus — c’est là que le parcours se perd', async () => {
+      const requestId = await preparerDossier();
+      analytics.events.length = 0;
+
+      await decider.execute({
+        requestId,
+        agentUserId: 'agent-1',
+        outcome: 'REJECT',
+        reasonCode: 'DOCUMENT_ILLISIBLE',
+        reasonNote: 'Nom illisible sur la pièce de Aminata',
+      });
+
+      expect(analytics.events).toEqual([{ userId: 'user-1', name: 'verification.rejected' }]);
+    });
+
+    it('n’émet RIEN sur une demande de complément', async () => {
+      // Ce n'est pas une sortie du tunnel : la personne est toujours en cours.
+      const requestId = await preparerDossier();
+      analytics.events.length = 0;
+
+      await decider.execute({
+        requestId,
+        agentUserId: 'agent-1',
+        outcome: 'REQUEST_ADDITIONAL',
+        reasonCode: 'SELFIE_FLOU',
+      });
+
+      expect(analytics.events).toEqual([]);
     });
   });
 });

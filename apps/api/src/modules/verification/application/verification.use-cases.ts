@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { ErrorCode } from '@acuba/contracts';
 import { BusinessError } from '../../../common/errors/business.error';
 import type { ClockProvider } from '../../../providers/ports';
+import type { AnalyticsTracker } from '../../analytics/application/ports';
 import {
   canSubmit,
   computePurgeDate,
@@ -136,6 +137,7 @@ export class SubmitVerificationUseCase {
   constructor(
     private readonly repository: VerificationRepository,
     private readonly users: VerificationUserGateway,
+    private readonly analytics: AnalyticsTracker,
   ) {}
 
   async execute(userId: string, requestId: string): Promise<{ status: VerificationStatusValue }> {
@@ -157,6 +159,15 @@ export class SubmitVerificationUseCase {
 
     await this.repository.updateStatus(requestId, result.next, null, null);
     await this.users.applyVerificationStatus(userId, result.next);
+
+    // Le TYPE de pièce est une catégorie fermée, jamais un numéro : ce qui
+    // intéresse la mesure est de savoir quelles pièces bloquent le parcours.
+    const piece = documents.find((document) => document.type !== 'SELFIE');
+    await this.analytics.track({
+      userId,
+      name: 'verification.submitted',
+      properties: { documentType: piece?.type ?? 'UNKNOWN' },
+    });
 
     return { status: result.next };
   }
@@ -181,6 +192,7 @@ export class DecideVerificationUseCase {
     private readonly repository: VerificationRepository,
     private readonly users: VerificationUserGateway,
     private readonly clock: ClockProvider,
+    private readonly analytics: AnalyticsTracker,
     private readonly config: VerificationConfig,
   ) {}
 
@@ -231,6 +243,27 @@ export class DecideVerificationUseCase {
     await this.users.applyVerificationStatus(request.userId, result.next);
     if (locksBirthDate(evenement)) {
       await this.users.lockBirthDate(request.userId);
+    }
+
+    // Le délai de traitement est la mesure qui compte pour la file de
+    // vérification : c'est lui qui dit si l'équipe tient la charge.
+    if (evenement === 'APPROVE') {
+      await this.analytics.track({
+        userId: request.userId,
+        name: 'verification.approved',
+        properties: {
+          delayHours:
+            Math.round(((now.getTime() - request.submittedAt.getTime()) / 3_600_000) * 10) / 10,
+        },
+      });
+    } else if (evenement === 'REJECT') {
+      // Le motif est un CODE de référentiel, jamais la note libre de l'agent :
+      // celle-ci peut contenir tout et n'importe quoi, y compris un nom.
+      await this.analytics.track({
+        userId: request.userId,
+        name: 'verification.rejected',
+        properties: { reasonCode: command.reasonCode },
+      });
     }
 
     return { status: result.next };

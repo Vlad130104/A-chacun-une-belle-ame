@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from '@jest/globals';
 import { ErrorCode } from '@acuba/contracts';
 import { BusinessError } from '../../../common/errors/business.error';
-import { FakeClock } from '../../auth/application/test-doubles';
+import { FakeClock, RecordingAnalyticsTracker } from '../../auth/application/test-doubles';
 import { PreferenceService, ProfileService } from './profile.use-cases';
 import type { PreferenceRecord } from './ports';
 import {
@@ -37,12 +37,14 @@ describe('profil', () => {
   let photos: InMemoryPhotoRepository;
   let referentials: InMemoryReferentialRepository;
   let service: ProfileService;
+  let analytics: RecordingAnalyticsTracker;
 
   beforeEach(() => {
     profiles = new InMemoryProfileRepository();
     photos = new InMemoryPhotoRepository();
     referentials = new InMemoryReferentialRepository();
-    service = new ProfileService(profiles, photos, referentials, new FakeClock(), {
+    analytics = new RecordingAnalyticsTracker();
+    service = new ProfileService(profiles, photos, referentials, new FakeClock(), analytics, {
       minimumCompletionToPublish: 60,
       minimumPhotosToPublish: 1,
     });
@@ -149,6 +151,24 @@ describe('profil', () => {
       await rendreComplet();
       const profil = await service.publish('user-1');
       expect(profil.status).toBe('ACTIVE');
+    });
+
+    it('émet la dernière marche du tunnel à la publication (story D10-04)', async () => {
+      await rendreComplet();
+      await service.publish('user-1');
+
+      expect(analytics.events).toEqual([{ userId: 'user-1', name: 'profile.completed' }]);
+    });
+
+    it('n’émet RIEN quand la publication est refusée', async () => {
+      // Une marche du tunnel se compte quand elle est franchie, pas quand elle
+      // est tentée : sinon le taux de complétion deviendrait un taux d'essais.
+      await rendreComplet();
+      photos.photos.length = 0;
+
+      await attendreCode(service.publish('user-1'));
+
+      expect(analytics.events).toEqual([]);
     });
 
     it('refuse la publication sans identité vérifiée', async () => {

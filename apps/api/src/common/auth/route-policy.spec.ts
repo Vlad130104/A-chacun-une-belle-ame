@@ -32,6 +32,11 @@ import {
   AdminTwoFactorController,
   BackofficeController,
 } from '../../modules/backoffice/infrastructure/backoffice.controller';
+import {
+  AdminAnalyticsController,
+  InviteController,
+  ReferralController,
+} from '../../modules/analytics/infrastructure/analytics.controller';
 import { AUTH_POLICY_KEY, type AuthPolicy } from './auth.decorator';
 
 /**
@@ -70,6 +75,9 @@ const CONTROLLERS = [
   DevicesController,
   BackofficeController,
   AdminTwoFactorController,
+  InviteController,
+  ReferralController,
+  AdminAnalyticsController,
 ];
 
 /**
@@ -89,6 +97,13 @@ const ALLOWED_PUBLIC_ROUTES = new Set([
   // exploitable du corps (ADR-010). Une signature invalide renvoie 401 sans
   // aucune écriture métier — vérifié par un test dédié du module billing.
   'POST /payments/webhook/:provider',
+  // Ouverture d'un lien d'invitation : elle est appelée depuis WhatsApp, avant
+  // toute inscription, par des gens qui ne sont pas encore membres — exiger une
+  // session serait absurde. La route est en LECTURE seule, ne révèle ni
+  // l'invitant ni la cause d'un refus, et ne crée aucun compte. Elle incrémente
+  // un compteur de clics, seul effet de bord, plafonné par la limitation de débit
+  // globale (stories D10-01, docs/05-api.md §12).
+  'GET /invites/:code',
 ]);
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'ALL', 'OPTIONS', 'HEAD'];
@@ -404,5 +419,57 @@ describe('inventaire des routes', () => {
       const route = routes.find((candidate) => candidate.signature === signature);
       expect(route?.policy?.level).not.toBe('public');
     }
+  });
+
+  it('n’expose qu’UNE route publique dans toute la tranche analytique', () => {
+    const analytique = routes.filter(
+      (route) =>
+        route.signature.includes('/invites') ||
+        route.signature.includes('/referral') ||
+        route.signature.includes('/analytics') ||
+        route.signature.includes('/campaigns'),
+    );
+
+    const publiques = analytique
+      .filter((route) => route.policy?.level === 'public')
+      .map((route) => route.signature);
+
+    expect(analytique.length).toBeGreaterThanOrEqual(5);
+    expect(publiques).toEqual(['GET /invites/:code']);
+  });
+
+  it('n’expose AUCUNE route d’écriture d’événement analytique', () => {
+    // Le tunnel est alimenté exclusivement côté serveur, aux moments où l'étape
+    // est réellement franchie. Une route d'ingestion serait à la fois une
+    // surface d'abus — bourrage de statistiques — et une source de mesures
+    // fausses, puisque le client peut mentir.
+    const ecritures = routes.filter(
+      (route) =>
+        !route.signature.startsWith('GET ') &&
+        (route.signature.includes('/analytics') || route.signature.includes('/events')),
+    );
+
+    expect(ecritures).toEqual([]);
+  });
+
+  it('réserve l’analytique d’administration à la permission analytics.read', () => {
+    for (const signature of [
+      'GET /admin/analytics/funnel',
+      'GET /admin/analytics/indicators',
+      'GET /admin/campaigns',
+    ]) {
+      const route = routes.find((candidate) => candidate.signature === signature);
+      expect({ signature, permissions: route?.policy?.permissions ?? [] }).toEqual({
+        signature,
+        permissions: ['analytics.read'],
+      });
+    }
+  });
+
+  it('laisse le parrainage accessible sans vérification d’identité', () => {
+    // Partager un lien n'est pas une fonction réservée aux comptes vérifiés :
+    // un membre en cours d'onboarding qui fait venir quelqu'un rend service.
+    const parrainage = routes.find((route) => route.signature === 'GET /referral/me');
+    expect(parrainage?.policy?.level).toBe('auth');
   });
 });

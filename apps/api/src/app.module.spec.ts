@@ -29,6 +29,7 @@ const ENV_DE_TEST: Record<string, string> = {
   HASH_SALT: 'z'.repeat(32),
   S3_MEDIA_BUCKET: 'medias-test',
   S3_KYC_BUCKET: 'identites-test',
+  ANALYTICS_HMAC_SECRET: 'w'.repeat(40),
 };
 
 let moduleRef: TestingModule;
@@ -58,6 +59,8 @@ beforeAll(async () => {
     await import('./modules/notifications/infrastructure/notifications.controller');
   const { BackofficeController } =
     await import('./modules/backoffice/infrastructure/backoffice.controller');
+  const { AdminAnalyticsController, InviteController, ReferralController } =
+    await import('./modules/analytics/infrastructure/analytics.controller');
 
   moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
 
@@ -117,6 +120,26 @@ beforeAll(async () => {
       nom: 'BackofficeController',
       classe: BackofficeController,
       instance: moduleRef.get(BackofficeController),
+    },
+    // L'analytique est consommée par `auth`, `verification` et `profiles` : si
+    // son module oubliait d'exporter `ANALYTICS_TRACKER` ou `INVITE_RESOLVER`,
+    // ces trois modules ne résoudraient plus. Le sens des dépendances est à
+    // noter — `analytics` ne connaît aucun module de domaine, il ne peut donc
+    // pas recréer les cycles corrigés en D5 et D8.
+    {
+      nom: 'InviteController',
+      classe: InviteController,
+      instance: moduleRef.get(InviteController),
+    },
+    {
+      nom: 'ReferralController',
+      classe: ReferralController,
+      instance: moduleRef.get(ReferralController),
+    },
+    {
+      nom: 'AdminAnalyticsController',
+      classe: AdminAnalyticsController,
+      instance: moduleRef.get(AdminAnalyticsController),
     },
   ];
 }, 180_000);

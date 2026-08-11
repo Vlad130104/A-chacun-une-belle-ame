@@ -56,7 +56,7 @@ export class AuthController {
       phoneE164: input.phoneE164,
       birthDate: input.birthDate,
       gender: input.gender,
-      inviteId: null,
+      inviteCode: input.inviteCode ?? null,
       consents: input.consents,
       ipV4: truncateIp(request.ip),
       deviceFingerprint: input.device?.fingerprint ?? null,

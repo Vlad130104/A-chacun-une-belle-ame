@@ -5,6 +5,8 @@ import { ConfigService } from '@nestjs/config';
 import type { Env } from '../../config/env.schema';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { CLOCK_PROVIDER, type ClockProvider } from '../../providers/ports';
+import { AnalyticsModule } from '../analytics/analytics.module';
+import { ANALYTICS_TRACKER, type AnalyticsTracker } from '../analytics/application/ports';
 import {
   MEDIA_PIPELINE,
   MEDIA_STORAGE,
@@ -49,6 +51,7 @@ const photoConfig = (config: ConfigService<Env, true>): PhotoConfig => ({
 });
 
 @Module({
+  imports: [AnalyticsModule],
   controllers: [
     ProfileController,
     PhotoController,
@@ -92,6 +95,7 @@ const photoConfig = (config: ConfigService<Env, true>): PhotoConfig => ({
         PHOTO_REPOSITORY,
         REFERENTIAL_REPOSITORY,
         CLOCK_PROVIDER,
+        ANALYTICS_TRACKER,
         ConfigService,
       ],
       useFactory: (
@@ -99,9 +103,10 @@ const photoConfig = (config: ConfigService<Env, true>): PhotoConfig => ({
         photos: PhotoRepository,
         referentials: ReferentialRepository,
         clock: ClockProvider,
+        analytics: AnalyticsTracker,
         config: ConfigService<Env, true>,
       ) =>
-        new ProfileService(profiles, photos, referentials, clock, {
+        new ProfileService(profiles, photos, referentials, clock, analytics, {
           minimumCompletionToPublish: config.get('MIN_COMPLETION_TO_PUBLISH', { infer: true }),
           minimumPhotosToPublish: config.get('MIN_PHOTOS_TO_PUBLISH', { infer: true }),
         }),

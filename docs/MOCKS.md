@@ -168,6 +168,50 @@ là, les tâches planifiées qui l'utiliseraient ne le sont pas encore — elles
 n'appartenaient pas au périmètre des six stories D8, et les inventer pour
 « lever une réserve » aurait été un affichage, pas une livraison.
 
+### Ce que D10 lève, et ce qu'elle ne lève pas
+
+**Levé.** Le tunnel de migration est mesuré pour de bon, et **côté serveur**. Les
+six marches — clic sur le lien, inscription commencée, numéro validé, pièce
+déposée, identité approuvée, profil publié — sont émises depuis les cas d'usage
+qui les franchissent réellement, jamais depuis le client. Il n'existe **aucune
+route d'ingestion d'événement** : c'en serait à la fois une surface d'abus et
+une source de mesures fausses, puisqu'un client peut mentir. Les comptages sont
+faits en **sujets distincts**, pas en événements — sinon le taux de conversion
+dépendrait du nombre de clics et ne voudrait plus rien dire.
+
+Le pseudonyme est un HMAC avec un secret **propre à l'analytique**, distinct du
+sel des empreintes recherchables ; le démarrage échoue si les deux valeurs sont
+identiques (ADR-021).
+
+**Non levé, et il faut le dire clairement : l'offre de lancement n'est pas
+accordée.** Un membre qui s'inscrit avec un code de campagne est bien rattaché à
+ce lien — la traçabilité fonctionne — mais **aucun abonnement promotionnel n'est
+créé**. Ce n'est pas un oubli, c'est une conséquence de deux règles du produit :
+
+1. aucun compte n'est pleinement activé sans vérification d'identité, donc rien
+   de payant ne doit s'ouvrir avant elle ;
+2. l'anti-abus repose sur l'empreinte de la **pièce d'identité** — le numéro seul
+   se change pour quelques centaines de francs — et cette empreinte n'existe
+   qu'après le dépôt du document.
+
+Accorder l'offre à l'inscription reviendrait donc à ouvrir une fonction payante
+à un compte non vérifié **et** à ne dédoublonner que sur le numéro, c'est-à-dire
+à ne pas dédoublonner. Les règles anti-abus sont écrites et testées ;
+`ConsumeInviteUseCase` est **délibérément non enregistré** dans le conteneur
+d'injection, pour qu'aucune lecture du code ne laisse croire que l'offre
+fonctionne. Le branchement est la story `D10-08`.
+
+**Non levé non plus : la purge des événements analytiques.** Chaque ligne porte
+son `purgeAt`, calculé à l'écriture depuis `ANALYTICS_RETENTION_MONTHS`. Le
+travail périodique qui supprime les lignes échues n'existe pas. Tant qu'il
+n'existe pas, la rétention de 14 mois est une intention, pas un fait — au même
+titre que les autres purges encore manuelles (documents KYC, périodes de grâce,
+sanctions temporaires).
+
+**Aucun export analytique, aucun connecteur, aucun tableau de bord externe.**
+Les seules lectures sont les routes `/admin/analytics/*`, qui ne rendent que des
+agrégats.
+
 ### Trois réserves nommées, tranche D6
 
 1. **La notification d'une décision est écrite, pas envoyée.** La ligne `Notification` existe en base et sera lue

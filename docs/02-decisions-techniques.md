@@ -308,3 +308,31 @@ propriétaire, rôle insuffisant.
 
 **Conséquences.** Le seuil de couverture est fixé à 80 % de branches sur `domain/` et `application/` (là où sont les
 règles), et non à un pourcentage global qui récompenserait les tests d'infrastructure sans valeur.
+
+## ADR-021 — Analytique pseudonymisée par HMAC, avec un secret distinct du sel des empreintes
+
+**Statut :** acceptée
+
+**Contexte.** Le tunnel de migration doit être mesurable par cohorte : savoir combien de personnes venues du groupe
+WhatsApp franchissent chaque étape suppose de reconnaître qu'un même membre revient d'un événement à l'autre. Un
+système analytique collecte par nature beaucoup, longtemps, et finit exporté vers des outils de visualisation.
+
+**Décision.** Chaque événement porte un `subjectHash` = **HMAC-SHA256(userId, ANALYTICS_HMAC_SECRET)**, jamais
+l'identifiant du membre seul comme clé d'analyse. Trois conséquences voulues :
+
+1. **HMAC et non hachage nu.** Un `sha256(userId)` se recalcule par quiconque connaît un identifiant : il suffirait
+   d'un export analytique et d'un identifiant vu ailleurs pour retrouver quelqu'un. Avec un HMAC, il faut le secret,
+   qui ne quitte jamais le serveur et n'entre dans aucun export.
+2. **Un secret distinct de `HASH_SALT`.** Le sel des empreintes recherchables (numéro, code OTP, jeton de
+   rafraîchissement) ne doit jamais suivre l'analytique vers un outil tiers. La validation de configuration **refuse
+   le démarrage** si les deux valeurs sont identiques.
+3. **Une liste blanche de propriétés.** Ce qui n'est pas déclaré dans `event-schema.ts` est rejeté, et une seconde
+   liste noire refuse les noms nominatifs même s'ils étaient ajoutés au schéma par erreur. Un événement mal formé est
+   **refusé, jamais nettoyé en silence** : accepter une version amputée masquerait l'erreur d'appel.
+
+**Alternative écartée.** Stocker `userId` comme seule clé d'analyse et « anonymiser à l'export ». Une anonymisation
+qui dépend d'une étape ultérieure n'a jamais lieu le jour où quelqu'un branche un outil directement sur la base.
+
+**Conséquences.** La ré-identification depuis les seules données analytiques est impossible ; les cohortes restent
+calculables. Le champ `userId` reste présent sur la ligne pour permettre la purge par personne (droit à l'effacement),
+mais aucune lecture analytique ne l'expose : les routes d'administration ne rendent que des agrégats.
