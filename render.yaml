@@ -1,0 +1,92 @@
+# Plan d'infrastructure Render — API, worker, PostgreSQL et Redis.
+#
+# Déclaratif à dessein : l'infrastructure se relit en revue et se recrée à
+# l'identique, plutôt que d'exister sous forme de clics dans une interface que
+# personne ne peut auditer.
+#
+# Les façades web et back-office ne figurent pas ici : elles vont sur Vercel
+# (voir docs/15-hebergement.md).
+#
+# AUCUN secret dans ce fichier. Les valeurs `sync: false` sont saisies une fois
+# dans l'interface Render et ne sont jamais rendues ensuite.
+
+databases:
+  - name: acuba-postgres
+    databaseName: acuba
+    user: acuba_app
+    plan: basic-256mb
+    postgresMajorVersion: '16'
+    # Le second schéma `kyc` et son rôle dédié sont créés par le script de
+    # démarrage : Render ne provisionne qu'une base et un rôle (ADR-004,
+    # docs/15-hebergement.md §4).
+
+services:
+  - type: redis
+    name: acuba-redis
+    plan: starter
+    # `noeviction` est impératif : BullMQ perd des travaux si Redis expulse des
+    # clés sous pression mémoire, et une notification de sécurité perdue ne se
+    # rattrape pas.
+    maxmemoryPolicy: noeviction
+    ipAllowList: []
+
+  - type: web
+    name: acuba-api
+    runtime: docker
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: .
+    plan: starter
+    region: frankfurt
+    healthCheckPath: /api/v1/health/ready
+    # Les migrations sont appliquées AVANT que la nouvelle version ne serve du
+    # trafic. `migrate deploy` n'invente jamais de migration : il applique celles
+    # du dépôt, ou échoue.
+    preDeployCommand: pnpm db:migrate:deploy
+    envVars: &api_env
+      - key: NODE_ENV
+        value: production
+      - key: PROCESS_ROLE
+        value: api
+      - key: API_PORT
+        value: '3000'
+      - key: DATABASE_URL
+        fromDatabase: { name: acuba-postgres, property: connectionString }
+      - key: REDIS_URL
+        fromService: { name: acuba-redis, type: redis, property: connectionString }
+      # Secrets : saisis une fois dans l'interface, jamais rendus ensuite.
+      - { key: HASH_SALT, sync: false }
+      - { key: ANALYTICS_HMAC_SECRET, sync: false }
+      - { key: ENCRYPTION_KEY, sync: false }
+      - { key: JWT_PRIVATE_KEY, sync: false }
+      - { key: JWT_PUBLIC_KEY, sync: false }
+      - { key: KYC_DATABASE_URL, sync: false }
+      - { key: S3_ENDPOINT, sync: false }
+      - { key: S3_MEDIA_BUCKET, sync: false }
+      - { key: S3_KYC_BUCKET, sync: false }
+      - { key: CORS_ALLOWED_ORIGINS, sync: false }
+
+  - type: worker
+    name: acuba-worker
+    runtime: docker
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: .
+    plan: starter
+    region: frankfurt
+    # Même image que l'API, même code. Seul `PROCESS_ROLE` change : deux
+    # constructions distinctes finiraient par diverger sans que personne le voie.
+    envVars:
+      - key: PROCESS_ROLE
+        value: worker
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase: { name: acuba-postgres, property: connectionString }
+      - key: REDIS_URL
+        fromService: { name: acuba-redis, type: redis, property: connectionString }
+      - { key: HASH_SALT, sync: false }
+      - { key: ANALYTICS_HMAC_SECRET, sync: false }
+      - { key: ENCRYPTION_KEY, sync: false }
+      - { key: KYC_DATABASE_URL, sync: false }
+      - { key: S3_ENDPOINT, sync: false }
+      - { key: S3_MEDIA_BUCKET, sync: false }
+      - { key: S3_KYC_BUCKET, sync: false }

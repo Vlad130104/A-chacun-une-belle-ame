@@ -19,7 +19,7 @@ implémentation simulée — ni dans l'interface, ni dans la documentation, ni d
 | `PushProvider`              | `MockPushProvider` — notification journalisée, non envoyée                          | ⬜ à développer (D8) | 🟢 Non — repli sur in-app et e-mail                           | —                |
 | `ContentModerationProvider` | `RuleBasedModerationProvider` — règles simples, pas d'analyse d'image               | ⬜ à développer (D6) | 🟢 Non — revue humaine au MVP                                 | —                |
 | `MailProvider`              | Mailpit en local — **réel** en recette et production                                | ⬜ à développer (D8) | 🟢 Non                                                        | —                |
-| `StorageProvider`           | MinIO en local — **réel** (S3 compatible)                                           | 🟨 livré             | 🟢 Non                                                        | —                |
+| `StorageProvider`           | **EN MÉMOIRE** — aucun client S3 n'est branché, MinIO n'est jamais contacté         | 🟥 simulé            | 🔴 **Oui — bloquant**                                         | E-06             |
 | `ClockProvider`             | `FrozenClock` **en test uniquement** ; horloge système ailleurs                     | 🟨 livré             | —                                                             | —                |
 
 Légende : ⬜ à développer (interface non encore écrite) · 🟨 simulé et livré · ✅ implémentation réelle en production.
@@ -242,6 +242,30 @@ dans `docs/14-rapport-de-validation.md` :
 **Toujours ouvert.** La 2FA n'est pas encore **exigée** à l'ouverture d'une session d'administration : l'enrôlement
 et la vérification fonctionnent, le contrôle manque dans le parcours de connexion. Et **aucune tâche planifiée
 n'existe** : les purges, les fins de période de grâce et les levées de sanction temporaire restent manuelles.
+
+### Correction : le stockage était présenté comme réel, il ne l'est pas
+
+Ce registre a affirmé jusqu'ici que `StorageProvider` était **réel**, adossé à MinIO. **C'était faux.** Les deux
+adaptateurs — photos de profil et pièces d'identité — conservent les objets dans une `Map` en mémoire de processus :
+
+```ts
+private readonly objects = new Map<string, Buffer>();
+```
+
+Aucun client S3 n'existe dans le dépôt ; `@aws-sdk/client-s3` n'est même pas une dépendance. `S3_ENDPOINT` et
+`S3_MEDIA_BUCKET` ne servent qu'à composer une URL d'affichage, signée par une clé **tirée au hasard au démarrage** —
+donc invalide après le moindre redémarrage.
+
+**Conséquences concrètes, à connaître avant toute mise en ligne :**
+
+- une photo de profil et une pièce d'identité déposées sont **perdues au redémarrage** du processus ;
+- avec plus d'une instance, un dépôt fait sur l'instance A est **introuvable** depuis l'instance B ;
+- la vérification d'identité ne peut donc pas fonctionner en production, puisque l'agent ne retrouvera pas le
+  document déposé.
+
+C'est la seule fois où ce registre a présenté comme fonctionnelle une intégration qui ne l'était pas — exactement ce
+que le cahier des charges interdit. La ligne est corrigée en tête de document, et le branchement d'un client S3 réel
+devient la story **E-06**, bloquante pour la mise en ligne.
 
 **Réserve valable pour toutes les tranches livrées à ce jour.** Aucun de ces composants n'a encore été exécuté
 contre une vraie base PostgreSQL ni un vrai Redis : l'environnement de développement utilisé pour la génération
