@@ -128,10 +128,107 @@ NestJS, ni Prisma, ni Express : c'est ce qui rend les règles testables en milli
 
 ---
 
-## 8. Ce qui n'existe pas encore
+## 8. Vérifier le travail livré
 
-À l'issue de la phase C, le dépôt contient le **socle** : configuration validée, gestion d'erreurs, pagination,
-ports externes, santé, inventaire des autorisations, et une application par façade.
+Quatre niveaux, du moins coûteux au plus probant. **Chacun prouve moins que le suivant** : le tableau dit ce que
+chaque niveau établit, et surtout ce qu'il n'établit pas.
 
-**Aucune fonctionnalité produit n'est implémentée** : ni inscription, ni vérification, ni profil, ni matching, ni
-messagerie. Elles arrivent avec les tranches D1 à D10 du [backlog](./08-backlog-mvp.md), dans cet ordre.
+| Niveau                     | Durée  | Ce qu'il prouve                                   | Ce qu'il ne prouve PAS                                    |
+| -------------------------- | ------ | ------------------------------------------------- | --------------------------------------------------------- |
+| 1. Lecture                 | 10 min | Ce que le projet prétend faire, et ce qu'il admet | Que le code corresponde                                   |
+| 2. Chaîne locale sans base | 5 min  | Les règles, le câblage, la compilation            | Qu'une seule requête SQL fonctionne                       |
+| 3. Docker et parcours réel | 30 min | Migrations, dépôts Prisma, Redis, routes vivantes | Le comportement sous charge, ni les intégrations externes |
+| 4. Contrôles adverses      | 15 min | Que les affirmations de la documentation tiennent | —                                                         |
+
+### Niveau 1 — lire ce que le projet reconnaît
+
+```bash
+cat docs/MOCKS.md                    # tout ce qui est simulé, port par port
+cat docs/14-rapport-de-validation.md # les défauts trouvés en phase E, et ce qui reste
+git log --oneline                    # une tranche par commit, avec ses limites en message
+```
+
+`docs/MOCKS.md` est le document à lire en premier. Il liste ce qui **ne fonctionne pas**, et c'est délibéré : un
+registre de simulations qui ne servirait qu'à rassurer serait inutile.
+
+### Niveau 2 — la chaîne locale, sans base de données
+
+```bash
+pnpm install
+pnpm lint          # ESLint sur les quatre applications et les paquets
+pnpm typecheck     # TypeScript strict, aucun `any` non justifié
+pnpm test:unit     # règles métier, inventaire des routes, graphe d'injection
+pnpm build         # les quatre applications se construisent
+pnpm db:validate   # le schéma Prisma est cohérent
+```
+
+Trois tests méritent d'être regardés en particulier, parce qu'ils attrapent les défauts que les autres laissent
+passer :
+
+- `src/common/auth/route-policy.spec.ts` — **aucune route ne peut exister sans politique d'autorisation**, et toute
+  route publique doit figurer dans une liste de référence justifiée ;
+- `src/common/auth/auth.guard.spec.ts` — la chaîne d'autorisation elle-même. Elle était le seul composant sans test,
+  et elle était cassée (voir le rapport de validation) ;
+- `src/app.module.spec.ts` — construit le conteneur d'injection entier. Il a détecté trois pannes de démarrage que
+  les tests de règles ne pouvaient pas voir.
+
+### Niveau 3 — Docker, et un parcours réellement exécuté
+
+C'est le seul niveau qui prouve que la persistance fonctionne. **Il n'a jamais été exécuté** : l'environnement de
+génération ne dispose pas de Docker.
+
+```bash
+cp .env.example .env               # renseigner au minimum HASH_SALT et ANALYTICS_HMAC_SECRET
+pnpm docker:up                     # PostgreSQL, Redis, MinIO, Mailpit
+pnpm db:generate && pnpm db:migrate
+pnpm db:seed                       # villes, centres d'intérêt, offres, campagne de migration
+pnpm test:int                      # à ce jour : la séparation des schémas KYC, et elle seule
+pnpm dev
+```
+
+Puis, API lancée :
+
+```bash
+# La sonde doit interroger PostgreSQL et Redis — arrêtez Redis, elle doit répondre 503.
+curl -i localhost:3000/api/v1/health/live
+curl -i localhost:3000/api/v1/health/ready
+
+# Le lien d'invitation semé : valide, et ne révèle jamais qui l'a émis.
+curl -s localhost:3000/api/v1/invites/BELLEAME2026
+# Un code inexistant doit rendre EXACTEMENT la même forme de réponse.
+curl -s localhost:3000/api/v1/invites/CODEBIDON
+
+# Toute route d'administration sans jeton : 401, jamais 200.
+curl -i localhost:3000/api/v1/admin/dashboard
+```
+
+Le code OTP n'est envoyé par aucun SMS : il est **journalisé par la console**, fournisseur simulé. C'est là qu'il
+faut le lire pour terminer une inscription.
+
+### Niveau 4 — contrôles adverses
+
+Ceux qui exposeraient une documentation flatteuse. Ils doivent tous donner le résultat annoncé.
+
+```bash
+# Aucun secret dans le dépôt : les seules valeurs par défaut se nomment elles-mêmes.
+grep -rn "developpement-non-secret\|local_dev" --include=*.ts --include=*.yml .
+
+# Le fournisseur de paiement refuse TOUTE signature. Doit afficher `return false`.
+grep -n -A 3 "verifyWebhookSignature" apps/api/src/providers/mock-payment.provider.ts
+
+# Chaque TODO référence une story du backlog — une règle ESLint dédiée l'impose.
+grep -rn "TODO(" apps/api/src prisma
+
+# État RÉEL des intégrations, rendu par le serveur et non par la documentation.
+# En cas de divergence avec MOCKS.md, c'est cette route qui fait foi.
+curl -s localhost:3000/api/v1/health/providers   # exige un jeton et system.read
+```
+
+### Ce qui n'existe pas, et qu'aucune commande ne montrera
+
+- **`e2e/` est vide.** Aucun test Playwright n'a été écrit, alors que le plan de tests en prévoit 18. Les parcours
+  n'ont donc jamais été traversés de bout en bout, par personne.
+- **Un seul test d'intégration** (`apps/api/test/kyc-separation.int-spec.ts`). `pnpm test:int` ne vérifie que la
+  séparation des schémas.
+- **Rien n'a tourné contre un vrai PostgreSQL ni un vrai Redis.** Les 3 migrations, les déclencheurs d'audit en ajout
+  seul et les compteurs Redis n'ont jamais été appliqués. C'est le premier travail à faire.
