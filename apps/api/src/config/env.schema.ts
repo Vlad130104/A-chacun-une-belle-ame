@@ -45,9 +45,28 @@ export const envSchema = z.object({
     .default('pseudonyme-analytique-de-developpement-non-secret'),
 
   // ── Stockage compatible S3 — deux buckets séparés (ADR-004) ────────────────
+  //
+  // `memory` conserve les objets dans le processus : utilisable en test et en
+  // développement hors ligne, jamais ailleurs. La validation ci-dessous refuse
+  // le démarrage en production, parce qu'un stockage en mémoire perd toute
+  // pièce d'identité au premier redémarrage (story E-06).
+  STORAGE_PROVIDER: z.enum(['memory', 's3']).default('memory'),
   S3_ENDPOINT: z.string().url().default('http://localhost:9000'),
+  S3_REGION: z.string().min(2).default('eu-west-1'),
+  // MinIO, Backblaze et la plupart des passerelles auto-hébergées exigent le
+  // style « chemin » ; AWS et R2 acceptent les deux.
+  S3_FORCE_PATH_STYLE: bool,
   S3_MEDIA_BUCKET: z.string().min(3).default('acuba-media'),
   S3_KYC_BUCKET: z.string().min(3).default('acuba-kyc'),
+
+  // Deux jeux d'identifiants DISTINCTS, et c'est le cœur d'ADR-004 : qui détient
+  // les clés du bucket média ne doit pas pouvoir lire les pièces d'identité.
+  // Partager un compte de service entre les deux annulerait la séparation que
+  // tout le reste du modèle met en place.
+  S3_MEDIA_ACCESS_KEY: z.string().default(''),
+  S3_MEDIA_SECRET_KEY: z.string().default(''),
+  S3_KYC_ACCESS_KEY: z.string().default(''),
+  S3_KYC_SECRET_KEY: z.string().default(''),
   SIGNED_URL_TTL_SECONDS: z.coerce.number().int().positive().max(3600).default(300),
   KYC_SIGNED_URL_TTL_SECONDS: z.coerce.number().int().positive().max(900).default(300),
 
@@ -143,7 +162,14 @@ export const envSchema = z.object({
 export type Env = z.infer<typeof envSchema>;
 
 /** Ports dont l'absence d'implémentation réelle rend la production non conforme. */
-export const CRITICAL_PROVIDER_KEYS = ['SMS_PROVIDER', 'PAYMENT_PROVIDER'] as const;
+export const CRITICAL_PROVIDER_KEYS = [
+  'SMS_PROVIDER',
+  'PAYMENT_PROVIDER',
+  // Ajouté en E-06. Un stockage en mémoire perd les pièces d'identité au premier
+  // redémarrage : la vérification d'identité, qui est la promesse centrale du
+  // produit, ne peut alors pas fonctionner.
+  'STORAGE_PROVIDER',
+] as const;
 
 export class EnvValidationError extends Error {
   constructor(issues: string[]) {
@@ -152,7 +178,7 @@ export class EnvValidationError extends Error {
   }
 }
 
-const SIMULATED_VALUES = new Set(['console', 'mock', 'rules']);
+const SIMULATED_VALUES = new Set(['console', 'mock', 'rules', 'memory']);
 
 /**
  * Retourne la liste des ports encore simulés. Source de vérité de docs/MOCKS.md et
@@ -165,6 +191,7 @@ export function listSimulatedProviders(env: Env): string[] {
     ['PaymentProvider', env.PAYMENT_PROVIDER],
     ['PushProvider', env.PUSH_PROVIDER],
     ['ContentModerationProvider', env.CONTENT_MODERATION_PROVIDER],
+    ['StorageProvider', env.STORAGE_PROVIDER],
   ];
   return entries.filter(([, value]) => SIMULATED_VALUES.has(value)).map(([port]) => port);
 }
@@ -211,6 +238,34 @@ export function validateEnv(raw: Record<string, unknown>): Env {
       'S3_MEDIA_BUCKET et S3_KYC_BUCKET doivent être deux buckets distincts : ' +
         'les pièces d’identité ne partagent jamais le stockage des photos de profil (ADR-004).',
     ]);
+  }
+
+  // Les deux jeux d'identifiants doivent être distincts (ADR-004, story E-06).
+  // Le contrôle ne s'applique qu'au stockage réel : en mémoire, il n'y a pas
+  // d'identifiants du tout.
+  if (env.STORAGE_PROVIDER === 's3') {
+    const manquants = (
+      [
+        'S3_MEDIA_ACCESS_KEY',
+        'S3_MEDIA_SECRET_KEY',
+        'S3_KYC_ACCESS_KEY',
+        'S3_KYC_SECRET_KEY',
+      ] as const
+    ).filter((cle) => env[cle].length === 0);
+
+    if (manquants.length > 0) {
+      throw new EnvValidationError([
+        `STORAGE_PROVIDER=s3 exige des identifiants : ${manquants.join(', ')} manquent.`,
+      ]);
+    }
+
+    if (env.S3_MEDIA_ACCESS_KEY === env.S3_KYC_ACCESS_KEY) {
+      throw new EnvValidationError([
+        'S3_MEDIA_ACCESS_KEY et S3_KYC_ACCESS_KEY doivent être deux comptes de service ' +
+          'distincts : partager les identifiants rendrait les pièces d’identité lisibles ' +
+          'par qui détient les clés des photos de profil (ADR-004).',
+      ]);
+    }
   }
 
   if (env.ANALYTICS_HMAC_SECRET === env.HASH_SALT) {

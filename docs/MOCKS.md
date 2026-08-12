@@ -264,8 +264,20 @@ donc invalide après le moindre redémarrage.
   document déposé.
 
 C'est la seule fois où ce registre a présenté comme fonctionnelle une intégration qui ne l'était pas — exactement ce
-que le cahier des charges interdit. La ligne est corrigée en tête de document, et le branchement d'un client S3 réel
-devient la story **E-06**, bloquante pour la mise en ligne.
+que le cahier des charges interdit.
+
+**Corrigé par la story E-06.** Les deux adaptateurs délèguent désormais à un client S3 réel
+(`@aws-sdk/client-s3`), avec **deux jeux d'identifiants distincts** et des URL signées par le SDK. Trois garde-fous
+sont posés pour que le silence ne puisse pas se reproduire :
+
+- `StorageProvider` figure enfin dans la liste des ports simulés — son absence est ce qui a permis à l'erreur de
+  durer dix tranches ;
+- il rejoint les ports critiques : `NODE_ENV=production` **refuse de démarrer** avec un stockage en mémoire ;
+- le démarrage échoue aussi si les deux buckets partagent la même clé d'accès.
+
+**Réserve qui subsiste :** rien n'a été déposé sur un vrai serveur d'objets. Les tests vérifient que le bon client
+est construit avec les bons identifiants et que le plafond de durée des URL s'applique ; ils ne peuvent pas vérifier
+qu'un dépôt aboutit. Le premier `docker compose up` avec MinIO le dira.
 
 **Réserve valable pour toutes les tranches livrées à ce jour.** Aucun de ces composants n'a encore été exécuté
 contre une vraie base PostgreSQL ni un vrai Redis : l'environnement de développement utilisé pour la génération

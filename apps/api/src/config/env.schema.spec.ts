@@ -68,6 +68,10 @@ describe('validation de la configuration', () => {
     });
 
     it('énumère les ports encore simulés', () => {
+      // `StorageProvider` figure ici depuis la story E-06 : il était auparavant
+      // absent de cette liste ALORS QUE son implémentation était en mémoire.
+      // C'est ce silence qui a permis au registre des simulations d'affirmer
+      // pendant dix tranches qu'il était réel.
       const env = validateEnv(baseEnv);
       expect(listSimulatedProviders(env)).toEqual([
         'SmsProvider',
@@ -75,7 +79,36 @@ describe('validation de la configuration', () => {
         'PaymentProvider',
         'PushProvider',
         'ContentModerationProvider',
+        'StorageProvider',
       ]);
+    });
+
+    it('REFUSE de démarrer en production avec un stockage en mémoire', () => {
+      // Un stockage en mémoire perd toute pièce d'identité au redémarrage : la
+      // vérification d'identité, promesse centrale du produit, ne peut pas
+      // fonctionner. Le démarrage doit échouer bruyamment.
+      expect(() =>
+        validateEnv({ ...baseEnv, NODE_ENV: 'production', STORAGE_PROVIDER: 'memory' }),
+      ).toThrow(/STORAGE_PROVIDER/);
+    });
+
+    it('refuse deux buckets servis par les MÊMES identifiants', () => {
+      // ADR-004 : qui détient les clés des photos de profil ne doit pas pouvoir
+      // lire les pièces d'identité.
+      expect(() =>
+        validateEnv({
+          ...baseEnv,
+          STORAGE_PROVIDER: 's3',
+          S3_MEDIA_ACCESS_KEY: 'meme-cle',
+          S3_MEDIA_SECRET_KEY: 'secret-a',
+          S3_KYC_ACCESS_KEY: 'meme-cle',
+          S3_KYC_SECRET_KEY: 'secret-b',
+        }),
+      ).toThrow(/distincts/);
+    });
+
+    it('refuse un stockage S3 sans identifiants', () => {
+      expect(() => validateEnv({ ...baseEnv, STORAGE_PROVIDER: 's3' })).toThrow(/identifiants/);
     });
   });
 });

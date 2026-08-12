@@ -1,49 +1,39 @@
-import { createHmac, randomBytes } from 'node:crypto';
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Env } from '../../../config/env.schema';
+import { createMediaStore } from '../../../infrastructure/storage/storage.factory';
+import type { ObjectStore } from '../../../infrastructure/storage/s3-object-store';
 import type { MediaStorage } from '../application/ports';
 
 /**
- * Stockage des photos de profil.
+ * Stockage des photos de profil (story E-06).
  *
- * Bucket distinct de celui des pièces d'identité — la séparation est vérifiée au
- * démarrage par la validation de configuration (ADR-004). Aucune URL permanente n'est
- * émise : chaque accès passe par une signature à durée limitée.
+ * Bucket distinct de celui des pièces d'identité, avec des identifiants
+ * distincts — la séparation est vérifiée au démarrage par la validation de
+ * configuration (ADR-004). Aucune URL permanente n'est émise : chaque accès
+ * passe par une signature à durée limitée, plafonnée par le stockage lui-même.
  *
- * Implémentation en mémoire tant que le client S3 n'est pas branché ; l'interface est
- * définitive et le remplacement ne touchera ni le domaine ni l'application.
+ * Cet adaptateur ne fait plus que déléguer. Toute la logique S3 vit dans
+ * `S3ObjectStore`, partagée avec le stockage KYC : deux implémentations
+ * parallèles auraient fini par diverger sur la signature ou le chiffrement.
  */
 @Injectable()
 export class MediaStorageAdapter implements MediaStorage {
-  private readonly logger = new Logger(MediaStorageAdapter.name);
-  private readonly signingKey = randomBytes(32);
-  private readonly objects = new Map<string, Buffer>();
+  private readonly store: ObjectStore;
 
-  constructor(private readonly config: ConfigService<Env, true>) {}
+  constructor(config: ConfigService<Env, true>) {
+    this.store = createMediaStore(config);
+  }
 
   put(key: string, bytes: Buffer, contentType: string): Promise<void> {
-    this.logger.debug(`Écriture média : ${key} (${bytes.length} octets, ${contentType})`);
-    this.objects.set(key, bytes);
-    return Promise.resolve();
+    return this.store.put(key, bytes, contentType);
   }
 
   signedUrl(key: string, ttlSeconds: number): Promise<string> {
-    const expiresAt = Math.floor(Date.now() / 1000) + ttlSeconds;
-    const signature = createHmac('sha256', this.signingKey)
-      .update(`${key}:${expiresAt}`)
-      .digest('hex');
-
-    const endpoint = this.config.get('S3_ENDPOINT', { infer: true });
-    const bucket = this.config.get('S3_MEDIA_BUCKET', { infer: true });
-
-    return Promise.resolve(
-      `${endpoint}/${bucket}/${key}?expires=${expiresAt}&signature=${signature}`,
-    );
+    return this.store.signedUrl(key, ttlSeconds);
   }
 
   delete(key: string): Promise<void> {
-    this.objects.delete(key);
-    return Promise.resolve();
+    return this.store.delete(key);
   }
 }

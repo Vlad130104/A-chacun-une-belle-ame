@@ -27,15 +27,11 @@ de notifications ne serait jamais consommée. La répartition est donc :
 
 À lire avant de réserver quoi que ce soit.
 
-1. **Le stockage d'objets n'existe pas** (story E-06). Les adaptateurs conservent les fichiers dans une `Map` en
-   mémoire de processus. Une photo ou une pièce d'identité déposée est perdue au redémarrage, et invisible depuis une
-   autre instance. **La vérification d'identité ne peut donc pas fonctionner en production.** C'est le blocage
-   principal.
-2. **Aucune interface.** `apps/web` contient une page d'accueil dont le bouton pointe vers `/inscription`, qui
+1. **Aucune interface.** `apps/web` contient une page d'accueil dont le bouton pointe vers `/inscription`, qui
    n'existe pas. `apps/admin` affiche une coquille. L'API est complète, rien ne la consomme.
-3. **Rien n'a jamais tourné contre une vraie base.** La première mise en ligne sera aussi le premier test des
+2. **Rien n'a jamais tourné contre une vraie base.** La première mise en ligne sera aussi le premier test des
    migrations, des déclencheurs d'audit et des compteurs Redis.
-4. **SMS, e-mail, push et paiement sont simulés.** Aucun code OTP ne partira : sans SMS réel, **personne ne pourra
+3. **SMS, e-mail, push et paiement sont simulés.** Aucun code OTP ne partira : sans SMS réel, **personne ne pourra
    terminer une inscription**. Voir `docs/MOCKS.md`.
 
 Conclusion honnête : ce qui suit permet de monter un environnement de **recette**, pas d'ouvrir le service au public.
@@ -136,14 +132,29 @@ n'encaisse aucun paiement.
 Deux buckets, **deux jeux d'identifiants distincts** : le porteur des clés du bucket média ne doit pas pouvoir lire
 les pièces d'identité. Cloudflare R2, Backblaze B2 et Scaleway conviennent ; le code parle S3.
 
-Rien de tout cela n'est branché aujourd'hui. Il faut d'abord :
+**Livré (story E-06).** Posez `STORAGE_PROVIDER=s3` et les six variables associées :
 
-1. ajouter `@aws-sdk/client-s3` et `@aws-sdk/s3-request-presigner` ;
-2. réécrire `MediaStorageAdapter` et `KycDocumentStorageAdapter`, aujourd'hui en mémoire ;
-3. ajouter les identifiants au schéma de configuration — ils figurent dans `.env.example` mais **ne sont validés
-   nulle part**, donc silencieusement ignorés ;
-4. remplacer la signature d'URL maison par la signature du SDK. L'actuelle utilise une clé tirée au hasard au
-   démarrage : toute URL émise devient invalide au redémarrage suivant.
+```
+STORAGE_PROVIDER=s3
+S3_ENDPOINT=https://<compte>.r2.cloudflarestorage.com
+S3_REGION=auto
+S3_FORCE_PATH_STYLE=false          # true pour MinIO et Backblaze
+S3_MEDIA_BUCKET=acuba-media
+S3_MEDIA_ACCESS_KEY=…              # compte de service n°1
+S3_MEDIA_SECRET_KEY=…
+S3_KYC_BUCKET=acuba-kyc
+S3_KYC_ACCESS_KEY=…                # compte de service n°2, DIFFÉRENT
+S3_KYC_SECRET_KEY=…
+```
+
+Le démarrage **échoue** si les deux clés d'accès sont identiques, si l'une manque, ou si `NODE_ENV=production` est
+posé avec `STORAGE_PROVIDER=memory`.
+
+Les deux buckets doivent être **privés** : aucun accès public en lecture. Toute lecture passe par une URL signée à
+durée limitée — 5 minutes pour les photos, 2 minutes pour les pièces d'identité par défaut.
+
+**Réserve :** rien n'a jamais été déposé sur un vrai serveur d'objets depuis ce code. Éprouvez-le contre MinIO en
+local avant la première mise en ligne.
 
 ---
 
