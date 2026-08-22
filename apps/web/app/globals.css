@@ -79,3 +79,92 @@ a:focus-visible {
   color: var(--couleur-encre-douce);
   font-size: 0.9rem;
 }
+
+/* ── Formulaires (tranche F1) ──────────────────────────────────────────────
+ *
+ * Deux contraintes commandent ces règles, et aucune n'est esthétique.
+ *
+ * Les champs font 16 px au minimum : en dessous, Safari sur iOS zoome
+ * automatiquement à la mise au point, ce qui décale la page et donne
+ * l'impression d'un bug. Les zones tactiles font 44 px de haut, seuil en deçà
+ * duquel une saisie au pouce devient hasardeuse sur un petit écran.
+ */
+
+label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: calc(var(--espace) / 4);
+}
+
+input[type='tel'],
+input[type='text'],
+input[type='date'] {
+  width: 100%;
+  min-height: 44px;
+  padding: 0.6rem 0.75rem;
+  font-size: 1rem;
+  font-family: inherit;
+  color: var(--couleur-encre);
+  background: var(--couleur-surface);
+  border: 1px solid var(--couleur-bordure);
+  border-radius: var(--rayon);
+}
+
+input:focus-visible {
+  outline: 3px solid var(--couleur-confiance);
+  outline-offset: 1px;
+}
+
+fieldset {
+  border: 1px solid var(--couleur-bordure);
+  border-radius: var(--rayon);
+  padding: var(--espace);
+  margin-bottom: var(--espace);
+}
+
+legend {
+  font-weight: 600;
+  padding: 0 0.5rem;
+}
+
+/* Les cases et boutons radio restent alignés avec leur libellé, sur une ligne
+ * cliquable entière : viser une case de 13 px au pouce est un échec assuré. */
+fieldset label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-weight: 400;
+  min-height: 44px;
+  padding: 0.4rem 0;
+  cursor: pointer;
+}
+
+fieldset input[type='checkbox'],
+fieldset input[type='radio'] {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-top: 0.15rem;
+  flex-shrink: 0;
+}
+
+small {
+  display: block;
+  color: var(--couleur-encre-douce);
+  font-size: 0.875rem;
+  margin-top: calc(var(--espace) / 4);
+}
+
+/* L'erreur n'est pas seulement rouge : la couleur seule exclurait les personnes
+ * daltoniennes. Le liseré et le rôle ARIA portent la même information. */
+.erreur {
+  border-left: 4px solid #b3261e;
+  background: #fdeceb;
+  color: #7a1a14;
+  padding: var(--espace);
+  border-radius: var(--rayon);
+}
+
+button[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

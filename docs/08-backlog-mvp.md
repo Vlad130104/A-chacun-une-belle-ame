@@ -525,3 +525,42 @@ le contrôle en découle.
 travaux. Les brancher sans les éprouver contre une vraie base produirait des suppressions non vérifiées sur des
 données de vérification d'identité et des abonnements — exactement le genre de tâche dont on ne découvre l'erreur
 qu'après. Elles viennent après le premier `docker compose up`.
+
+---
+
+## Lot F — Interface web (le trou du projet)
+
+Les dix tranches D ont construit l'API : 94 routes, 17 modules, la vérification d'identité, la messagerie, la
+modération, la facturation. **Aucune ne consomme cette API.** `apps/web` contenait une page d'accueil, `apps/admin`
+une coquille. Un moteur complet sans tableau de bord.
+
+Ce lot construit les écrans, dans l'ordre du parcours réel d'un membre.
+
+| ID   | Story                                                                 | État             | Pts |
+| ---- | --------------------------------------------------------------------- | ---------------- | :-: |
+| F-01 | Socle client API et parcours d'inscription (formulaire, OTP, session) | ✅ livré         |  8  |
+| F-02 | **Session en cookie `httpOnly`** plutôt qu'en stockage navigateur     | ⬜ **non livré** |  5  |
+| F-03 | Dépôt de la pièce d'identité et du selfie, suivi de la vérification   | ⬜ **non livré** |  8  |
+| F-04 | Profil : création, photos, complétion, publication                    | ⬜ **non livré** | 13  |
+| F-05 | Découverte, intérêts et matchs                                        | ⬜ **non livré** |  8  |
+| F-06 | Messagerie, avec le canal temps réel                                  | ⬜ **non livré** | 13  |
+| F-07 | Signalement et blocage, accessibles depuis chaque écran               | ⬜ **non livré** |  5  |
+| F-08 | Back-office : files de vérification et de modération                  | ⬜ **non livré** | 13  |
+
+**F-01 — ce qui est livré.** Un client `fetch` sans dépendance, avec une échéance explicite : sans elle, une requête
+sur un réseau mobile dégradé laisse l'écran figé, la personne appuie plusieurs fois, et plusieurs inscriptions
+partent. Les erreurs de l'API sont converties en erreur typée portant le **code** — c'est le code qui pilote
+l'écran, jamais le message, qui peut être reformulé sans préavis. Une panne de réseau reste distinguable d'un refus
+métier : l'action à proposer n'est pas la même.
+
+Le formulaire **ne calcule aucun âge** et **ne dit pas si un numéro est déjà connu**. La minorité est refusée par le
+serveur, qui seul décide ; un contrôle client ne serait qu'un confort d'affichage. Le bandeau « mode test » de
+l'écran OTP vient du **serveur** : tant que l'envoi de SMS est simulé, aucun code n'arrive, et sans cet
+avertissement la personne attendrait indéfiniment un message qui ne viendra jamais.
+
+**F-02 — pourquoi la session n'est pas encore sûre.** L'API rend les jetons dans le corps de la réponse ; il faut
+bien les conserver côté client, et tout emplacement accessible au JavaScript est lisible par un script injecté en cas
+de faille XSS. Deux choix limitent la portée sans résoudre le problème : le jeton d'accès ne quitte jamais la mémoire
+du module, et le jeton de rafraîchissement va dans `sessionStorage` — il meurt avec l'onglet au lieu de survivre des
+semaines sur un téléphone partagé, situation courante dans les pays visés. La vraie correction est un cookie
+`httpOnly` posé par l'API, avec la protection CSRF qui l'accompagne : c'est une modification côté serveur.
