@@ -1,0 +1,24 @@
+{
+  "projet": "AMENAGEMENT ROUTIER - FRANCHISSEMENT HYDRAULIQUE",
+  "ouvrage": "DALOT CADRE FERME 1 x (2.00 x 1.50)",
+  "localisation": "PK 0+000 - A COMPLETER",
+  "maitre_ouvrage": "A COMPLETER",
+  "bureau_etudes": "A COMPLETER",
+  "indice": "A",
+
+  "ouverture_largeur": 2.00,
+  "ouverture_hauteur": 1.50,
+  "ep_piedroit": 0.25,
+  "ep_traverse": 0.25,
+  "ep_radier": 0.30,
+  "gousset": 0.20,
+
+  "longueur_ouvrage": 9.00,
+  "largeur_chaussee": 7.00,
+  "largeur_accotement": 1.00,
+  "pente_radier": 0.01,
+  "couverture_min": 0.60,
+
+  "contrainte_sol_adm": 0.15,
+  "debit_projet": 0.0
+}

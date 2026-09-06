@@ -26,3 +26,6 @@ npm-debug.log*
 pnpm-debug.log*
 playwright-report/
 test-results/
+
+# CAO — caches Python
+cao/**/__pycache__/
