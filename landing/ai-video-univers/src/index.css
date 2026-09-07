@@ -1,0 +1,122 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    @apply bg-night font-sans text-ink antialiased;
+    overflow-x: hidden;
+  }
+
+  ::selection {
+    background: #2563eb;
+    color: #f8fafc;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #06101f;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, #2563eb, #f59e0b);
+    border-radius: 99px;
+  }
+}
+
+@layer components {
+  .glass {
+    background: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.09) 0%,
+      rgba(255, 255, 255, 0.03) 45%,
+      rgba(37, 99, 235, 0.08) 100%
+    );
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+  }
+
+  .glass-strong {
+    background: linear-gradient(
+      140deg,
+      rgba(255, 255, 255, 0.14) 0%,
+      rgba(10, 22, 40, 0.6) 55%,
+      rgba(37, 99, 235, 0.16) 100%
+    );
+    backdrop-filter: blur(26px) saturate(160%);
+    -webkit-backdrop-filter: blur(26px) saturate(160%);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+  }
+
+  .text-gradient-gold {
+    background: linear-gradient(120deg, #fde68a 0%, #f59e0b 45%, #fbbf24 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .text-gradient-blue {
+    background: linear-gradient(120deg, #93c5fd 0%, #2563eb 55%, #60a5fa 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .grid-floor {
+    background-image:
+      linear-gradient(rgba(37, 99, 235, 0.16) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(37, 99, 235, 0.16) 1px, transparent 1px);
+    background-size: 64px 64px;
+  }
+
+  .shine {
+    background-image: linear-gradient(
+      110deg,
+      transparent 20%,
+      rgba(255, 255, 255, 0.55) 45%,
+      transparent 70%
+    );
+    background-size: 200% 100%;
+  }
+
+  .cta-glow {
+    position: relative;
+    isolation: isolate;
+  }
+  .cta-glow::after {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: inherit;
+    background: linear-gradient(120deg, #f59e0b, #2563eb, #f59e0b);
+    background-size: 220% 100%;
+    filter: blur(14px);
+    opacity: 0.55;
+    z-index: -1;
+    animation: shimmer 3.5s linear infinite;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
