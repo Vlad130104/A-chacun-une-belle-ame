@@ -81,10 +81,12 @@ export function GallerySection() {
                 src={image.src}
                 alt={image.legende}
                 loading="lazy"
-                referrerPolicy="no-referrer"
                 className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-night via-night/25 to-transparent opacity-80 transition-opacity group-hover:opacity-95" />
+              <div className="absolute inset-0 bg-gradient-to-t from-night via-night/20 to-transparent opacity-70 transition-opacity group-hover:opacity-90" />
+              {/* Bandeau opaque sous la légende : plusieurs visuels ont un fond
+                  blanc, sur lequel un texte clair devient illisible. */}
+              <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-night via-night/90 to-transparent" />
               <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 p-3">
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-wider text-gold sm:text-[11px]">
@@ -126,7 +128,6 @@ export function GallerySection() {
               <img
                 src={zoom.src}
                 alt={zoom.legende}
-                referrerPolicy="no-referrer"
                 className="max-h-[70vh] w-full rounded-2xl object-contain"
               />
               <div className="flex items-center justify-between px-2 py-3">

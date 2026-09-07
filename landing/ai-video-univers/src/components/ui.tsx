@@ -52,7 +52,11 @@ export function SectionShell({
   className?: string;
 }) {
   return (
-    <section id={id} className={`relative px-5 py-20 sm:px-8 sm:py-24 lg:py-28 ${className}`}>
+    <section
+      id={id}
+      /* scroll-mt : sans ça, la navbar fixe recouvre le haut de la section visée. */
+      className={`relative scroll-mt-20 px-5 py-20 sm:px-8 sm:py-24 lg:py-28 ${className}`}
+    >
       <div className="mx-auto w-full max-w-6xl">{children}</div>
     </section>
   );

@@ -106,7 +106,6 @@ export function TestimonialsSection() {
                 src={temoignage.photo}
                 alt=""
                 loading="lazy"
-                referrerPolicy="no-referrer"
                 className="h-11 w-11 rounded-full object-cover ring-2 ring-gold/50"
               />
               <div>

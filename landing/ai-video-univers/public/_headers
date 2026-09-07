@@ -1,0 +1,18 @@
+# Règles de cache lues par Netlify (et Cloudflare Pages).
+
+# Les fichiers de `assets/` portent un hash dans leur nom : leur contenu ne change
+# jamais sans que le nom change. On peut donc les garder indéfiniment.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Les images gardent un nom fixe : cache d'une semaine, pour qu'un remplacement
+# finisse par arriver chez les visiteurs déjà venus.
+/galerie/*
+  Cache-Control: public, max-age=604800
+/brand/*
+  Cache-Control: public, max-age=604800
+
+# La page elle-même est toujours revalidée : une correction de texte ou de prix
+# doit être visible immédiatement.
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate

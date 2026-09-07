@@ -193,10 +193,9 @@ function MosaiqueVirale() {
               src={image.src}
               alt={image.legende}
               loading="lazy"
-              referrerPolicy="no-referrer"
               className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110"
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-night via-night/20 to-transparent" />
+            <div className="absolute inset-0 bg-gradient-to-t from-night via-night/70 to-transparent" />
             <span className="absolute bottom-2 left-2 text-[9px] font-bold uppercase tracking-wide text-gold sm:text-[10px]">
               {STYLES_VIRAUX[index]}
             </span>
@@ -323,7 +322,6 @@ export function ModulesSection() {
                   src={GALLERY[12].src}
                   alt={GALLERY[12].legende}
                   loading="lazy"
-                  referrerPolicy="no-referrer"
                   className="h-full w-full object-cover"
                 />
               </div>

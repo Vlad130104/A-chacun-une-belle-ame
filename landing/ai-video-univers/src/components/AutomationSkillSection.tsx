@@ -121,7 +121,6 @@ function ChaineDeValeur() {
                 src={image.src}
                 alt={image.legende}
                 loading="lazy"
-                referrerPolicy="no-referrer"
                 className="h-full w-full object-cover"
               />
             </div>

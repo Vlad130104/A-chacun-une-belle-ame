@@ -61,9 +61,18 @@ bouton **Activer le son**. Un seul son peut être actif à la fois : le bus audi
 
 ### Images
 
-Les visuels de marque fournis par le client sont servis depuis `public/brand/`.
-Les seize images de galerie proviennent des URL Google Drive fournies, utilisées
-telles quelles, dans l'ordre et avec les catégories d'origine.
+**Le site ne dépend d'aucun service tiers pour ses images.** Tout est servi par le
+site lui-même :
+
+- `public/brand/` — les trois visuels de marque fournis par le client.
+- `public/galerie/` — les seize images de galerie, téléchargées depuis Google Drive
+  puis redimensionnées à 800 px de large (la taille à laquelle elles s'affichent).
+  L'ordre et les catégories d'origine sont conservés, et chaque entrée de
+  `src/data/resources.ts` garde son `driveId` pour retrouver le fichier source.
+
+Les originaux Drive pesaient 25 Mo au total ; servis à leur taille d'affichage, ils
+tiennent en 1,5 Mo. Un Drive qui limite le débit, change de partage ou disparaît ne
+peut plus casser la page de vente.
 
 ## Structure des sections
 
@@ -87,6 +96,7 @@ L'ordre exigé est respecté dans `src/App.tsx` :
   mémorisé dans `localStorage`. Il est donc propre à chaque visiteur : ce n'est pas
   une date de fin commune. Si l'offre a une vraie date d'expiration, remplacez la
   constante `DUREE_MS` de `src/components/PricingSection.tsx` par cette date.
-- **Images Google Drive.** Drive limite le débit des `thumbnail?id=…` très sollicités.
-  Si la galerie devient lente en production, rapatriez ces seize images dans
-  `public/` et remplacez les URL dans `src/data/resources.ts`.
+- **Remplacer une image de galerie.** Déposez le nouveau fichier dans
+  `public/galerie/` et changez le `src` correspondant dans `src/data/resources.ts`.
+  Redimensionnez-le d'abord à 800 px de large : au-delà, le visiteur télécharge des
+  pixels qu'il ne verra jamais.

@@ -1,8 +1,13 @@
 /**
  * Ressources réelles du projet.
  *
- * Les URLs ci-dessous sont fournies par le client et doivent être utilisées
- * telles quelles : aucune substitution, aucune régénération, aucun lien factice.
+ * Les vidéos et les liens sont ceux fournis par le client, utilisés tels quels :
+ * aucune substitution, aucune régénération, aucun lien factice.
+ *
+ * Les images de galerie sont les mêmes fichiers, mais téléchargés depuis Drive et
+ * servis par le site : une page de vente ne doit pas dépendre de la disponibilité
+ * d'un Drive tiers, ni de ses limites de débit. `driveId` garde la trace du
+ * fichier d'origine.
  */
 
 export const LINKS = {
@@ -68,91 +73,110 @@ export function buildEmbedUrl(videoId: string, muted: boolean): string {
 }
 
 export interface GalleryImage {
+  /** Chemin local, servi par le site lui-même. */
   src: string;
   categorie: 'Avatar IA' | 'Produit de luxe' | 'Mockup' | 'Avatar habillé';
   legende: string;
+  /** Identifiant Drive d'origine, conservé pour retrouver le fichier source. */
+  driveId: string;
 }
 
 export const GALLERY: GalleryImage[] = [
   {
-    src: 'https://drive.google.com/thumbnail?id=1OW2_v585nkmjUD3qfG2u2NsjdN382dke&sz=w800',
+    src: '/galerie/avatar-ia-1.jpg',
     categorie: 'Avatar IA',
     legende: 'Avatar IA 1',
+    driveId: '1OW2_v585nkmjUD3qfG2u2NsjdN382dke',
   },
   {
-    src: 'https://drive.google.com/thumbnail?id=15RobvGXVlyspBUEtQpF1ltx_nRclX783&sz=w800',
+    src: '/galerie/avatar-ia-2.jpg',
     categorie: 'Avatar IA',
     legende: 'Avatar IA 2',
+    driveId: '15RobvGXVlyspBUEtQpF1ltx_nRclX783',
   },
   {
-    src: 'https://drive.google.com/thumbnail?id=1v_vVwdrtRzkfRkz588lnkzLF6T_XifZ_&sz=w800',
+    src: '/galerie/avatar-ia-3.jpg',
     categorie: 'Avatar IA',
     legende: 'Avatar IA 3',
+    driveId: '1v_vVwdrtRzkfRkz588lnkzLF6T_XifZ_',
   },
   {
-    src: 'https://drive.google.com/thumbnail?id=1DgWcACCibHZU_akA1H1XQ7urOSe6NCOG&sz=w800',
+    src: '/galerie/avatar-ia-4.jpg',
     categorie: 'Avatar IA',
     legende: 'Avatar IA 4',
+    driveId: '1DgWcACCibHZU_akA1H1XQ7urOSe6NCOG',
   },
   {
-    src: 'https://drive.google.com/thumbnail?id=1EkqJU54oVnDg6Qy-FmycxbV3XnOp2cEn&sz=w800',
+    src: '/galerie/avatar-ia-5.jpg',
     categorie: 'Avatar IA',
     legende: 'Avatar IA 5',
+    driveId: '1EkqJU54oVnDg6Qy-FmycxbV3XnOp2cEn',
   },
   {
-    src: 'https://drive.google.com/thumbnail?id=1j2oLb6FtlstnaXN9C68nIfBWtgQxLL4N&sz=w800',
+    src: '/galerie/produit-luxe-1.jpg',
     categorie: 'Produit de luxe',
     legende: 'Produit de luxe 1',
+    driveId: '1j2oLb6FtlstnaXN9C68nIfBWtgQxLL4N',
   },
   {
-    src: 'https://drive.google.com/thumbnail?id=1Iaxea7hQn4haMnNwofBDiX6OeF18J5JL&sz=w800',
+    src: '/galerie/produit-luxe-2.jpg',
     categorie: 'Produit de luxe',
     legende: 'Produit de luxe 2',
+    driveId: '1Iaxea7hQn4haMnNwofBDiX6OeF18J5JL',
   },
   {
-    src: 'https://drive.google.com/thumbnail?id=12kQp1yPfLARc_bPJiE5D10NhE4G7p8xj&sz=w800',
+    src: '/galerie/produit-luxe-3.png',
     categorie: 'Produit de luxe',
     legende: 'Produit de luxe 3',
+    driveId: '12kQp1yPfLARc_bPJiE5D10NhE4G7p8xj',
   },
   {
-    src: 'https://drive.google.com/thumbnail?id=1HMjgOvnDFe9UUgU6YL5d3735C3UUpFGZ&sz=w800',
+    src: '/galerie/produit-luxe-4.png',
     categorie: 'Produit de luxe',
     legende: 'Produit de luxe 4',
+    driveId: '1HMjgOvnDFe9UUgU6YL5d3735C3UUpFGZ',
   },
   {
-    src: 'https://drive.google.com/thumbnail?id=1HfTkintbrCOh-nMDyl1vOwQqNQ4X7TPf&sz=w800',
+    src: '/galerie/produit-luxe-5.jpg',
     categorie: 'Produit de luxe',
     legende: 'Produit de luxe 5',
+    driveId: '1HfTkintbrCOh-nMDyl1vOwQqNQ4X7TPf',
   },
   {
-    src: 'https://drive.google.com/thumbnail?id=1pd85t1ZMRoFp_NtMof7jX8nkY8dHvQ1q&sz=w800',
+    src: '/galerie/mockup-1.jpg',
     categorie: 'Mockup',
     legende: 'Mockup 1',
+    driveId: '1pd85t1ZMRoFp_NtMof7jX8nkY8dHvQ1q',
   },
   {
-    src: 'https://drive.google.com/thumbnail?id=1TGiYyPsVVEmU5TPqNVXz8vnj9DLfiJ45&sz=w800',
+    src: '/galerie/mockup-2.jpg',
     categorie: 'Mockup',
     legende: 'Mockup 2',
+    driveId: '1TGiYyPsVVEmU5TPqNVXz8vnj9DLfiJ45',
   },
   {
-    src: 'https://drive.google.com/thumbnail?id=10uIE5hV9I2TMZrPH8ZjW-7ksiYMHCD4E&sz=w800',
+    src: '/galerie/combinaison.jpg',
     categorie: 'Mockup',
     legende: 'Combinaison',
+    driveId: '10uIE5hV9I2TMZrPH8ZjW-7ksiYMHCD4E',
   },
   {
-    src: 'https://drive.google.com/thumbnail?id=1YOOC_0h5ckjk3qzF6ojwI66xTpp8bxV0&sz=w800',
+    src: '/galerie/avatar-habille-1.png',
     categorie: 'Avatar habillé',
     legende: 'Avatar habillé 1',
+    driveId: '1YOOC_0h5ckjk3qzF6ojwI66xTpp8bxV0',
   },
   {
-    src: 'https://drive.google.com/thumbnail?id=196PNOC2G-m_wWoRKqqj6BaMKLeTEygdl&sz=w800',
+    src: '/galerie/avatar-habille-2.png',
     categorie: 'Avatar habillé',
     legende: 'Avatar habillé 2',
+    driveId: '196PNOC2G-m_wWoRKqqj6BaMKLeTEygdl',
   },
   {
-    src: 'https://drive.google.com/thumbnail?id=1xSVvwScv8MM2YquZIaDXDRExcm-al5UK&sz=w800',
+    src: '/galerie/avatar-habille-3.jpg',
     categorie: 'Avatar habillé',
     legende: 'Avatar habillé 3',
+    driveId: '1xSVvwScv8MM2YquZIaDXDRExcm-al5UK',
   },
 ];
 
