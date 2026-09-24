@@ -1,6 +1,6 @@
 //@version=6
 // ═══════════════════════════════════════════════════════════════════════════
-//  X-MATH OTE V1
+//  X-MATH OTE V1.1
 //  Stratégie originale : Biais → Swing → Impulsion → Fibonacci → OTE
 //  → Confirmation (sweep + displacement) → Entrée → SL / TP en multiples de R
 //
@@ -9,8 +9,11 @@
 //   • aucun request.security(), aucun lookahead : pas de repaint volontaire ;
 //   • un pivot n'est utilisé qu'une fois confirmé (swingLen barres plus tard) ;
 //   • une seule entrée par setup, jamais d'entrée si une position est ouverte.
+//
+//  V1.1 : ajout de modules optionnels (groupe 7), tous désactivés par défaut.
+//  Modules OFF = comportement strictement identique à la V1.
 // ═══════════════════════════════════════════════════════════════════════════
-strategy(title = "X-MATH OTE V1", shorttitle = "XMATH-OTE V1", overlay = true,
+strategy(title = "X-MATH OTE V1.1", shorttitle = "XMATH-OTE V1.1", overlay = true,
      pyramiding = 0, process_orders_on_close = true, calc_on_every_tick = false,
      initial_capital = 10000, default_qty_type = strategy.percent_of_equity, default_qty_value = 10,
      commission_type = strategy.commission.percent, commission_value = 0.0, slippage = 0,
@@ -31,6 +34,7 @@ const string G_FIB   = "3 · Fibonacci & OTE"
 const string G_CONF  = "4 · Confirmation"
 const string G_RISK  = "5 · Risque, SL & TP"
 const string G_VIS   = "6 · Affichage"
+const string G_OPT   = "7 · Modules optionnels (tous OFF = V1 d'origine)"
 
 // ───────────────────────────────────────────────────────────────────────────
 // INPUTS
@@ -73,6 +77,18 @@ bool  showInfo     = input.bool(true, "Tableau d'état", group = G_VIS)
 bool  showStats    = input.bool(true, "Tableau de statistiques (en R)", group = G_VIS)
 color colBull      = input.color(#089981, "Couleur BUY", group = G_VIS)
 color colBear      = input.color(#F23645, "Couleur SELL", group = G_VIS)
+
+// ── Modules optionnels : à activer UN PAR UN, jamais tous ensemble
+bool  useBE       = input.bool(false, "M1 · Stop au point mort après TP1", group = G_OPT, tooltip = "Après TP1, le stop des 50 % restants passe à Entry + décalage × R. L'issue « TP1 puis stop » passe de 0R à +0,5R (+ décalage/2).")
+float beOffR      = input.float(0.0, "M1 · Décalage du point mort (en R)", minval = -1.0, maxval = 1.0, step = 0.05, group = G_OPT)
+bool  useClv      = input.bool(false, "M2 · Displacement : clôture dans l'extrémité de la bougie", group = G_OPT, tooltip = "BUY : (Close − Low) / (High − Low) ≥ seuil. SELL : (High − Close) / (High − Low) ≥ seuil.")
+float clvMin      = input.float(0.70, "M2 · Position de clôture minimale (0,5 – 1)", minval = 0.5, maxval = 1.0, step = 0.05, group = G_OPT)
+bool  allowAsia   = input.bool(true, "M3 · Autoriser Asie 00–07 UTC", group = G_OPT)
+bool  allowLondon = input.bool(true, "M3 · Autoriser Londres 07–13 UTC", group = G_OPT)
+bool  allowNY     = input.bool(true, "M3 · Autoriser New York 13–21 UTC", group = G_OPT)
+bool  allowOff    = input.bool(true, "M3 · Autoriser hors session 21–24 UTC", group = G_OPT)
+float volMin      = input.float(0.0, "M4 · Volatilité : rang ATR minimum (0–100)", minval = 0.0, maxval = 100.0, step = 5.0, group = G_OPT)
+float volMax      = input.float(100.0, "M4 · Volatilité : rang ATR maximum (0–100)", minval = 0.0, maxval = 100.0, step = 5.0, group = G_OPT)
 
 float oteStart = math.min(oteIn1, oteIn2)
 float oteEnd   = math.max(oteIn1, oteIn2)
@@ -168,6 +184,7 @@ var float  trR     = na
 var int    trDir   = 0
 var int    trSess  = -1
 var int    trVol   = -1
+var bool   beDone  = false
 
 var int    processedClosed = 0
 var float  accNum  = 0.0
@@ -351,6 +368,18 @@ f_extend(bear)
 // 4. CONFIRMATION + SIGNAL
 // ───────────────────────────────────────────────────────────────────────────
 bool  flat    = strategy.position_size == 0
+
+// Modules M3 / M4 : filtres de session et de volatilité (neutres par défaut)
+int   curSess   = f_session(hour(time, "UTC"))
+bool  sessOk    = curSess == 3 ? allowAsia : curSess == 4 ? allowLondon : curSess == 5 ? allowNY : allowOff
+bool  volFilterOn = volMin > 0 or volMax < 100
+bool  volOk     = not volFilterOn or (not na(atrRank) and atrRank >= volMin and atrRank <= volMax)
+bool  filtersOk = sessOk and volOk
+
+// Module M2 : position de la clôture dans la bougie
+float rng     = high - low
+float clvBuy  = rng > 0 ? (close - low) / rng : 0.0
+float clvSell = rng > 0 ? (high - close) / rng : 0.0
 float liqLow  = liqMode == LIQ_N ? nLow : lastLow
 float liqHigh = liqMode == LIQ_N ? nHigh : lastHigh
 float bodyAtr = atr > 0 ? math.abs(close - open) / atr : 0.0
@@ -363,13 +392,13 @@ float sR  = na
 float sQ  = na
 
 // BUY
-if biasBull and flat and not na(bull)
+if biasBull and flat and filtersOk and not na(bull)
     if bull.active and bar_index > bull.startBar
         float zTop  = math.max(bull.oteA, bull.oteB)
         float zBot  = math.min(bull.oteA, bull.oteB)
         bool  inOte = low <= zTop and high >= zBot
         bool  sweep = not na(liqLow) and low < liqLow and close > liqLow
-        bool  disp  = close > open and bodyAtr >= dispMin
+        bool  disp  = close > open and bodyAtr >= dispMin and (not useClv or clvBuy >= clvMin)
         if inOte and sweep and disp
             float e  = close
             float sl = low - slBuf * atr
@@ -388,13 +417,13 @@ if biasBull and flat and not na(bull)
                 sQ    := q
 
 // SELL (miroir exact du BUY)
-if biasBear and flat and not na(bear)
+if biasBear and flat and filtersOk and not na(bear)
     if bear.active and bar_index > bear.startBar
         float zTop  = math.max(bear.oteA, bear.oteB)
         float zBot  = math.min(bear.oteA, bear.oteB)
         bool  inOte = high >= zBot and low <= zTop
         bool  sweep = not na(liqHigh) and high > liqHigh and close < liqHigh
-        bool  disp  = close < open and bodyAtr >= dispMin
+        bool  disp  = close < open and bodyAtr >= dispMin and (not useClv or clvSell >= clvMin)
         if inOte and sweep and disp
             float e  = close
             float sl = high + slBuf * atr
@@ -420,7 +449,7 @@ var int    lastSigTime = na
 
 f_msg(string side, float e, float sl, float tp1, float tp2, float r, float q) =>
     string qs = na(q) ? "null" : str.tostring(q)
-    "{\"project\":\"X-MATH OTE\",\"version\":\"V1\",\"signal\":\"" + side + "\",\"symbol\":\"" + syminfo.tickerid + "\",\"timeframe\":\"" + timeframe.period + "\",\"time\":\"" + str.format_time(time_close, "yyyy-MM-dd'T'HH:mm:ss'Z'", "UTC") + "\",\"entry\":" + str.tostring(e, format.mintick) + ",\"sl\":" + str.tostring(sl, format.mintick) + ",\"tp1\":" + str.tostring(tp1, format.mintick) + ",\"tp2\":" + str.tostring(tp2, format.mintick) + ",\"r\":" + str.tostring(r, format.mintick) + ",\"tp1_close_pct\":" + str.tostring(tp1Pct) + ",\"qty\":" + qs + "}"
+    "{\"project\":\"X-MATH OTE\",\"version\":\"V1.1\",\"signal\":\"" + side + "\",\"symbol\":\"" + syminfo.tickerid + "\",\"timeframe\":\"" + timeframe.period + "\",\"time\":\"" + str.format_time(time_close, "yyyy-MM-dd'T'HH:mm:ss'Z'", "UTC") + "\",\"entry\":" + str.tostring(e, format.mintick) + ",\"sl\":" + str.tostring(sl, format.mintick) + ",\"tp1\":" + str.tostring(tp1, format.mintick) + ",\"tp2\":" + str.tostring(tp2, format.mintick) + ",\"r\":" + str.tostring(r, format.mintick) + ",\"tp1_close_pct\":" + str.tostring(tp1Pct) + ",\"qty\":" + qs + "}"
 
 if buyOk
     bull.active := false
@@ -432,6 +461,7 @@ if buyOk
     trTP2   := sE + tp2R * sR
     trSess  := f_session(hour(time, "UTC"))
     trVol   := f_volRegime(atrRank)
+    beDone  := false
     lastSigTxt  := "BUY"
     lastSigTime := time
     string msg = f_msg("BUY", trEntry, trSL, trTP1, trTP2, trR, sQ)
@@ -452,6 +482,7 @@ if sellOk
     trTP2   := sE - tp2R * sR
     trSess  := f_session(hour(time, "UTC"))
     trVol   := f_volRegime(atrRank)
+    beDone  := false
     lastSigTxt  := "SELL"
     lastSigTime := time
     string msg = f_msg("SELL", trEntry, trSL, trTP1, trTP2, trR, sQ)
@@ -461,6 +492,18 @@ if sellOk
     alert(msg, alert.freq_once_per_bar_close)
     if showTradeLbl
         label.new(bar_index, trSL, "SELL\nEntry " + f_fmt(trEntry) + "\nSL " + f_fmt(trSL) + "\nTP1 " + f_fmt(trTP1) + "\nTP2 " + f_fmt(trTP2) + "\nR " + f_fmt(trR), color = color.new(colBear, 15), style = label.style_label_down, textcolor = color.white, size = size.small, textalign = text.align_left)
+
+// Module M1 : après TP1, le stop des 50 % restants passe au point mort.
+// accTp1 devient vrai à la clôture de la bougie où TP1 a été exécuté ;
+// le nouveau stop s'applique donc à partir de la bougie suivante.
+if useBE and not beDone and strategy.position_size != 0 and accTp1 and not buyOk and not sellOk
+    float beLvl = trEntry + trDir * beOffR * trR
+    if trDir == 1
+        strategy.exit("BUY-TP2", from_entry = "BUY", limit = trTP2, stop = beLvl, comment_profit = "TP2", comment_loss = "BE")
+    else
+        strategy.exit("SELL-TP2", from_entry = "SELL", limit = trTP2, stop = beLvl, comment_profit = "TP2", comment_loss = "BE")
+    trSL   := beLvl
+    beDone := true
 
 // ───────────────────────────────────────────────────────────────────────────
 // 6. AFFICHAGE
@@ -484,7 +527,7 @@ plot(structScore, "StructureScore", display = display.data_window)
 plot(bodyAtr, "Body / ATR", display = display.data_window)
 
 // ── Tableau d'état
-var table tInfo = table.new(position.top_right, 2, 12, bgcolor = color.new(color.black, 15), frame_color = color.new(color.gray, 40), frame_width = 1, border_color = color.new(color.gray, 70), border_width = 1)
+var table tInfo = table.new(position.top_right, 2, 13, bgcolor = color.new(color.black, 15), frame_color = color.new(color.gray, 40), frame_width = 1, border_color = color.new(color.gray, 70), border_width = 1)
 
 f_cell(table t, int c, int r, string s, color tc) =>
     table.cell(t, c, r, s, text_color = tc, text_size = size.small, text_halign = text.align_left)
@@ -509,7 +552,7 @@ if barstate.islast and showInfo
     color  sigCol = lastSigTxt == "BUY" ? colBull : lastSigTxt == "SELL" ? colBear : color.silver
     string scTxt  = str.tostring(biasScore, "0.00") + "  (T " + str.tostring(trendDir, "+0;-0") + " · P " + str.tostring(slopeScore, "+0.00;-0.00") + " · S " + str.tostring(structScore, "+0;-0") + ")"
 
-    f_cell(tInfo, 0, 0, "X-MATH OTE V1", color.white)
+    f_cell(tInfo, 0, 0, "X-MATH OTE V1.1", color.white)
     f_cell(tInfo, 1, 0, syminfo.ticker + " · " + timeframe.period, color.silver)
     f_cell(tInfo, 0, 1, "Biais", color.silver)
     f_cell(tInfo, 1, 1, biasTxt, biasCol)
@@ -525,7 +568,7 @@ if barstate.islast and showInfo
     f_cell(tInfo, 1, 6, sigTxt, sigCol)
     f_cell(tInfo, 0, 7, "Entry", color.silver)
     f_cell(tInfo, 1, 7, f_fmt(trEntry), color.white)
-    f_cell(tInfo, 0, 8, "SL", color.silver)
+    f_cell(tInfo, 0, 8, "SL (actif)", color.silver)
     f_cell(tInfo, 1, 8, f_fmt(trSL), color.red)
     f_cell(tInfo, 0, 9, "TP1 (" + str.tostring(tp1R) + "R)", color.silver)
     f_cell(tInfo, 1, 9, f_fmt(trTP1), color.lime)
@@ -533,6 +576,9 @@ if barstate.islast and showInfo
     f_cell(tInfo, 1, 10, f_fmt(trTP2), color.green)
     f_cell(tInfo, 0, 11, "R", color.silver)
     f_cell(tInfo, 1, 11, f_fmt(trR), color.white)
+    string modTxt = (useBE ? "M1 BE " : "") + (useClv ? "M2 CLV " : "") + (allowAsia and allowLondon and allowNY and allowOff ? "" : "M3 Sess ") + (volFilterOn ? "M4 Vol " : "")
+    f_cell(tInfo, 0, 12, "Modules actifs", color.silver)
+    f_cell(tInfo, 1, 12, modTxt == "" ? "aucun (V1 pur)" : modTxt, modTxt == "" ? color.silver : color.yellow)
 
 // ── Tableau de statistiques (en R, hors commissions)
 var table tStats = table.new(position.bottom_right, 10, 12, bgcolor = color.new(color.black, 15), frame_color = color.new(color.gray, 40), frame_width = 1, border_color = color.new(color.gray, 70), border_width = 1)

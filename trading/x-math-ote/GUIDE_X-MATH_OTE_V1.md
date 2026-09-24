@@ -1,4 +1,4 @@
-# X-MATH OTE V1 : guide technique et pédagogique
+# X-MATH OTE V1 / V1.1 : guide technique et pédagogique
 
 Fichier du code : [`X-MATH_OTE_V1.pine`](./X-MATH_OTE_V1.pine) (Pine Script v6, `strategy()`).
 
@@ -335,6 +335,99 @@ En dessous de **30 positions**, aucune conclusion. En dessous de 100, les conclu
 ### Pistes de V2, à tester une par une et seulement si les données le justifient
 
 - Fenêtre de confirmation : sweep sur la bougie k, displacement jusqu'à k + M (aujourd'hui M = 0).
-- Stop au point mort après TP1, ce qui change l'issue « TP1 puis SL » de 0R à +0,5R.
 - Filtre de session, si une session est nettement négative sur un grand échantillon.
 - Normalisation de la pente par `tanh`.
+
+---
+
+## 13. V1.1 : augmenter le taux de réussite sans se mentir
+
+### Ce qu'il faut savoir avant tout
+
+**Le taux de réussite seul ne dit pas si une stratégie gagne de l'argent.** Il faut le lire avec le rapport
+gain / perte :
+
+| Gain moyen / perte moyenne | Taux de réussite minimum pour ne pas perdre |
+| -------------------------- | ------------------------------------------- |
+| 0,5                        | 66,7 %                                      |
+| 1                          | 50 %                                        |
+| 2                          | 33,3 %                                      |
+| 3                          | 25 %                                        |
+
+Formule : taux minimum = 1 / (1 + gain moyen / perte moyenne).
+
+Il est très facile d'obtenir 80 % de trades gagnants : un TP à 0,3R et un stop large suffisent. La stratégie perd
+quand même, car les 20 % de pertes effacent tout. **Tout levier qui augmente le taux de réussite doit être jugé sur
+l'espérance en R, jamais sur le taux seul.**
+
+### Les leviers, classés du plus sain au plus dangereux
+
+| Levier                                  | Effet sur le taux | Effet sur l'espérance                      | Verdict                             |
+| --------------------------------------- | ----------------- | ------------------------------------------ | ----------------------------------- |
+| **M1 · Point mort après TP1**           | ↑ fort            | Incertain (voir ci-dessous)                | À tester en premier                 |
+| **M2 · Clôture en extrémité de bougie** | ↑ probable        | ↑ si le filtre retire surtout des perdants | À tester                            |
+| **M3 · Filtre de session**              | ↑ possible        | ↑ seulement si l'écart est réel            | Uniquement avec ≥ 30 trades/session |
+| **M4 · Filtre de volatilité**           | ↑ possible        | Idem                                       | Idem                                |
+| Baisser TP1 (ex. 0,5R)                  | ↑                 | ↓ souvent                                  | Déconseillé                         |
+| Élargir le SL                           | ↑                 | Neutre à ↓ (R plus grand, TP plus loin)    | Déconseillé                         |
+| Durcir tous les seuils à la fois        | ↑ sur le passé    | Illusion (sur-optimisation)                | **Interdit** par notre méthode      |
+
+### M1 · Stop au point mort après TP1
+
+⚠ **Modifie une règle existante** (la règle 9 : SL fixe). Désactivé par défaut.
+
+Les trois issues deviennent :
+
+| Issue                      | V1  | V1.1 avec M1 (décalage 0) |
+| -------------------------- | --- | ------------------------- |
+| SL avant TP1               | −1R | −1R                       |
+| TP1 puis retour à l'entrée | 0R  | **+0,5R** (gagnant)       |
+| TP1 puis TP2               | +2R | +2R                       |
+
+Tous les trades qui atteignent TP1 deviennent gagnants : **le taux de réussite par position devient égal au
+% TP1 atteint.** C'est le levier le plus puissant sur le taux.
+
+Le prix à payer : certains trades qui revenaient à l'entrée **puis** allaient à TP2 (+2R en V1) sont maintenant
+sortis à +0,5R. Seul le backtest dit lequel des deux effets l'emporte. Comparez le **R moyen**, pas le taux.
+
+Détail technique : TP1 est connu à la clôture de la bougie où il est exécuté. Le nouveau stop s'applique donc à
+partir de la bougie suivante. Si cette bougie ouvre déjà sous l'entrée, la sortie se fait à l'ouverture.
+
+### M2 · Clôture dans l'extrémité de la bougie
+
+Précise le displacement (règle 6C) par une condition supplémentaire :
+
+- BUY : (Close − Low) / (High − Low) ≥ 0,70, soit une clôture dans les 30 % hauts de la bougie ;
+- SELL : (High − Close) / (High − Low) ≥ 0,70.
+
+Idée : une bougie qui plonge sous la liquidité puis clôture tout en haut montre un rejet net. Une bougie de gros
+corps mais avec une longue mèche opposée est une confirmation plus faible.
+
+### M3 et M4 · Filtres de session et de volatilité
+
+Ils ne s'activent **qu'après lecture du tableau de statistiques**, et seulement si :
+
+1. la catégorie compte **au moins 30 positions** ;
+2. son R moyen est nettement négatif alors que les autres sont positifs ;
+3. l'écart se confirme sur une **seconde période** (hors échantillon).
+
+Sinon, couper une session revient à effacer les pertes du passé sans rien prédire de l'avenir.
+
+### Ordre de test imposé
+
+| Étape | Réglage                         | On compare au test… |
+| ----- | ------------------------------- | ------------------- |
+| 0     | Tous modules OFF (V1 pur)       | référence           |
+| 1     | M1 seul                         | étape 0             |
+| 2     | M2 seul (M1 remis comme décidé) | meilleur de 0 / 1   |
+| 3     | M3 si le tableau le justifie    | meilleur précédent  |
+| 4     | M4 si le tableau le justifie    | meilleur précédent  |
+
+Un module est **conservé** seulement si, sur la période de test **et** sur la période hors échantillon :
+
+- le R moyen par position ne baisse pas ;
+- le drawdown n'augmente pas de plus de 20 % ;
+- le nombre de positions reste ≥ 30.
+
+La ligne « Modules actifs » du tableau d'état rappelle toujours ce qui est activé, pour ne jamais comparer deux
+captures prises avec des réglages différents sans le savoir.
