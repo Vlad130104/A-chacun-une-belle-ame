@@ -1,0 +1,576 @@
+//@version=6
+// ═══════════════════════════════════════════════════════════════════════════
+//  X-MATH OTE V1
+//  Stratégie originale : Biais → Swing → Impulsion → Fibonacci → OTE
+//  → Confirmation (sweep + displacement) → Entrée → SL / TP en multiples de R
+//
+//  Principes :
+//   • toutes les règles sont numériques et paramétrables ;
+//   • aucun request.security(), aucun lookahead : pas de repaint volontaire ;
+//   • un pivot n'est utilisé qu'une fois confirmé (swingLen barres plus tard) ;
+//   • une seule entrée par setup, jamais d'entrée si une position est ouverte.
+// ═══════════════════════════════════════════════════════════════════════════
+strategy(title = "X-MATH OTE V1", shorttitle = "XMATH-OTE V1", overlay = true,
+     pyramiding = 0, process_orders_on_close = true, calc_on_every_tick = false,
+     initial_capital = 10000, default_qty_type = strategy.percent_of_equity, default_qty_value = 10,
+     commission_type = strategy.commission.percent, commission_value = 0.0, slippage = 0,
+     max_bars_back = 5000, max_boxes_count = 500, max_lines_count = 500, max_labels_count = 500)
+
+// ───────────────────────────────────────────────────────────────────────────
+// CONSTANTES
+// ───────────────────────────────────────────────────────────────────────────
+const string LIQ_N      = "Plus bas / plus haut des N bougies précédentes"
+const string LIQ_PIVOT  = "Dernier swing (pivot) confirmé"
+const string SIZE_RISK  = "Risque fixe en % du capital"
+const string SIZE_PROPS = "Propriétés de la stratégie"
+const float  BE_TOL     = 0.001   // |R| en dessous duquel un trade est compté « à l'équilibre »
+
+const string G_BIAS  = "1 · Biais"
+const string G_SWING = "2 · Swing & impulsion"
+const string G_FIB   = "3 · Fibonacci & OTE"
+const string G_CONF  = "4 · Confirmation"
+const string G_RISK  = "5 · Risque, SL & TP"
+const string G_VIS   = "6 · Affichage"
+
+// ───────────────────────────────────────────────────────────────────────────
+// INPUTS
+// ───────────────────────────────────────────────────────────────────────────
+int   emaFastLen  = input.int(50, "EMA rapide", minval = 1, group = G_BIAS)
+int   emaSlowLen  = input.int(200, "EMA lente", minval = 2, group = G_BIAS)
+int   slopeLen    = input.int(10, "Pente : recul n (barres)", minval = 1, group = G_BIAS, tooltip = "Slope = (EMA rapide − EMA rapide[n]) / ATR")
+float slopeSat    = input.float(1.0, "Pente : saturation (× ATR → score ±1)", minval = 0.01, step = 0.1, group = G_BIAS, tooltip = "SlopeScore = max(−1, min(+1, Slope / saturation))")
+float wTrend      = input.float(0.40, "Poids Tendance", minval = 0.0, maxval = 1.0, step = 0.05, group = G_BIAS)
+float wSlope      = input.float(0.30, "Poids Pente", minval = 0.0, maxval = 1.0, step = 0.05, group = G_BIAS)
+float wStruct     = input.float(0.30, "Poids Structure", minval = 0.0, maxval = 1.0, step = 0.05, group = G_BIAS)
+float biasThr     = input.float(0.60, "Seuil de biais (|BiasScore| ≥)", minval = 0.0, maxval = 1.0, step = 0.05, group = G_BIAS)
+
+int   swingLen    = input.int(3, "Swing Length (pivots)", minval = 1, group = G_SWING)
+int   atrLen      = input.int(14, "Période ATR", minval = 1, group = G_SWING)
+float impulseMin  = input.float(1.50, "Impulsion minimale (|H − L| / ATR ≥)", minval = 0.0, step = 0.1, group = G_SWING)
+int   setupExpiry = input.int(0, "Expiration du setup (barres, 0 = aucune)", minval = 0, group = G_SWING)
+
+float oteIn1      = input.float(0.62, "OTE : niveau 1", minval = 0.0, maxval = 1.0, step = 0.001, group = G_FIB)
+float oteIn2      = input.float(0.786, "OTE : niveau 2", minval = 0.0, maxval = 1.0, step = 0.001, group = G_FIB)
+
+string liqMode    = input.string(LIQ_N, "Niveau de liquidité du sweep", options = [LIQ_N, LIQ_PIVOT], group = G_CONF)
+int    liqLen     = input.int(10, "N bougies (mode « N bougies »)", minval = 1, group = G_CONF)
+float  dispMin    = input.float(0.60, "Displacement : corps / ATR ≥", minval = 0.0, step = 0.05, group = G_CONF)
+
+float  slBuf      = input.float(0.10, "Buffer SL (× ATR)", minval = 0.0, step = 0.01, group = G_RISK)
+float  tp1R       = input.float(1.0, "TP1 (multiple de R)", minval = 0.1, step = 0.1, group = G_RISK)
+float  tp2R       = input.float(3.0, "TP2 (multiple de R)", minval = 0.1, step = 0.1, group = G_RISK)
+float  tp1Pct     = input.float(50.0, "Part fermée à TP1 (%)", minval = 1.0, maxval = 99.0, step = 1.0, group = G_RISK)
+string sizeMode   = input.string(SIZE_RISK, "Taille de position", options = [SIZE_RISK, SIZE_PROPS], group = G_RISK)
+float  riskPct    = input.float(1.0, "Risque par trade (% du capital)", minval = 0.01, step = 0.1, group = G_RISK)
+
+bool  showEma      = input.bool(true, "EMA rapide / lente", group = G_VIS)
+bool  showPivots   = input.bool(true, "Swings (HH / HL / LH / LL)", group = G_VIS)
+bool  showOte      = input.bool(true, "Zone OTE", group = G_VIS)
+bool  showFib      = input.bool(true, "Impulsion + Fibonacci 50 % / 70,5 % / 100 %", group = G_VIS)
+bool  showLevels   = input.bool(true, "Entry / SL / TP1 / TP2", group = G_VIS)
+bool  showTradeLbl = input.bool(true, "Étiquette détaillée à l'entrée", group = G_VIS)
+bool  showInfo     = input.bool(true, "Tableau d'état", group = G_VIS)
+bool  showStats    = input.bool(true, "Tableau de statistiques (en R)", group = G_VIS)
+color colBull      = input.color(#089981, "Couleur BUY", group = G_VIS)
+color colBear      = input.color(#F23645, "Couleur SELL", group = G_VIS)
+
+float oteStart = math.min(oteIn1, oteIn2)
+float oteEnd   = math.max(oteIn1, oteIn2)
+
+// ───────────────────────────────────────────────────────────────────────────
+// TYPE : SETUP
+//   dir = +1 (impulsion haussière L → H, on cherche un BUY)
+//   dir = −1 (impulsion baissière H → L, on cherche un SELL)
+// ───────────────────────────────────────────────────────────────────────────
+type Setup
+    int   dir
+    float L
+    float H
+    int   lBar
+    int   hBar
+    int   startBar
+    float oteA
+    float oteB
+    bool  active = true
+    box   zone
+    line  lnImp
+    line  ln50
+    line  ln705
+    line  ln100
+
+// F(r) : BUY  → H − (H − L) × r      SELL → L + (H − L) × r
+f_fib(int dir, float L, float H, float r) =>
+    dir == 1 ? H - (H - L) * r : L + (H - L) * r
+
+f_newSetup(int dir, float L, float H, int lBar, int hBar) =>
+    Setup s = Setup.new(dir = dir, L = L, H = H, lBar = lBar, hBar = hBar, startBar = bar_index, oteA = f_fib(dir, L, H, oteStart), oteB = f_fib(dir, L, H, oteEnd))
+    int   left = math.max(lBar, hBar)
+    color c    = dir == 1 ? colBull : colBear
+    if showOte
+        s.zone := box.new(left, math.max(s.oteA, s.oteB), bar_index, math.min(s.oteA, s.oteB), border_color = color.new(c, 40), bgcolor = color.new(c, 85), text = dir == 1 ? "OTE BUY" : "OTE SELL", text_size = size.small, text_color = color.new(c, 10), text_halign = text.align_right, text_valign = text.align_center)
+    if showFib
+        float f50  = f_fib(dir, L, H, 0.5)
+        float f705 = f_fib(dir, L, H, 0.705)
+        float f100 = f_fib(dir, L, H, 1.0)
+        s.lnImp := line.new(math.min(lBar, hBar), dir == 1 ? L : H, left, dir == 1 ? H : L, color = color.new(c, 40), style = line.style_dashed, width = 1)
+        s.ln50  := line.new(left, f50, bar_index, f50, color = color.new(color.gray, 30), style = line.style_dotted, width = 1)
+        s.ln705 := line.new(left, f705, bar_index, f705, color = color.new(c, 30), style = line.style_dotted, width = 1)
+        s.ln100 := line.new(left, f100, bar_index, f100, color = color.new(c, 30), style = line.style_solid, width = 1)
+    s
+
+// Prolonge les dessins d'un setup encore actif jusqu'à la barre courante
+f_extend(Setup s) =>
+    if not na(s)
+        if s.active
+            if not na(s.zone)
+                box.set_right(s.zone, bar_index)
+            if not na(s.ln50)
+                line.set_x2(s.ln50, bar_index)
+            if not na(s.ln705)
+                line.set_x2(s.ln705, bar_index)
+            if not na(s.ln100)
+                line.set_x2(s.ln100, bar_index)
+
+f_fmt(float x) =>
+    na(x) ? "—" : str.tostring(x, format.mintick)
+
+// Sessions (heure d'ouverture de la bougie d'entrée, UTC)
+//   3 = Asie 00–07 · 4 = Londres 07–13 · 5 = New York 13–21 · 6 = Hors session 21–24
+f_session(int h) =>
+    h < 7 ? 3 : h < 13 ? 4 : h < 21 ? 5 : 6
+
+// Régime de volatilité : rang percentile de l'ATR sur 100 barres
+//   7 = basse (< 33,3) · 8 = moyenne · 9 = haute (> 66,7)
+f_volRegime(float pr) =>
+    na(pr) ? -1 : pr < 33.34 ? 7 : pr <= 66.67 ? 8 : 9
+
+// ───────────────────────────────────────────────────────────────────────────
+// SÉRIES DE BASE
+// ───────────────────────────────────────────────────────────────────────────
+float atr     = ta.atr(atrLen)
+float emaFast = ta.ema(close, emaFastLen)
+float emaSlow = ta.ema(close, emaSlowLen)
+float ph      = ta.pivothigh(high, swingLen, swingLen)
+float pl      = ta.pivotlow(low, swingLen, swingLen)
+float nLow    = ta.lowest(low, liqLen)[1]
+float nHigh   = ta.highest(high, liqLen)[1]
+float atrRank = ta.percentrank(atr, 100)
+
+// ───────────────────────────────────────────────────────────────────────────
+// SUIVI DES TRADES CLÔTURÉS → STATISTIQUES EN R
+// (exécuté AVANT toute nouvelle entrée pour que trR soit encore celui du trade clôturé)
+// ───────────────────────────────────────────────────────────────────────────
+var float  trEntry = na
+var float  trSL    = na
+var float  trTP1   = na
+var float  trTP2   = na
+var float  trR     = na
+var int    trDir   = 0
+var int    trSess  = -1
+var int    trVol   = -1
+
+var int    processedClosed = 0
+var float  accNum  = 0.0
+var float  accDen  = 0.0
+var bool   accTp1  = false
+var bool   accTp2  = false
+var int    lossStreak    = 0
+var int    maxLossStreak = 0
+
+// Index : 0 TOTAL · 1 BUY · 2 SELL · 3-6 sessions · 7-9 volatilité
+var array<float> stN   = array.new<float>(10, 0.0)
+var array<float> stW   = array.new<float>(10, 0.0)
+var array<float> stL   = array.new<float>(10, 0.0)
+var array<float> stGW  = array.new<float>(10, 0.0)
+var array<float> stGL  = array.new<float>(10, 0.0)
+var array<float> stSum = array.new<float>(10, 0.0)
+var array<float> stT1  = array.new<float>(10, 0.0)
+var array<float> stT2  = array.new<float>(10, 0.0)
+
+f_record(int k, float r, bool t1, bool t2) =>
+    if k >= 0
+        array.set(stN, k, array.get(stN, k) + 1)
+        array.set(stSum, k, array.get(stSum, k) + r)
+        if r > BE_TOL
+            array.set(stW, k, array.get(stW, k) + 1)
+            array.set(stGW, k, array.get(stGW, k) + r)
+        if r < -BE_TOL
+            array.set(stL, k, array.get(stL, k) + 1)
+            array.set(stGL, k, array.get(stGL, k) - r)
+        if t1
+            array.set(stT1, k, array.get(stT1, k) + 1)
+        if t2
+            array.set(stT2, k, array.get(stT2, k) + 1)
+
+if strategy.closedtrades > processedClosed
+    for i = processedClosed to strategy.closedtrades - 1
+        float sz  = strategy.closedtrades.size(i)
+        float pts = (strategy.closedtrades.exit_price(i) - strategy.closedtrades.entry_price(i)) * math.sign(sz)
+        accNum += pts * math.abs(sz)
+        accDen += math.abs(sz)
+        string ec = strategy.closedtrades.exit_comment(i)
+        if ec == "TP1"
+            accTp1 := true
+        if ec == "TP2"
+            accTp2 := true
+    processedClosed := strategy.closedtrades
+
+// Position entièrement fermée → on calcule le R réalisé (pondéré par les tailles partielles)
+if strategy.opentrades == 0 and accDen > 0
+    if trR > 0
+        float rr = accNum / accDen / trR
+        f_record(0, rr, accTp1, accTp2)
+        f_record(trDir == 1 ? 1 : 2, rr, accTp1, accTp2)
+        f_record(trSess, rr, accTp1, accTp2)
+        f_record(trVol, rr, accTp1, accTp2)
+        if rr < -BE_TOL
+            lossStreak += 1
+            maxLossStreak := math.max(maxLossStreak, lossStreak)
+        else
+            lossStreak := 0
+    accNum := 0.0
+    accDen := 0.0
+    accTp1 := false
+    accTp2 := false
+
+// ───────────────────────────────────────────────────────────────────────────
+// 2. SWINGS (pivots confirmés uniquement)
+// ───────────────────────────────────────────────────────────────────────────
+var float lastHigh    = na
+var float prevHigh    = na
+var int   lastHighBar = na
+var float lastLow     = na
+var float prevLow     = na
+var int   lastLowBar  = na
+
+if not na(ph)
+    prevHigh    := lastHigh
+    lastHigh    := ph
+    lastHighBar := bar_index - swingLen
+    if showPivots
+        string tH = na(prevHigh) ? "SH" : ph > prevHigh ? "HH" : ph < prevHigh ? "LH" : "EH"
+        label.new(lastHighBar, ph, tH, color = color.new(color.white, 100), style = label.style_label_down, textcolor = color.new(colBear, 0), size = size.tiny)
+
+if not na(pl)
+    prevLow    := lastLow
+    lastLow    := pl
+    lastLowBar := bar_index - swingLen
+    if showPivots
+        string tL = na(prevLow) ? "SL" : pl > prevLow ? "HL" : pl < prevLow ? "LL" : "EL"
+        label.new(lastLowBar, pl, tL, color = color.new(color.white, 100), style = label.style_label_up, textcolor = color.new(colBull, 0), size = size.tiny)
+
+// Structure : +1 = HH + HL · −1 = LH + LL · 0 sinon
+float structScore = 0.0
+if not na(prevHigh) and not na(prevLow)
+    if lastHigh > prevHigh and lastLow > prevLow
+        structScore := 1.0
+    else if lastHigh < prevHigh and lastLow < prevLow
+        structScore := -1.0
+
+// ───────────────────────────────────────────────────────────────────────────
+// 1. BIAIS
+// ───────────────────────────────────────────────────────────────────────────
+float trendDir   = emaFast > emaSlow ? 1.0 : emaFast < emaSlow ? -1.0 : 0.0
+float slopeRaw   = atr > 0 ? (emaFast - emaFast[slopeLen]) / atr : na
+float slopeScore = na(slopeRaw) ? 0.0 : math.max(-1.0, math.min(1.0, slopeRaw / slopeSat))
+bool  biasWarm   = bar_index >= emaSlowLen and not na(slopeRaw)
+float biasScore  = biasWarm ? wTrend * trendDir + wSlope * slopeScore + wStruct * structScore : 0.0
+bool  biasBull   = biasWarm and biasScore >= biasThr and biasScore > 0
+bool  biasBear   = biasWarm and biasScore <= -biasThr and biasScore < 0
+
+// ───────────────────────────────────────────────────────────────────────────
+// 3. SETUPS : IMPULSION VALIDÉE + FIBONACCI + OTE
+// ───────────────────────────────────────────────────────────────────────────
+var Setup bull = na
+var Setup bear = na
+
+// Setup haussier : créé à la confirmation d'un swing high précédé d'un swing low
+if not na(ph) and not na(lastLow) and lastLowBar < lastHighBar and atr > 0
+    bool replaceOk = na(bull) or not bull.active or ph > bull.H
+    if replaceOk
+        if not na(bull)
+            bull.active := false
+        float L     = lastLow
+        float H     = ph
+        int   offL  = bar_index - lastLowBar
+        bool  valid = (H - L) / atr >= impulseMin and offL <= 4900
+        // L et H doivent être les extrêmes de la jambe L → H
+        if valid
+            for i = swingLen to offL
+                if high[i] > H or low[i] < L
+                    valid := false
+                    break
+        // Pas de clôture sous L entre le pivot H et sa confirmation
+        if valid
+            for i = 0 to swingLen - 1
+                if close[i] < L
+                    valid := false
+                    break
+        if valid
+            bull := f_newSetup(1, L, H, lastLowBar, lastHighBar)
+
+// Setup baissier : créé à la confirmation d'un swing low précédé d'un swing high
+if not na(pl) and not na(lastHigh) and lastHighBar < lastLowBar and atr > 0
+    bool replaceOk = na(bear) or not bear.active or pl < bear.L
+    if replaceOk
+        if not na(bear)
+            bear.active := false
+        float L     = pl
+        float H     = lastHigh
+        int   offH  = bar_index - lastHighBar
+        bool  valid = (H - L) / atr >= impulseMin and offH <= 4900
+        // H et L doivent être les extrêmes de la jambe H → L
+        if valid
+            for i = swingLen to offH
+                if high[i] > H or low[i] < L
+                    valid := false
+                    break
+        // Pas de clôture au-dessus de H entre le pivot L et sa confirmation
+        if valid
+            for i = 0 to swingLen - 1
+                if close[i] > H
+                    valid := false
+                    break
+        if valid
+            bear := f_newSetup(-1, L, H, lastLowBar, lastHighBar)
+
+// Invalidation (clôture au-delà du 100 %) et expiration optionnelle
+if not na(bull)
+    if bull.active
+        if close < bull.L or (setupExpiry > 0 and bar_index - bull.startBar > setupExpiry)
+            bull.active := false
+if not na(bear)
+    if bear.active
+        if close > bear.H or (setupExpiry > 0 and bar_index - bear.startBar > setupExpiry)
+            bear.active := false
+
+f_extend(bull)
+f_extend(bear)
+
+// ───────────────────────────────────────────────────────────────────────────
+// 4. CONFIRMATION + SIGNAL
+// ───────────────────────────────────────────────────────────────────────────
+bool  flat    = strategy.position_size == 0
+float liqLow  = liqMode == LIQ_N ? nLow : lastLow
+float liqHigh = liqMode == LIQ_N ? nHigh : lastHigh
+float bodyAtr = atr > 0 ? math.abs(close - open) / atr : 0.0
+
+bool  buyOk  = false
+bool  sellOk = false
+float sE  = na
+float sSL = na
+float sR  = na
+float sQ  = na
+
+// BUY
+if biasBull and flat and not na(bull)
+    if bull.active and bar_index > bull.startBar
+        float zTop  = math.max(bull.oteA, bull.oteB)
+        float zBot  = math.min(bull.oteA, bull.oteB)
+        bool  inOte = low <= zTop and high >= zBot
+        bool  sweep = not na(liqLow) and low < liqLow and close > liqLow
+        bool  disp  = close > open and bodyAtr >= dispMin
+        if inOte and sweep and disp
+            float e  = close
+            float sl = low - slBuf * atr
+            float r  = e - sl
+            float q  = na
+            if sizeMode == SIZE_RISK and r > 0
+                q := strategy.equity * riskPct / 100.0 / (r * syminfo.pointvalue)
+                float mc = nz(syminfo.mincontract)
+                if mc > 0
+                    q := math.floor(q / mc + 1e-9) * mc
+            if r > 0 and (sizeMode == SIZE_PROPS or q > 0)
+                buyOk := true
+                sE    := e
+                sSL   := sl
+                sR    := r
+                sQ    := q
+
+// SELL (miroir exact du BUY)
+if biasBear and flat and not na(bear)
+    if bear.active and bar_index > bear.startBar
+        float zTop  = math.max(bear.oteA, bear.oteB)
+        float zBot  = math.min(bear.oteA, bear.oteB)
+        bool  inOte = high >= zBot and low <= zTop
+        bool  sweep = not na(liqHigh) and high > liqHigh and close < liqHigh
+        bool  disp  = close < open and bodyAtr >= dispMin
+        if inOte and sweep and disp
+            float e  = close
+            float sl = high + slBuf * atr
+            float r  = sl - e
+            float q  = na
+            if sizeMode == SIZE_RISK and r > 0
+                q := strategy.equity * riskPct / 100.0 / (r * syminfo.pointvalue)
+                float mc = nz(syminfo.mincontract)
+                if mc > 0
+                    q := math.floor(q / mc + 1e-9) * mc
+            if r > 0 and (sizeMode == SIZE_PROPS or q > 0)
+                sellOk := true
+                sE     := e
+                sSL    := sl
+                sR     := r
+                sQ     := q
+
+// ───────────────────────────────────────────────────────────────────────────
+// 5. ORDRES + ALERTES
+// ───────────────────────────────────────────────────────────────────────────
+var string lastSigTxt  = "—"
+var int    lastSigTime = na
+
+f_msg(string side, float e, float sl, float tp1, float tp2, float r, float q) =>
+    string qs = na(q) ? "null" : str.tostring(q)
+    "{\"project\":\"X-MATH OTE\",\"version\":\"V1\",\"signal\":\"" + side + "\",\"symbol\":\"" + syminfo.tickerid + "\",\"timeframe\":\"" + timeframe.period + "\",\"time\":\"" + str.format_time(time_close, "yyyy-MM-dd'T'HH:mm:ss'Z'", "UTC") + "\",\"entry\":" + str.tostring(e, format.mintick) + ",\"sl\":" + str.tostring(sl, format.mintick) + ",\"tp1\":" + str.tostring(tp1, format.mintick) + ",\"tp2\":" + str.tostring(tp2, format.mintick) + ",\"r\":" + str.tostring(r, format.mintick) + ",\"tp1_close_pct\":" + str.tostring(tp1Pct) + ",\"qty\":" + qs + "}"
+
+if buyOk
+    bull.active := false
+    trDir   := 1
+    trEntry := sE
+    trSL    := sSL
+    trR     := sR
+    trTP1   := sE + tp1R * sR
+    trTP2   := sE + tp2R * sR
+    trSess  := f_session(hour(time, "UTC"))
+    trVol   := f_volRegime(atrRank)
+    lastSigTxt  := "BUY"
+    lastSigTime := time
+    string msg = f_msg("BUY", trEntry, trSL, trTP1, trTP2, trR, sQ)
+    strategy.entry("BUY", strategy.long, qty = sQ, comment = "BUY", alert_message = msg)
+    strategy.exit("BUY-TP1", from_entry = "BUY", qty_percent = tp1Pct, limit = trTP1, stop = trSL, comment_profit = "TP1", comment_loss = "SL")
+    strategy.exit("BUY-TP2", from_entry = "BUY", limit = trTP2, stop = trSL, comment_profit = "TP2", comment_loss = "SL")
+    alert(msg, alert.freq_once_per_bar_close)
+    if showTradeLbl
+        label.new(bar_index, trSL, "BUY\nEntry " + f_fmt(trEntry) + "\nSL " + f_fmt(trSL) + "\nTP1 " + f_fmt(trTP1) + "\nTP2 " + f_fmt(trTP2) + "\nR " + f_fmt(trR), color = color.new(colBull, 15), style = label.style_label_up, textcolor = color.white, size = size.small, textalign = text.align_left)
+
+if sellOk
+    bear.active := false
+    trDir   := -1
+    trEntry := sE
+    trSL    := sSL
+    trR     := sR
+    trTP1   := sE - tp1R * sR
+    trTP2   := sE - tp2R * sR
+    trSess  := f_session(hour(time, "UTC"))
+    trVol   := f_volRegime(atrRank)
+    lastSigTxt  := "SELL"
+    lastSigTime := time
+    string msg = f_msg("SELL", trEntry, trSL, trTP1, trTP2, trR, sQ)
+    strategy.entry("SELL", strategy.short, qty = sQ, comment = "SELL", alert_message = msg)
+    strategy.exit("SELL-TP1", from_entry = "SELL", qty_percent = tp1Pct, limit = trTP1, stop = trSL, comment_profit = "TP1", comment_loss = "SL")
+    strategy.exit("SELL-TP2", from_entry = "SELL", limit = trTP2, stop = trSL, comment_profit = "TP2", comment_loss = "SL")
+    alert(msg, alert.freq_once_per_bar_close)
+    if showTradeLbl
+        label.new(bar_index, trSL, "SELL\nEntry " + f_fmt(trEntry) + "\nSL " + f_fmt(trSL) + "\nTP1 " + f_fmt(trTP1) + "\nTP2 " + f_fmt(trTP2) + "\nR " + f_fmt(trR), color = color.new(colBear, 15), style = label.style_label_down, textcolor = color.white, size = size.small, textalign = text.align_left)
+
+// ───────────────────────────────────────────────────────────────────────────
+// 6. AFFICHAGE
+// ───────────────────────────────────────────────────────────────────────────
+plot(showEma ? emaFast : na, "EMA rapide", color.new(color.orange, 0), 2)
+plot(showEma ? emaSlow : na, "EMA lente", color.new(color.blue, 0), 2)
+
+plotshape(buyOk, "BUY", shape.labelup, location.belowbar, colBull, text = "BUY", textcolor = color.white, size = size.small)
+plotshape(sellOk, "SELL", shape.labeldown, location.abovebar, colBear, text = "SELL", textcolor = color.white, size = size.small)
+
+bool tradeOn = showLevels and (strategy.position_size != 0 or buyOk or sellOk)
+plot(tradeOn ? trEntry : na, "Entry", color.new(color.gray, 0), 1, plot.style_linebr)
+plot(tradeOn ? trSL : na, "SL", color.new(color.red, 0), 2, plot.style_linebr)
+plot(tradeOn ? trTP1 : na, "TP1", color.new(color.lime, 0), 1, plot.style_linebr)
+plot(tradeOn ? trTP2 : na, "TP2", color.new(color.green, 0), 2, plot.style_linebr)
+
+// Valeurs de contrôle visibles dans la fenêtre de données
+plot(biasScore, "BiasScore", display = display.data_window)
+plot(slopeScore, "SlopeScore", display = display.data_window)
+plot(structScore, "StructureScore", display = display.data_window)
+plot(bodyAtr, "Body / ATR", display = display.data_window)
+
+// ── Tableau d'état
+var table tInfo = table.new(position.top_right, 2, 12, bgcolor = color.new(color.black, 15), frame_color = color.new(color.gray, 40), frame_width = 1, border_color = color.new(color.gray, 70), border_width = 1)
+
+f_cell(table t, int c, int r, string s, color tc) =>
+    table.cell(t, c, r, s, text_color = tc, text_size = size.small, text_halign = text.align_left)
+
+if barstate.islast and showInfo
+    string biasTxt = biasBull ? "HAUSSIER" : biasBear ? "BAISSIER" : "NEUTRE"
+    color  biasCol = biasBull ? colBull : biasBear ? colBear : color.silver
+    string hiTxt   = na(prevHigh) ? "—" : lastHigh > prevHigh ? "HH" : lastHigh < prevHigh ? "LH" : "EH"
+    string loTxt   = na(prevLow) ? "—" : lastLow > prevLow ? "HL" : lastLow < prevLow ? "LL" : "EL"
+    string oteTxt  = ""
+    if not na(bull)
+        if bull.active
+            oteTxt += "BUY " + f_fmt(math.min(bull.oteA, bull.oteB)) + " – " + f_fmt(math.max(bull.oteA, bull.oteB))
+    if not na(bear)
+        if bear.active
+            oteTxt += (oteTxt == "" ? "" : "\n") + "SELL " + f_fmt(math.min(bear.oteA, bear.oteB)) + " – " + f_fmt(math.max(bear.oteA, bear.oteB))
+    oteTxt := oteTxt == "" ? "aucune" : oteTxt
+    bool   bullOn = not na(bull) and bull.active
+    bool   bearOn = not na(bear) and bear.active
+    string stTxt  = strategy.position_size > 0 ? "EN POSITION BUY" : strategy.position_size < 0 ? "EN POSITION SELL" : bullOn and bearOn ? "SETUPS BUY + SELL ACTIFS" : bullOn ? "SETUP BUY ACTIF" : bearOn ? "SETUP SELL ACTIF" : "ATTENTE DE SETUP"
+    string sigTxt = na(lastSigTime) ? "—" : lastSigTxt + " · " + str.format_time(lastSigTime, "yyyy-MM-dd HH:mm", syminfo.timezone)
+    color  sigCol = lastSigTxt == "BUY" ? colBull : lastSigTxt == "SELL" ? colBear : color.silver
+    string scTxt  = str.tostring(biasScore, "0.00") + "  (T " + str.tostring(trendDir, "+0;-0") + " · P " + str.tostring(slopeScore, "+0.00;-0.00") + " · S " + str.tostring(structScore, "+0;-0") + ")"
+
+    f_cell(tInfo, 0, 0, "X-MATH OTE V1", color.white)
+    f_cell(tInfo, 1, 0, syminfo.ticker + " · " + timeframe.period, color.silver)
+    f_cell(tInfo, 0, 1, "Biais", color.silver)
+    f_cell(tInfo, 1, 1, biasTxt, biasCol)
+    f_cell(tInfo, 0, 2, "Bias Score", color.silver)
+    f_cell(tInfo, 1, 2, scTxt, color.white)
+    f_cell(tInfo, 0, 3, "Swing", color.silver)
+    f_cell(tInfo, 1, 3, "H " + f_fmt(lastHigh) + " (" + hiTxt + ")  ·  L " + f_fmt(lastLow) + " (" + loTxt + ")", color.white)
+    f_cell(tInfo, 0, 4, "OTE", color.silver)
+    f_cell(tInfo, 1, 4, oteTxt, color.white)
+    f_cell(tInfo, 0, 5, "État", color.silver)
+    f_cell(tInfo, 1, 5, stTxt, color.white)
+    f_cell(tInfo, 0, 6, "Dernier signal", color.silver)
+    f_cell(tInfo, 1, 6, sigTxt, sigCol)
+    f_cell(tInfo, 0, 7, "Entry", color.silver)
+    f_cell(tInfo, 1, 7, f_fmt(trEntry), color.white)
+    f_cell(tInfo, 0, 8, "SL", color.silver)
+    f_cell(tInfo, 1, 8, f_fmt(trSL), color.red)
+    f_cell(tInfo, 0, 9, "TP1 (" + str.tostring(tp1R) + "R)", color.silver)
+    f_cell(tInfo, 1, 9, f_fmt(trTP1), color.lime)
+    f_cell(tInfo, 0, 10, "TP2 (" + str.tostring(tp2R) + "R)", color.silver)
+    f_cell(tInfo, 1, 10, f_fmt(trTP2), color.green)
+    f_cell(tInfo, 0, 11, "R", color.silver)
+    f_cell(tInfo, 1, 11, f_fmt(trR), color.white)
+
+// ── Tableau de statistiques (en R, hors commissions)
+var table tStats = table.new(position.bottom_right, 10, 12, bgcolor = color.new(color.black, 15), frame_color = color.new(color.gray, 40), frame_width = 1, border_color = color.new(color.gray, 70), border_width = 1)
+var array<string> catNames = array.from("TOTAL", "BUY", "SELL", "Asie 00-07 UTC", "Londres 07-13", "New York 13-21", "Hors 21-24", "Vol. basse", "Vol. moyenne", "Vol. haute")
+
+f_sc(int c, int r, string s, color tc) =>
+    table.cell(tStats, c, r, s, text_color = tc, text_size = size.tiny, text_halign = text.align_center)
+
+if barstate.islast and showStats
+    f_sc(0, 0, "Catégorie", color.silver)
+    f_sc(1, 0, "Trades", color.silver)
+    f_sc(2, 0, "Win %", color.silver)
+    f_sc(3, 0, "PF (R)", color.silver)
+    f_sc(4, 0, "R moyen", color.silver)
+    f_sc(5, 0, "Gain moy", color.silver)
+    f_sc(6, 0, "Perte moy", color.silver)
+    f_sc(7, 0, "Σ R", color.silver)
+    f_sc(8, 0, "TP1 %", color.silver)
+    f_sc(9, 0, "TP2 %", color.silver)
+    for k = 0 to 9
+        float n  = array.get(stN, k)
+        float w  = array.get(stW, k)
+        float lo = array.get(stL, k)
+        float gw = array.get(stGW, k)
+        float gl = array.get(stGL, k)
+        float sm = array.get(stSum, k)
+        string pf = gl > 0 ? str.tostring(gw / gl, "0.00") : gw > 0 ? "∞" : "—"
+        color  rc = sm > 0 ? colBull : sm < 0 ? colBear : color.white
+        f_sc(0, k + 1, array.get(catNames, k), color.white)
+        f_sc(1, k + 1, str.tostring(n, "0"), color.white)
+        f_sc(2, k + 1, n > 0 ? str.tostring(100 * w / n, "0.0") : "—", color.white)
+        f_sc(3, k + 1, pf, color.white)
+        f_sc(4, k + 1, n > 0 ? str.tostring(sm / n, "+0.00;-0.00") : "—", rc)
+        f_sc(5, k + 1, w > 0 ? str.tostring(gw / w, "+0.00") : "—", colBull)
+        f_sc(6, k + 1, lo > 0 ? str.tostring(-gl / lo, "+0.00;-0.00") : "—", colBear)
+        f_sc(7, k + 1, str.tostring(sm, "+0.00;-0.00"), rc)
+        f_sc(8, k + 1, n > 0 ? str.tostring(100 * array.get(stT1, k) / n, "0") : "—", color.white)
+        f_sc(9, k + 1, n > 0 ? str.tostring(100 * array.get(stT2, k) / n, "0") : "—", color.white)
+    f_sc(0, 11, "Pertes consécutives", color.silver)
+    f_sc(1, 11, "max " + str.tostring(maxLossStreak), colBear)
+    f_sc(2, 11, "en cours " + str.tostring(lossStreak), color.white)
