@@ -1,0 +1,601 @@
+//@version=6
+// ═══════════════════════════════════════════════════════════════════════════
+//  KOSS SMART SYNTH  —  version de Koss Smart pour les indices synthétiques
+//  (Deriv : Volatility, Boom, Crash, Jump, Step, Range Break… disponibles
+//  dans TradingView sous le préfixe DERIV:).
+//
+//  Différences avec Koss Smart Strategy :
+//   • pas de sessions ni de killzones (marchés ouverts 24 h/24, 7 j/7) ;
+//   • détection de la famille d'indice (Auto) et sens de trade adapté ;
+//   • détection des pics (Boom / Crash / Jump) : impulsions avec pic ignorées,
+//     pause après un pic ;
+//   • impulsion minimale en ATR, durée maximale d'un trade ;
+//   • coûts : commission 0, spread à saisir en slippage (aide dans le panneau) ;
+//   • MODE CONTRÔLE : inverse tous les trades pour vérifier si le résultat
+//     vient du modèle ou du hasard.
+//
+//  AVERTISSEMENT : ces indices sont générés par un générateur de nombres
+//  aléatoires. Les concepts SMC (OB, FVG, liquidité) n'y ont pas de base
+//  théorique. Cette version sert à TESTER honnêtement, pas à promettre un gain.
+//  Aucun repaint : toute la logique est exécutée à la clôture de bougie.
+// ═══════════════════════════════════════════════════════════════════════════
+strategy("Koss Smart Synth", shorttitle = "Koss Synth", overlay = true,
+     initial_capital = 10000, default_qty_type = strategy.fixed, default_qty_value = 1,
+     commission_type = strategy.commission.percent, commission_value = 0, slippage = 0,
+     pyramiding = 0, process_orders_on_close = false, margin_long = 1, margin_short = 1,
+     max_boxes_count = 100, max_lines_count = 200, max_labels_count = 200, max_bars_back = 500)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 1. PARAMÈTRES
+// ═══════════════════════════════════════════════════════════════════════════
+const string G_STR = "1. Structure"
+const string G_OB  = "2. Order Block / FVG"
+const string G_OTE = "3. OTE & confirmation"
+const string G_TRD = "4. Trade (Entrée / SL / TP)"
+const string G_VIS = "5. Affichage"
+
+swingLen   = input.int(5, "Longueur du swing", minval = 1, maxval = 50, group = G_STR,
+     tooltip = "Nombre de bougies de chaque côté pour valider un swing high / low (ta.pivothigh / ta.pivotlow).")
+trendOnly  = input.bool(true, "Trader uniquement dans le sens de la tendance", group = G_STR,
+     tooltip = "Activé : seuls les setups nés d'un BOS (continuation) sont retenus. Les CHoCH (retournements) sont affichés mais ne créent pas de setup.")
+showStruct = input.bool(true, "Afficher BOS / CHoCH", group = G_STR)
+maxStruct  = input.int(3, "Nombre de BOS/CHoCH affichés", minval = 1, maxval = 20, group = G_STR)
+
+showOB     = input.bool(true, "Afficher l'Order Block", group = G_OB)
+showFVG    = input.bool(true, "Afficher le FVG", group = G_OB)
+obLook     = input.int(10, "Recherche de l'OB (bougies avant l'impulsion)", minval = 1, maxval = 50, group = G_OB)
+maxLeg     = input.int(150, "Longueur max. de la jambe (bougies)", minval = 10, maxval = 300, group = G_OB,
+     tooltip = "Limite de recherche du point de départ de l'impulsion (performance).")
+
+showOTE    = input.bool(true, "Afficher la zone OTE", group = G_OTE)
+fibA       = input.float(0.62, "Fibo OTE début", minval = 0.0, maxval = 1.0, step = 0.01, group = G_OTE)
+fibB       = input.float(0.79, "Fibo OTE fin", minval = 0.0, maxval = 1.0, step = 0.01, group = G_OTE)
+fibM       = input.float(0.705, "Fibo OTE ligne centrale", minval = 0.0, maxval = 1.0, step = 0.005, group = G_OTE)
+reqConf    = input.bool(true, "Confluence obligatoire (OTE touche OB ou FVG)", group = G_OTE)
+wickRatio  = input.float(0.5, "Mèche de rejet min. (% de la bougie)", minval = 0.1, maxval = 0.9, step = 0.05, group = G_OTE)
+expiry     = input.int(100, "Expiration du setup (bougies)", minval = 10, maxval = 500, group = G_OTE,
+     tooltip = "Un setup sans signal après ce nombre de bougies est supprimé.")
+
+showSig    = input.bool(true, "Afficher les signaux ▲ / ▼", group = G_TRD)
+showTrade  = input.bool(true, "Afficher Entrée / SL / TP1 / TP2", group = G_TRD)
+slBuf      = input.float(0.1, "Marge du stop (x ATR 14)", minval = 0.0, maxval = 2.0, step = 0.05, group = G_TRD)
+tradeLen   = input.int(20, "Longueur des lignes de trade (bougies)", minval = 5, maxval = 200, group = G_TRD)
+
+maxSetups  = input.int(1, "Nombre de setups affichés", minval = 1, maxval = 10, group = G_VIS)
+showPts    = input.bool(true, "Afficher point haut / point bas de la jambe", group = G_VIS)
+transpIn   = input.int(88, "Transparence des zones", minval = 85, maxval = 100, group = G_VIS)
+bullCol    = input.color(#089981, "Haussier", group = G_VIS, inline = "col")
+bearCol    = input.color(#F23645, "Baissier", group = G_VIS, inline = "col")
+neutCol    = input.color(#787B86, "Neutre", group = G_VIS, inline = "col")
+showPanel  = input.bool(true, "Afficher le panneau d'état", group = G_VIS)
+
+const string G_SYN = "6. Indices synthétiques"
+famIn      = input.string("Auto", "Famille d'indice", options = ["Auto", "Volatility", "Boom", "Crash", "Jump", "Step", "Range Break"],
+     group = G_SYN, tooltip = "Auto = déduite du nom du symbole. Vérifiez dans le panneau et forcez-la si elle est fausse.")
+dirMode    = input.string("Auto", "Sens autorisé", options = ["Auto", "Achats et ventes", "Achats seulement", "Ventes seulement"],
+     group = G_SYN, tooltip = "Auto : Boom = ventes seulement (dans le sens de la dérive), Crash = achats seulement, autres = les deux.")
+spikeMult  = input.float(4.0, "Seuil de pic (x ATR)", minval = 1.5, maxval = 20.0, step = 0.5, group = G_SYN,
+     tooltip = "Une bougie plus grande que ce multiple de l'ATR est considérée comme un pic.")
+antiSpike  = input.bool(true, "Ignorer les impulsions contenant un pic", group = G_SYN,
+     tooltip = "Un pic crée à lui seul un BOS et un FVG sans valeur : le setup est rejeté.")
+cooldown   = input.int(10, "Pause après un pic (bougies)", minval = 0, maxval = 200, group = G_SYN)
+minImp     = input.float(1.5, "Impulsion minimale (x ATR)", minval = 0.0, maxval = 20.0, step = 0.5, group = G_SYN,
+     tooltip = "La jambe (départ -> extrême) doit mesurer au moins ce multiple de l'ATR.")
+maxBarsTr  = input.int(0, "Durée max. d'un trade (bougies, 0 = sans limite)", minval = 0, maxval = 1000, group = G_SYN)
+spreadPx   = input.float(0.0, "Spread de votre courtier (en prix)", minval = 0.0, step = 0.01, group = G_SYN,
+     tooltip = "Sert uniquement à afficher dans le panneau la valeur de slippage (en ticks) à saisir dans l'onglet Propriétés.")
+ctrlMode   = input.bool(false, "MODE CONTRÔLE : inverser tous les trades", group = G_SYN,
+     tooltip = "Chaque achat devient une vente (et inversement), avec la même distance de stop et d'objectifs. Si le résultat inversé ressemble au résultat normal, le modèle n'a pas d'avantage.")
+useHTF     = input.bool(false, "Filtre de tendance HTF", group = G_SYN,
+     tooltip = "Achats seulement si la structure HTF est haussière, ventes seulement si elle est baissière. Doit être un timeframe supérieur au graphique.")
+htfTf      = input.timeframe("60", "Timeframe supérieur", group = G_SYN)
+htfLen     = input.int(5, "Longueur du swing HTF", minval = 1, maxval = 50, group = G_SYN)
+
+const string G_BT = "7. Backtest (gestion du risque)"
+riskPct    = input.float(1.0, "Risque par trade (% du capital)", minval = 0.1, maxval = 10.0, step = 0.1, group = G_BT)
+maxLev     = input.float(10.0, "Levier maximum", minval = 1.0, maxval = 100.0, step = 1.0, group = G_BT,
+     tooltip = "Plafonne la taille de position quand le stop est très serré.")
+tpMode     = input.string("50% TP1 + 50% TP2", "Sortie", options = ["TP1 (1R)", "TP2 (2R)", "50% TP1 + 50% TP2"], group = G_BT)
+moveBE     = input.bool(true, "Stop au point d'entrée après TP1 (mode 50/50)", group = G_BT)
+useWindow  = input.bool(false, "Limiter le backtest à une période", group = G_BT,
+     tooltip = "Pour séparer période de test et période de validation (voir la fiche de réglages).")
+tStart     = input.time(timestamp("01 Jan 2024 00:00 +0000"), "Début de la période", group = G_BT)
+tEnd       = input.time(timestamp("31 Dec 2099 00:00 +0000"), "Fin de la période", group = G_BT)
+
+// Bornes OTE ordonnées (au cas où l'utilisateur inverse début / fin)
+float fLo = math.min(fibA, fibB)
+float fHi = math.max(fibA, fibB)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 2. TYPE « SETUP » : regroupe toutes les données et tous les dessins
+// ═══════════════════════════════════════════════════════════════════════════
+type Setup
+    int          dir               // 1 = achat, -1 = vente
+    float        hi                // point le plus haut de la jambe
+    float        lo                // point le plus bas de la jambe
+    int          hiIdx
+    int          loIdx
+    float        obTop
+    float        obBot
+    int          obIdx
+    float        fvgTop
+    float        fvgBot
+    int          fvgIdx
+    int          born              // bougie de création (cassure)
+    bool         touched  = false  // le prix a déjà touché l'OTE
+    int          touchIdx = na
+    bool         done     = false  // signal déjà émis -> dessins figés
+    box          obBox
+    box          fvgBox
+    box          oteBox
+    line         oteMid
+    label        hiLbl
+    label        loLbl
+    array<line>  tLines
+    array<label> tLbls
+
+// Supprime proprement tous les dessins d'un setup
+method wipe(Setup this) =>
+    box.delete(this.obBox)
+    box.delete(this.fvgBox)
+    box.delete(this.oteBox)
+    line.delete(this.oteMid)
+    label.delete(this.hiLbl)
+    label.delete(this.loLbl)
+    for l in this.tLines
+        line.delete(l)
+    for lb in this.tLbls
+        label.delete(lb)
+    this
+
+// Prolonge les zones vers la droite et met à jour l'OTE
+method redraw(Setup this, float top, float bot, float mid, int left, int right) =>
+    if not na(this.obBox)
+        box.set_right(this.obBox, right)
+    if not na(this.fvgBox)
+        box.set_right(this.fvgBox, right)
+    if not na(this.oteBox)
+        box.set_lefttop(this.oteBox, left, top)
+        box.set_rightbottom(this.oteBox, right, bot)
+    if not na(this.oteMid)
+        line.set_xy1(this.oteMid, left, mid)
+        line.set_xy2(this.oteMid, right, mid)
+    this
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 3. FONCTIONS UTILITAIRES
+// ═══════════════════════════════════════════════════════════════════════════
+// Niveaux OTE en retracement de la jambe [lo ; hi]
+f_ote(int dir, float hi, float lo) =>
+    float rng = hi - lo
+    float top = dir == 1 ? hi - fLo * rng : lo + fHi * rng
+    float bot = dir == 1 ? hi - fHi * rng : lo + fLo * rng
+    float mid = dir == 1 ? hi - fibM * rng : lo + fibM * rng
+    [top, bot, mid]
+
+// Deux zones se chevauchent ou se touchent
+f_overlap(float aTop, float aBot, float bTop, float bBot) =>
+    aBot <= bTop and bBot <= aTop
+
+// Mémoires des dessins de structure (BOS / CHoCH)
+var array<line>  stLines = array.new<line>()
+var array<label> stLbls  = array.new<label>()
+
+// Dessine un BOS / CHoCH et ne garde que les N derniers
+f_struct(int x1, float y, bool bull, bool choch) =>
+    line  l  = line.new(x1, y, bar_index, y, color = neutCol, style = line.style_dashed, width = 1)
+    label lb = label.new(int((x1 + bar_index) / 2), y, choch ? "CHoCH" : "BOS",
+         color = color.new(neutCol, 100), textcolor = bull ? bullCol : bearCol,
+         style = bull ? label.style_label_down : label.style_label_up, size = size.small)
+    stLines.push(l)
+    stLbls.push(lb)
+    if stLines.size() > maxStruct
+        line.delete(stLines.shift())
+        label.delete(stLbls.shift())
+
+// Crée un setup et ses dessins (selon les options d'affichage)
+f_newSetup(int dir, float hi, float lo, int hiIdx, int loIdx, float obTop, float obBot, int obIdx,
+     float fvgTop, float fvgBot, int fvgIdx) =>
+    Setup s = Setup.new(dir = dir, hi = hi, lo = lo, hiIdx = hiIdx, loIdx = loIdx,
+         obTop = obTop, obBot = obBot, obIdx = obIdx, fvgTop = fvgTop, fvgBot = fvgBot, fvgIdx = fvgIdx,
+         born = bar_index, tLines = array.new<line>(), tLbls = array.new<label>())
+    color col   = dir == 1 ? bullCol : bearCol
+    int   right = bar_index + 5
+    if showOB
+        s.obBox := box.new(obIdx, obTop, right, obBot, border_color = color.new(col, 60), border_width = 1,
+             bgcolor = color.new(col, transpIn), text = "OB", text_size = size.small,
+             text_color = color.new(col, 20), text_halign = text.align_left, text_valign = text.align_center)
+    if showFVG
+        s.fvgBox := box.new(fvgIdx, fvgTop, right, fvgBot, border_color = color.new(col, 75), border_width = 1,
+             border_style = line.style_dotted, bgcolor = color.new(col, math.min(transpIn + 4, 100)), text = "FVG",
+             text_size = size.small, text_color = color.new(col, 30), text_halign = text.align_right,
+             text_valign = text.align_center)
+    [top, bot, mid] = f_ote(dir, hi, lo)
+    int oteLeft = dir == 1 ? hiIdx : loIdx
+    if showOTE
+        s.oteBox := box.new(oteLeft, top, right, bot, border_color = color.new(neutCol, 60), border_width = 1,
+             border_style = line.style_dashed, bgcolor = color.new(neutCol, transpIn), text = "OTE",
+             text_size = size.small, text_color = color.new(neutCol, 20), text_halign = text.align_right,
+             text_valign = text.align_top)
+        s.oteMid := line.new(oteLeft, mid, right, mid, color = color.new(neutCol, 40), style = line.style_dotted, width = 1)
+    if showPts
+        s.hiLbl := label.new(hiIdx, hi, "", color = color.new(neutCol, 20), style = label.style_circle,
+             size = size.tiny, tooltip = dir == 1 ? "Point haut (extrême)" : "Point haut (départ)")
+        s.loLbl := label.new(loIdx, lo, "", color = color.new(neutCol, 20), style = label.style_circle,
+             size = size.tiny, tooltip = dir == 1 ? "Point bas (départ)" : "Point bas (extrême)")
+    s
+
+// Ligne de trade (Entrée / SL / TP) + petit label au bout
+f_level(Setup s, float y, string txt, color c) =>
+    int x2 = bar_index + tradeLen
+    s.tLines.push(line.new(bar_index, y, x2, y, color = color.new(c, 20),
+         style = txt == "E" ? line.style_solid : line.style_dashed, width = 1))
+    s.tLbls.push(label.new(x2, y, txt + " " + str.tostring(y, format.mintick), color = color.new(c, 100),
+         textcolor = c, style = label.style_label_left, size = size.small))
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 4. CALCULS PAR BOUGIE (appelés à chaque bougie pour la cohérence des séries)
+// ═══════════════════════════════════════════════════════════════════════════
+float ph  = ta.pivothigh(high, swingLen, swingLen)
+float pl  = ta.pivotlow(low, swingLen, swingLen)
+float atr = ta.atr(14)
+
+// Bougies de réaction
+float barRng  = high - low
+float lowWick = math.min(open, close) - low
+float upWick  = high - math.max(open, close)
+bool  bullPin = barRng > 0 and lowWick >= wickRatio * barRng and close > low + 0.5 * barRng
+bool  bearPin = barRng > 0 and upWick >= wickRatio * barRng and close < high - 0.5 * barRng
+bool  bullEng = close > open and close[1] < open[1] and close >= open[1] and open <= close[1]
+bool  bearEng = close < open and close[1] > open[1] and close <= open[1] and open >= close[1]
+
+// ── Famille d'indice (déduite du nom du symbole si « Auto ») ──────────────
+string tkUp = str.upper(syminfo.ticker)
+string fam  = famIn != "Auto" ? famIn :
+     str.contains(tkUp, "BOOM")  ? "Boom"  :
+     str.contains(tkUp, "CRASH") ? "Crash" :
+     str.contains(tkUp, "JUMP")  ? "Jump"  :
+     str.contains(tkUp, "STEP")  ? "Step"  :
+     str.contains(tkUp, "RANGE") ? "Range Break" : "Volatility"
+
+// Sens effectivement autorisé
+string dirEff = dirMode != "Auto" ? dirMode :
+     fam == "Boom" ? "Ventes seulement" : fam == "Crash" ? "Achats seulement" : "Achats et ventes"
+
+f_dirOk(int dir) =>
+    dirEff == "Achats et ventes" or (dirEff == "Achats seulement" and dir == 1) or (dirEff == "Ventes seulement" and dir == -1)
+
+// ── Détection des pics (bougie > spikeMult x ATR de la bougie précédente) ─
+bool isSpike = not na(atr[1]) and (high - low) > spikeMult * atr[1]
+
+// Un pic est-il présent entre la bougie actuelle et l'offset « toOff » ?
+f_hasSpike(int toOff) =>
+    bool found = false
+    for o = 0 to toOff
+        if not na(atr[o + 1]) and (high[o] - low[o]) > spikeMult * atr[o + 1]
+            found := true
+            break
+    found
+
+// ── Filtre de tendance HTF (structure : cassure du dernier swing) ─────────
+f_trend(int len) =>
+    var float sh = na
+    var float sl = na
+    var int   t  = 0
+    float p1 = ta.pivothigh(high, len, len)
+    float p2 = ta.pivotlow(low, len, len)
+    if not na(p1)
+        sh := p1
+    if not na(p2)
+        sl := p2
+    if not na(sh) and close > sh
+        t  := 1
+        sh := na
+    if not na(sl) and close < sl
+        t  := -1
+        sl := na
+    t
+
+// [1] + lookahead_on = valeur de la bougie HTF précédente, déjà clôturée -> aucun repaint
+int  htfTrend = request.security(syminfo.tickerid, htfTf, f_trend(htfLen)[1], lookahead = barmerge.lookahead_on)
+bool htfValid = timeframe.in_seconds(htfTf) > timeframe.in_seconds(timeframe.period)
+
+// Le sens du trade (1 / -1) est-il autorisé par le filtre HTF ?
+f_htfOk(int dir) =>
+    not useHTF or not htfValid or htfTrend == dir
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 5. ÉTAT DE LA STRUCTURE
+// ═══════════════════════════════════════════════════════════════════════════
+var float swHi       = na
+var int   swHiIdx    = na
+var bool  swHiBroken = true
+var float swLo       = na
+var int   swLoIdx    = na
+var bool  swLoBroken = true
+var int   trend      = 0      // 1 = haussière (HH/HL), -1 = baissière (LH/LL), 0 = inconnue
+
+var array<Setup> setups = array.new<Setup>()
+var int lastSpike = na   // index de la dernière bougie « pic »
+
+// Signaux de la bougie (réinitialisés à chaque bougie)
+bool buySig   = false
+bool sellSig  = false
+bool bosSig   = false
+bool chochSig = false
+
+// Niveaux du dernier signal (transmis à la partie exécution)
+float sigEntry = na
+float sigStop  = na
+float sigTp1   = na
+float sigTp2   = na
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 6. LOGIQUE PRINCIPALE — uniquement à la clôture (anti-repaint)
+// ═══════════════════════════════════════════════════════════════════════════
+if barstate.isconfirmed
+
+    // ── 6.0 Pics et pause ───────────────────────────────────────────────────
+    if isSpike
+        lastSpike := bar_index
+    bool pause = cooldown > 0 and not na(lastSpike) and bar_index - lastSpike <= cooldown
+
+    // ── 6.1 Nouveaux swings confirmés ───────────────────────────────────────
+    if not na(ph)
+        swHi       := ph
+        swHiIdx    := bar_index - swingLen
+        swHiBroken := false
+    if not na(pl)
+        swLo       := pl
+        swLoIdx    := bar_index - swingLen
+        swLoBroken := false
+
+    // ── 6.2 Suivi des setups existants (invalidation, OTE, signal) ─────────
+    if setups.size() > 0
+        for i = setups.size() - 1 to 0
+            Setup s = setups.get(i)
+            if not s.done
+                bool bull    = s.dir == 1
+                // OB mitigé (clôture au-delà de sa limite opposée) ou jambe invalidée
+                bool invalid = bull ? (close < s.obBot or close < s.lo) : (close > s.obTop or close > s.hi)
+                bool expired = bar_index - s.born > expiry
+                if invalid or expired
+                    s.wipe()
+                    setups.remove(i)
+                else
+                    // Tant que l'OTE n'est pas touchée, l'extrême de la jambe peut s'étendre
+                    if not s.touched
+                        if bull and high > s.hi
+                            s.hi    := high
+                            s.hiIdx := bar_index
+                            if not na(s.hiLbl)
+                                label.set_xy(s.hiLbl, bar_index, high)
+                        else if not bull and low < s.lo
+                            s.lo    := low
+                            s.loIdx := bar_index
+                            if not na(s.loLbl)
+                                label.set_xy(s.loLbl, bar_index, low)
+                    [oTop, oBot, oMid] = f_ote(s.dir, s.hi, s.lo)
+                    s.redraw(oTop, oBot, oMid, bull ? s.hiIdx : s.loIdx, bar_index + 5)
+
+                    // a) le prix entre dans l'OTE (ou y était à la bougie précédente)
+                    bool inZone  = low <= oTop and high >= oBot
+                    bool zoneOk  = inZone or (not na(s.touchIdx) and bar_index - s.touchIdx <= 1)
+                    // b) bougie de réaction
+                    bool react   = bull ? (bullPin or bullEng) : (bearPin or bearEng)
+                    // c) confluence OTE / OB ou FVG
+                    bool conf    = not reqConf or f_overlap(oTop, oBot, s.obTop, s.obBot) or f_overlap(oTop, oBot, s.fvgTop, s.fvgBot)
+
+                    // d) filtres : pas de pic récent, sens autorisé, tendance HTF
+                    if zoneOk and react and conf and not pause and f_dirOk(s.dir) and f_htfOk(s.dir)
+                        float entry = close
+                        float stop  = bull ? s.obBot - slBuf * atr : s.obTop + slBuf * atr
+                        float risk  = math.abs(entry - stop)
+                        if risk > 0 and (bull ? entry > stop : entry < stop)
+                            s.done := true
+                            sigEntry := entry
+                            sigStop  := stop
+                            sigTp1   := bull ? entry + risk : entry - risk
+                            sigTp2   := bull ? entry + 2 * risk : entry - 2 * risk
+                            if bull
+                                buySig := true
+                            else
+                                sellSig := true
+                            if showTrade
+                                float tp1 = bull ? entry + risk : entry - risk
+                                float tp2 = bull ? entry + 2 * risk : entry - 2 * risk
+                                f_level(s, entry, "E", neutCol)
+                                f_level(s, stop, "SL", bearCol)
+                                f_level(s, tp1, "TP1", bullCol)
+                                f_level(s, tp2, "TP2", bullCol)
+
+                    if inZone and not s.touched
+                        s.touched  := true
+                    if inZone
+                        s.touchIdx := bar_index
+
+    // ── 6.3 Cassure haussière du dernier swing high ─────────────────────────
+    if not swHiBroken and not na(swHi) and close > swHi
+        bool choch = trend == -1
+        swHiBroken := true
+        trend      := 1
+        if choch
+            chochSig := true
+        else
+            bosSig := true
+        if showStruct
+            f_struct(swHiIdx, swHi, true, choch)
+
+        // Départ de la jambe = plus bas depuis le swing high cassé
+        int   span  = math.min(bar_index - swHiIdx, maxLeg)
+        float legLo = low
+        int   loOff = 0
+        for o = 0 to span
+            if low[o] < legLo
+                legLo := low[o]
+                loOff := o
+        // Extrême de la jambe = plus haut entre le départ et maintenant
+        float legHi = high
+        int   hiOff = 0
+        for o = 0 to loOff
+            if high[o] > legHi
+                legHi := high[o]
+                hiOff := o
+        // OB haussier = dernière bougie baissière avant l'impulsion
+        int obOff = -1
+        for o = loOff to loOff + obLook
+            if close[o] < open[o]
+                obOff := o
+                break
+        // FVG haussier dans l'impulsion : low[k] > high[k+2]
+        int fvgOff = -1
+        if loOff >= 2
+            for o = loOff - 2 to 0
+                if low[o] > high[o + 2]
+                    fvgOff := o
+                    break
+        // Validation : OB + FVG + cassure (+ filtre de tendance)
+        bool legOk = (legHi - legLo) >= minImp * atr and not (antiSpike and f_hasSpike(loOff))
+        if obOff >= 0 and fvgOff >= 0 and legOk and (not trendOnly or not choch) and f_dirOk(1) and f_htfOk(1)
+            Setup ns = f_newSetup(1, legHi, legLo, bar_index - hiOff, bar_index - loOff,
+                 high[obOff], low[obOff], bar_index - obOff, low[fvgOff], high[fvgOff + 2], bar_index - fvgOff - 2)
+            setups.push(ns)
+            while setups.size() > maxSetups
+                setups.shift().wipe()
+
+    // ── 6.4 Cassure baissière du dernier swing low ──────────────────────────
+    if not swLoBroken and not na(swLo) and close < swLo
+        bool choch = trend == 1
+        swLoBroken := true
+        trend      := -1
+        if choch
+            chochSig := true
+        else
+            bosSig := true
+        if showStruct
+            f_struct(swLoIdx, swLo, false, choch)
+
+        // Départ de la jambe = plus haut depuis le swing low cassé
+        int   span  = math.min(bar_index - swLoIdx, maxLeg)
+        float legHi = high
+        int   hiOff = 0
+        for o = 0 to span
+            if high[o] > legHi
+                legHi := high[o]
+                hiOff := o
+        // Extrême de la jambe = plus bas entre le départ et maintenant
+        float legLo = low
+        int   loOff = 0
+        for o = 0 to hiOff
+            if low[o] < legLo
+                legLo := low[o]
+                loOff := o
+        // OB baissier = dernière bougie haussière avant l'impulsion
+        int obOff = -1
+        for o = hiOff to hiOff + obLook
+            if close[o] > open[o]
+                obOff := o
+                break
+        // FVG baissier dans l'impulsion : high[k] < low[k+2]
+        int fvgOff = -1
+        if hiOff >= 2
+            for o = hiOff - 2 to 0
+                if high[o] < low[o + 2]
+                    fvgOff := o
+                    break
+        bool legOk = (legHi - legLo) >= minImp * atr and not (antiSpike and f_hasSpike(hiOff))
+        if obOff >= 0 and fvgOff >= 0 and legOk and (not trendOnly or not choch) and f_dirOk(-1) and f_htfOk(-1)
+            Setup ns = f_newSetup(-1, legHi, legLo, bar_index - hiOff, bar_index - loOff,
+                 high[obOff], low[obOff], bar_index - obOff, low[fvgOff + 2], high[fvgOff], bar_index - fvgOff - 2)
+            setups.push(ns)
+            while setups.size() > maxSetups
+                setups.shift().wipe()
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 7. SIGNAUX & AFFICHAGE
+// ═══════════════════════════════════════════════════════════════════════════
+// Panneau d'état discret : famille, sens, HTF, coûts, mode contrôle
+var table panel = table.new(position.top_right, 1, 4)
+if showPanel and barstate.islast
+    string htfTxt = not useHTF ? "HTF : filtre off" : not htfValid ? "HTF " + htfTf + " : invalide" :
+         "HTF " + htfTf + " : " + (htfTrend == 1 ? "▲" : htfTrend == -1 ? "▼" : "–")
+    color  htfClr = useHTF and htfValid and htfTrend == 1 ? bullCol : useHTF and htfValid and htfTrend == -1 ? bearCol : neutCol
+    string slipTx = spreadPx > 0 ? "Slippage à saisir : " + str.tostring(math.round(spreadPx / syminfo.mintick)) + " ticks" :
+         "Tick = " + str.tostring(syminfo.mintick)
+    table.cell(panel, 0, 0, fam + " · " + dirEff, text_color = neutCol, text_size = size.small, text_halign = text.align_right)
+    table.cell(panel, 0, 1, htfTxt, text_color = htfClr, text_size = size.small, text_halign = text.align_right)
+    table.cell(panel, 0, 2, slipTx, text_color = neutCol, text_size = size.small, text_halign = text.align_right)
+    table.cell(panel, 0, 3, ctrlMode ? "MODE CONTRÔLE (trades inversés)" : "", text_color = bearCol, text_size = size.small,
+         text_halign = text.align_right)
+
+plotshape(showSig and buySig, "Achat", shape.triangleup, location.belowbar, bullCol, size = size.small)
+plotshape(showSig and sellSig, "Vente", shape.triangledown, location.abovebar, bearCol, size = size.small)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 8. EXÉCUTION DES ORDRES
+// ═══════════════════════════════════════════════════════════════════════════
+var float trQty = na      // taille initiale du trade en cours
+var float trTp2 = na      // objectif final du trade en cours
+var bool  beSet = false   // stop déjà remonté au point d'entrée
+var int   trBar = na      // bougie de l'ordre d'entrée
+
+// Taille de position : risque fixe en % du capital, plafonnée par le levier max
+f_qty(float entry, float stop) =>
+    float riskPts = math.abs(entry - stop)
+    float qRisk   = strategy.equity * riskPct / 100 / (riskPts * syminfo.pointvalue)
+    float qMax    = strategy.equity * maxLev / (entry * syminfo.pointvalue)
+    float q       = math.min(qRisk, qMax)
+    syminfo.type == "futures" ? math.floor(q) : q
+
+// Place l'entrée et les sorties (stop + objectif(s))
+f_order(bool long, float qty, float st, float t1, float t2) =>
+    string id = long ? "Long" : "Short"
+    strategy.entry(id, long ? strategy.long : strategy.short, qty = qty)
+    if tpMode == "TP1 (1R)"
+        strategy.exit(id + " X", id, stop = st, limit = t1, comment_profit = "TP1", comment_loss = "SL")
+    else if tpMode == "TP2 (2R)"
+        strategy.exit(id + " X", id, stop = st, limit = t2, comment_profit = "TP2", comment_loss = "SL")
+    else
+        strategy.exit(id + " X1", id, qty_percent = 50, stop = st, limit = t1, comment_profit = "TP1", comment_loss = "SL")
+        strategy.exit(id + " X2", id, stop = st, limit = t2, comment_profit = "TP2", comment_loss = "SL")
+
+// Période de backtest (optionnelle)
+bool inWindow = not useWindow or (time >= tStart and time <= tEnd)
+if useWindow and time > tEnd and strategy.position_size != 0
+    strategy.close_all(comment = "Fin période")
+
+// Nouveau trade uniquement si aucune position n'est ouverte, dans la période choisie
+// (achat ET vente sur la même bougie = signal ambigu -> ignoré)
+if strategy.position_size == 0 and buySig != sellSig and inWindow
+    // Mode contrôle : sens inversé, mêmes distances de stop et d'objectifs
+    bool  goLong = ctrlMode ? sellSig : buySig
+    float rk     = math.abs(sigEntry - sigStop)
+    float eStop  = goLong ? sigEntry - rk : sigEntry + rk
+    float eTp1   = goLong ? sigEntry + rk : sigEntry - rk
+    float eTp2   = goLong ? sigEntry + 2 * rk : sigEntry - 2 * rk
+    float q      = f_qty(sigEntry, eStop)
+    if q > 0
+        f_order(goLong, q, eStop, eTp1, eTp2)
+        trQty := q
+        trTp2 := eTp2
+        trBar := bar_index
+        beSet := false
+
+// Durée maximale d'un trade
+if maxBarsTr > 0 and strategy.position_size != 0 and not na(trBar) and bar_index - trBar >= maxBarsTr
+    strategy.close_all(comment = "Durée max")
+
+// Break-even : après TP1 (position réduite), le stop du reste passe au prix d'entrée
+if moveBE and tpMode == "50% TP1 + 50% TP2" and not beSet and strategy.position_size != 0
+    if math.abs(strategy.position_size) < trQty * 0.99
+        string id = strategy.position_size > 0 ? "Long" : "Short"
+        strategy.exit(id + " X2", id, stop = strategy.position_avg_price, limit = trTp2, comment_profit = "TP2", comment_loss = "BE")
+        beSet := true
+
+// Alertes (dans une stratégie : alert() au lieu d'alertcondition())
+if buySig
+    alert("Koss Smart Synth : ACHAT (OB + FVG + OTE) sur " + syminfo.ticker + " à " + str.tostring(close, format.mintick), alert.freq_once_per_bar_close)
+if sellSig
+    alert("Koss Smart Synth : VENTE (OB + FVG + OTE) sur " + syminfo.ticker + " à " + str.tostring(close, format.mintick), alert.freq_once_per_bar_close)
+if bosSig or chochSig
+    alert("Koss Smart Synth : " + (chochSig ? "CHoCH" : "BOS") + " sur " + syminfo.ticker, alert.freq_once_per_bar_close)

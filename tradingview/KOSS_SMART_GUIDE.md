@@ -5,6 +5,7 @@ Deux fichiers :
 - [`koss_smart.pine`](./koss_smart.pine) : l'**indicateur** (signaux + alertes) ;
 - [`koss_smart_strategy.pine`](./koss_smart_strategy.pine) : la **stratégie** de backtest (même détection, avec ordres réels simulés).
 - [`KOSS_SMART_REGLAGES_OR_FOREX.md`](./KOSS_SMART_REGLAGES_OR_FOREX.md) : **réglages conseillés pour l'or et le forex** et protocole de backtest pas à pas.
+- [`koss_smart_synth.pine`](./koss_smart_synth.pine) + [`KOSS_SMART_SYNTH_GUIDE.md`](./KOSS_SMART_SYNTH_GUIDE.md) : **Koss Smart Synth**, version pour les indices synthétiques Deriv (avec mode contrôle).
 
 ## 1. Installation
 
