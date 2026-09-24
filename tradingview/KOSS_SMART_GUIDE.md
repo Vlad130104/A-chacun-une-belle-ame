@@ -1,7 +1,9 @@
 # Koss Smart — fiche pédagogique
 
 Indicateur TradingView (Pine Script v6) : **Order Block + FVG + OTE**, selon les Smart Money Concepts (ICT).
-Code source : [`koss_smart.pine`](./koss_smart.pine).
+Deux fichiers :
+- [`koss_smart.pine`](./koss_smart.pine) : l'**indicateur** (signaux + alertes) ;
+- [`koss_smart_strategy.pine`](./koss_smart_strategy.pine) : la **stratégie** de backtest (même détection, avec ordres réels simulés).
 
 ## 1. Installation
 
@@ -44,29 +46,56 @@ Code source : [`koss_smart.pine`](./koss_smart.pine).
 | Affichage | Nombre de setups affichés | 1 | Ne garde que les N plus récents. |
 | | Transparence des zones | 88 | 85 à 100. |
 | | Couleurs | vert / rouge / gris | 3 couleurs maximum. |
+| | Panneau d'état | Oui | Coin haut droit : tendance HTF (▲ / ▼ / –) et état de la session. |
+| Filtres | Filtre de session (killzones) | Non | Le signal n'est accepté que pendant la killzone 1 (Londres, 02:00–05:00 New York) ou 2 (New York, 07:00–10:00). Ignoré en D/W/M. |
+| | Fuseau horaire des sessions | America/New_York | Fuseau dans lequel les heures des killzones sont écrites (heure ICT = New York). |
+| | Surligner les killzones | Non | Fond gris très léger pendant les sessions. |
+| | Filtre de tendance HTF | Non | Achats seulement si la structure du timeframe supérieur est haussière (et inversement). Les setups contraires ne sont même pas dessinés. |
+| | Timeframe supérieur / swing HTF | 240 (4H) / 5 | Doit être **supérieur** au timeframe du graphique, sinon le filtre est ignoré (le panneau affiche « invalide »). |
 
-## 4. Choix de conception (à connaître)
+## 4. Version stratégie (backtest)
+
+Coller `koss_smart_strategy.pine` dans un **nouveau** script, l'ajouter au graphique, puis ouvrir l'onglet **Testeur de stratégie**.
+
+| Paramètre | Défaut | Rôle |
+|---|---|---|
+| Risque par trade | 1 % | La taille de position est calculée pour perdre 1 % du capital si le stop est touché. |
+| Levier maximum | 10 | Plafonne la taille quand le stop est très serré (sinon position démesurée). |
+| Sortie | 50 % TP1 + 50 % TP2 | Ou tout à TP1 (1R), ou tout à TP2 (2R). |
+| Stop au point d'entrée après TP1 | Oui | En mode 50/50, le stop de la 2ᵉ moitié passe au prix d'entrée (break-even) dès que TP1 est pris. |
+
+Réglages fixes dans l'en-tête `strategy(...)` : capital 10 000, commission 0,02 %, slippage 2 ticks, une seule position à la fois. **Adaptez commission et slippage à votre courtier**, sinon les résultats sont trop optimistes.
+
+Comment l'ordre est exécuté :
+- le signal est validé à la **clôture** de la bougie de réaction ; l'entrée se fait au marché à l'**ouverture de la bougie suivante** (c'est réaliste, mais le prix d'entrée réel diffère légèrement de la ligne `E`) ;
+- stop et objectifs sont calculés sur la clôture du signal ;
+- un nouveau signal est ignoré tant qu'une position est ouverte ;
+- si une même bougie touche le stop et l'objectif, TradingView ne connaît pas l'ordre réel des mouvements dans la bougie : il fait une hypothèse. Activez *Bar Magnifier* (compte payant) pour plus de précision.
+
+Comment lire le résultat : regardez au minimum le **nombre de trades (> 100)**, le **profit factor (> 1,3)**, le **drawdown maximal** et la stabilité sur plusieurs actifs et périodes. Un bon résultat sur un seul actif et une seule période, c'est probablement de la sur-optimisation.
+
+## 5. Choix de conception (à connaître)
 
 - **Tendance** : elle est définie par la dernière cassure (cassure d'un swing high → haussière, d'un swing low → baissière). C'est l'équivalent pratique de la suite HH/HL ou LH/LL : un nouveau HH confirmé par clôture = BOS haussier ; la première cassure d'un HL = CHoCH.
 - **Sens de la tendance** : comme une cassure met toujours la tendance dans son sens, le filtre ne peut porter que sur le **type** de cassure. Activé, il exclut les setups de retournement (CHoCH).
 - **SL / TP** : le stop est toujours rouge et les objectifs toujours verts, quel que soit le sens, pour rester à 3 couleurs.
 
-## 5. Limites connues (honnêtement)
+## 6. Limites connues (honnêtement)
 
 1. **Le code n'a pas pu être compilé ici** : il a été écrit et relu pour Pine v6, mais testez-le dans l'éditeur. Si une erreur apparaît, copiez le message exact.
 2. **Retard des pivots** : un swing n'est connu que `longueur` bougies après son sommet. Une cassure qui survient avant la confirmation du pivot est ignorée.
 3. **Pas de repaint, mais du retard** : le signal apparaît à la clôture de la bougie de réaction, pas en temps réel.
 4. **Un seul FVG retenu** (le premier de l'impulsion) ; son remplissage partiel n'est pas suivi.
 5. **Un seul signal par setup.** Si le premier est stoppé, pas de ré-entrée sur la même zone.
-6. **Pas de backtest** : c'est un indicateur, pas une stratégie. Les R:R affichés ne disent rien du taux de réussite.
-7. **Actifs à gaps** (indices cash, actions) : les gaps d'ouverture créent de faux FVG.
+6. **Backtest ≠ garantie** : les résultats passés, même avec commissions, ne prédisent pas les résultats futurs. Testez en démo avant le réel.
+7. **Filtre HTF** : il utilise la bougie HTF **précédente clôturée** (pas de repaint), donc il réagit avec une bougie HTF de retard.
+8. **Actifs à gaps** (indices cash, actions) : les gaps d'ouverture créent de faux FVG.
 
-## 6. Pistes d'amélioration
+## 7. Pistes d'amélioration
 
-- **Filtre de session / Killzones** (Londres, New York) via `time(timeframe.period, "0700-1000")`.
-- **Filtre HTF** : tendance d'une unité supérieure via `request.security(..., lookahead = barmerge.lookahead_off)` sur une valeur confirmée.
 - **Déplacement minimal** : exiger que l'impulsion fasse au moins *x* ATR.
 - **Premium / Discount** : n'acheter que sous 50 % du range, vendre au-dessus.
 - **Liquidité** : exiger un balayage d'un plus bas / plus haut avant le CHoCH.
-- **Version `strategy()`** pour mesurer le taux de réussite et le facteur de profit.
+- **Stop suiveur** (sous chaque nouveau HL) au lieu d'objectifs fixes.
+- **Filtre de jours** (éviter lundi matin / vendredi soir, annonces économiques).
 - **Suivi du trade** : afficher TP/SL touchés et un tableau de statistiques.

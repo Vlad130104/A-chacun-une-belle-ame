@@ -1,11 +1,15 @@
 //@version=6
 // ═══════════════════════════════════════════════════════════════════════════
-//  KOSS SMART  —  OB + FVG + OTE (Smart Money Concepts / ICT)
-//  Setup : Order Block + FVG qui cassent la structure (BOS/CHoCH),
-//          puis réaction du prix dans la zone OTE (Fibo 0.62 – 0.79).
+//  KOSS SMART STRATEGY  —  version backtest de l'indicateur Koss Smart
+//  Même détection (OB + FVG + BOS/CHoCH + OTE), plus exécution des ordres :
+//  entrée au marché à l'ouverture suivant le signal, stop au-delà de l'OB,
+//  objectifs 1R / 2R, taille de position calculée selon le risque (%).
 //  Aucun repaint : toute la logique est exécutée à la clôture de bougie.
 // ═══════════════════════════════════════════════════════════════════════════
-indicator("Koss Smart", shorttitle = "Koss Smart", overlay = true,
+strategy("Koss Smart Strategy", shorttitle = "Koss Smart S", overlay = true,
+     initial_capital = 10000, default_qty_type = strategy.fixed, default_qty_value = 1,
+     commission_type = strategy.commission.percent, commission_value = 0.02, slippage = 2,
+     pyramiding = 0, process_orders_on_close = false, margin_long = 1, margin_short = 1,
      max_boxes_count = 100, max_lines_count = 200, max_labels_count = 200, max_bars_back = 500)
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -64,6 +68,13 @@ useHTF     = input.bool(false, "Filtre de tendance HTF", group = G_FLT,
      tooltip = "Achats seulement si la structure HTF est haussière, ventes seulement si elle est baissière. Doit être un timeframe supérieur au graphique.")
 htfTf      = input.timeframe("240", "Timeframe supérieur", group = G_FLT)
 htfLen     = input.int(5, "Longueur du swing HTF", minval = 1, maxval = 50, group = G_FLT)
+
+const string G_BT = "7. Backtest (gestion du risque)"
+riskPct    = input.float(1.0, "Risque par trade (% du capital)", minval = 0.1, maxval = 10.0, step = 0.1, group = G_BT)
+maxLev     = input.float(10.0, "Levier maximum", minval = 1.0, maxval = 100.0, step = 1.0, group = G_BT,
+     tooltip = "Plafonne la taille de position quand le stop est très serré.")
+tpMode     = input.string("50% TP1 + 50% TP2", "Sortie", options = ["TP1 (1R)", "TP2 (2R)", "50% TP1 + 50% TP2"], group = G_BT)
+moveBE     = input.bool(true, "Stop au point d'entrée après TP1 (mode 50/50)", group = G_BT)
 
 // Bornes OTE ordonnées (au cas où l'utilisateur inverse début / fin)
 float fLo = math.min(fibA, fibB)
@@ -262,6 +273,12 @@ bool sellSig  = false
 bool bosSig   = false
 bool chochSig = false
 
+// Niveaux du dernier signal (transmis à la partie exécution)
+float sigEntry = na
+float sigStop  = na
+float sigTp1   = na
+float sigTp2   = na
+
 // ═══════════════════════════════════════════════════════════════════════════
 // 6. LOGIQUE PRINCIPALE — uniquement à la clôture (anti-repaint)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -320,6 +337,10 @@ if barstate.isconfirmed
                         float risk  = math.abs(entry - stop)
                         if risk > 0 and (bull ? entry > stop : entry < stop)
                             s.done := true
+                            sigEntry := entry
+                            sigStop  := stop
+                            sigTp1   := bull ? entry + risk : entry - risk
+                            sigTp2   := bull ? entry + 2 * risk : entry - 2 * risk
                             if bull
                                 buySig := true
                             else
@@ -433,7 +454,7 @@ if barstate.isconfirmed
                 setups.shift().wipe()
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 7. SIGNAUX & ALERTES
+// 7. SIGNAUX & AFFICHAGE
 // ═══════════════════════════════════════════════════════════════════════════
 bgcolor(showSessBg and inKz ? color.new(neutCol, 94) : na, title = "Killzones")
 
@@ -452,8 +473,54 @@ if showPanel and barstate.islast
 plotshape(showSig and buySig, "Achat", shape.triangleup, location.belowbar, bullCol, size = size.small)
 plotshape(showSig and sellSig, "Vente", shape.triangledown, location.abovebar, bearCol, size = size.small)
 
-alertcondition(buySig, "Koss Smart - Achat", "Koss Smart : ACHAT (OB + FVG + OTE) sur {{ticker}} {{interval}} à {{close}}")
-alertcondition(sellSig, "Koss Smart - Vente", "Koss Smart : VENTE (OB + FVG + OTE) sur {{ticker}} {{interval}} à {{close}}")
-alertcondition(bosSig or chochSig, "Koss Smart - BOS / CHoCH", "Koss Smart : cassure de structure (BOS/CHoCH) sur {{ticker}} {{interval}}")
-alertcondition(bosSig, "Koss Smart - BOS", "Koss Smart : BOS sur {{ticker}} {{interval}}")
-alertcondition(chochSig, "Koss Smart - CHoCH", "Koss Smart : CHoCH sur {{ticker}} {{interval}}")
+// ═══════════════════════════════════════════════════════════════════════════
+// 8. EXÉCUTION DES ORDRES
+// ═══════════════════════════════════════════════════════════════════════════
+var float trQty = na      // taille initiale du trade en cours
+var float trTp2 = na      // objectif final du trade en cours
+var bool  beSet = false   // stop déjà remonté au point d'entrée
+
+// Taille de position : risque fixe en % du capital, plafonnée par le levier max
+f_qty(float entry, float stop) =>
+    float riskPts = math.abs(entry - stop)
+    float qRisk   = strategy.equity * riskPct / 100 / (riskPts * syminfo.pointvalue)
+    float qMax    = strategy.equity * maxLev / (entry * syminfo.pointvalue)
+    float q       = math.min(qRisk, qMax)
+    syminfo.type == "futures" ? math.floor(q) : q
+
+// Place l'entrée et les sorties (stop + objectif(s))
+f_order(bool long, float qty) =>
+    string id = long ? "Long" : "Short"
+    strategy.entry(id, long ? strategy.long : strategy.short, qty = qty)
+    if tpMode == "TP1 (1R)"
+        strategy.exit(id + " X", id, stop = sigStop, limit = sigTp1, comment_profit = "TP1", comment_loss = "SL")
+    else if tpMode == "TP2 (2R)"
+        strategy.exit(id + " X", id, stop = sigStop, limit = sigTp2, comment_profit = "TP2", comment_loss = "SL")
+    else
+        strategy.exit(id + " X1", id, qty_percent = 50, stop = sigStop, limit = sigTp1, comment_profit = "TP1", comment_loss = "SL")
+        strategy.exit(id + " X2", id, stop = sigStop, limit = sigTp2, comment_profit = "TP2", comment_loss = "SL")
+
+// Nouveau trade uniquement si aucune position n'est ouverte
+// (achat ET vente sur la même bougie = signal ambigu -> ignoré)
+if strategy.position_size == 0 and buySig != sellSig
+    float q = f_qty(sigEntry, sigStop)
+    if q > 0
+        f_order(buySig, q)
+        trQty := q
+        trTp2 := sigTp2
+        beSet := false
+
+// Break-even : après TP1 (position réduite), le stop du reste passe au prix d'entrée
+if moveBE and tpMode == "50% TP1 + 50% TP2" and not beSet and strategy.position_size != 0
+    if math.abs(strategy.position_size) < trQty * 0.99
+        string id = strategy.position_size > 0 ? "Long" : "Short"
+        strategy.exit(id + " X2", id, stop = strategy.position_avg_price, limit = trTp2, comment_profit = "TP2", comment_loss = "BE")
+        beSet := true
+
+// Alertes (dans une stratégie : alert() au lieu d'alertcondition())
+if buySig
+    alert("Koss Smart : ACHAT (OB + FVG + OTE) sur " + syminfo.ticker + " à " + str.tostring(close, format.mintick), alert.freq_once_per_bar_close)
+if sellSig
+    alert("Koss Smart : VENTE (OB + FVG + OTE) sur " + syminfo.ticker + " à " + str.tostring(close, format.mintick), alert.freq_once_per_bar_close)
+if bosSig or chochSig
+    alert("Koss Smart : " + (chochSig ? "CHoCH" : "BOS") + " sur " + syminfo.ticker, alert.freq_once_per_bar_close)
