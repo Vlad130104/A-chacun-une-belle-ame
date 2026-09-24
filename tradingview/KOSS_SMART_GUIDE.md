@@ -99,3 +99,20 @@ Comment lire le résultat : regardez au minimum le **nombre de trades (> 100)**,
 - **Stop suiveur** (sous chaque nouveau HL) au lieu d'objectifs fixes.
 - **Filtre de jours** (éviter lundi matin / vendredi soir, annonces économiques).
 - **Suivi du trade** : afficher TP/SL touchés et un tableau de statistiques.
+
+## 8. Indices synthétiques (Deriv, Weltrade)
+
+**Le code fonctionne techniquement sur n'importe quel symbole présent dans TradingView.** La vraie question est : le symbole y est-il, et le modèle a-t-il un sens dessus ?
+
+| Point | Deriv (Volatility, Boom/Crash, Jump, Step…) | Weltrade (GainX, PainX, FX Vol, SFX Vol…) |
+|---|---|---|
+| Données dans TradingView | Oui, préfixe `DERIV:` (ex. `DERIV:VOLATILITY_75_INDEX`). Vérifier chaque symbole dans la recherche. | Weltrade propose des graphiques TradingView, mais leur présence dans la recherche de symboles n'est pas confirmée. Taper `GainX` / `PainX` dans la recherche pour le savoir. |
+| Exécution automatique depuis TradingView | Non : le script envoie des alertes, l'ordre se passe à la main sur MT5 / Deriv. | Non, même chose (MT4 / MT5). |
+
+Réglages conseillés sur ces indices :
+- **Filtre de session : désactivé.** Ces marchés tournent 24 h/24, 7 j/7, sans sessions ni annonces : les killzones n'y veulent rien dire.
+- **Commission : 0 %.** Le coût réel est le **spread** : le saisir en *slippage* (en ticks) dans les propriétés de la stratégie.
+- **Taille de position :** le backtest ne connaît ni le lot minimal ni le pas de lot du courtier. Vérifier sur MT5 que la taille calculée est réalisable.
+- **Boom / Crash, GainX / PainX :** les pics créent des bougies géantes, donc des BOS et FVG « faciles » et des stops très larges. Le modèle y produit beaucoup de faux setups.
+
+**À savoir honnêtement :** ces indices sont générés par un **générateur de nombres aléatoires** (déclaré par les courtiers eux-mêmes). Il n'y a ni banques, ni liquidité institutionnelle, ni ordres en attente : la base théorique des Smart Money Concepts (OB, FVG, liquidité) n'existe pas sur ces marchés. Sur un prix aléatoire, aucun motif graphique n'a d'avantage durable : un backtest positif y est, le plus souvent, du hasard ou de la sur-optimisation. Si vous testez quand même, exigez beaucoup de trades (> 300), testez plusieurs indices et plusieurs périodes, et restez en compte démo.
