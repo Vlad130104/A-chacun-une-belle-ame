@@ -4,6 +4,7 @@ Indicateur TradingView (Pine Script v6) : **Order Block + FVG + OTE**, selon les
 Deux fichiers :
 - [`koss_smart.pine`](./koss_smart.pine) : l'**indicateur** (signaux + alertes) ;
 - [`koss_smart_strategy.pine`](./koss_smart_strategy.pine) : la **stratégie** de backtest (même détection, avec ordres réels simulés).
+- [`KOSS_SMART_REGLAGES_OR_FOREX.md`](./KOSS_SMART_REGLAGES_OR_FOREX.md) : **réglages conseillés pour l'or et le forex** et protocole de backtest pas à pas.
 
 ## 1. Installation
 
@@ -63,6 +64,7 @@ Coller `koss_smart_strategy.pine` dans un **nouveau** script, l'ajouter au graph
 | Levier maximum | 10 | Plafonne la taille quand le stop est très serré (sinon position démesurée). |
 | Sortie | 50 % TP1 + 50 % TP2 | Ou tout à TP1 (1R), ou tout à TP2 (2R). |
 | Stop au point d'entrée après TP1 | Oui | En mode 50/50, le stop de la 2ᵉ moitié passe au prix d'entrée (break-even) dès que TP1 est pris. |
+| Limiter le backtest à une période | Non | Début / fin de la période testée : sert à séparer période de test et période de validation. |
 
 Réglages fixes dans l'en-tête `strategy(...)` : capital 10 000, commission 0,02 %, slippage 2 ticks, une seule position à la fois. **Adaptez commission et slippage à votre courtier**, sinon les résultats sont trop optimistes.
 

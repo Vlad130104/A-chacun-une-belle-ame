@@ -75,6 +75,10 @@ maxLev     = input.float(10.0, "Levier maximum", minval = 1.0, maxval = 100.0, s
      tooltip = "Plafonne la taille de position quand le stop est très serré.")
 tpMode     = input.string("50% TP1 + 50% TP2", "Sortie", options = ["TP1 (1R)", "TP2 (2R)", "50% TP1 + 50% TP2"], group = G_BT)
 moveBE     = input.bool(true, "Stop au point d'entrée après TP1 (mode 50/50)", group = G_BT)
+useWindow  = input.bool(false, "Limiter le backtest à une période", group = G_BT,
+     tooltip = "Pour séparer période de test et période de validation (voir la fiche de réglages).")
+tStart     = input.time(timestamp("01 Jan 2024 00:00 +0000"), "Début de la période", group = G_BT)
+tEnd       = input.time(timestamp("31 Dec 2099 00:00 +0000"), "Fin de la période", group = G_BT)
 
 // Bornes OTE ordonnées (au cas où l'utilisateur inverse début / fin)
 float fLo = math.min(fibA, fibB)
@@ -500,9 +504,14 @@ f_order(bool long, float qty) =>
         strategy.exit(id + " X1", id, qty_percent = 50, stop = sigStop, limit = sigTp1, comment_profit = "TP1", comment_loss = "SL")
         strategy.exit(id + " X2", id, stop = sigStop, limit = sigTp2, comment_profit = "TP2", comment_loss = "SL")
 
-// Nouveau trade uniquement si aucune position n'est ouverte
+// Période de backtest (optionnelle)
+bool inWindow = not useWindow or (time >= tStart and time <= tEnd)
+if useWindow and time > tEnd and strategy.position_size != 0
+    strategy.close_all(comment = "Fin période")
+
+// Nouveau trade uniquement si aucune position n'est ouverte, dans la période choisie
 // (achat ET vente sur la même bougie = signal ambigu -> ignoré)
-if strategy.position_size == 0 and buySig != sellSig
+if strategy.position_size == 0 and buySig != sellSig and inWindow
     float q = f_qty(sigEntry, sigStop)
     if q > 0
         f_order(buySig, q)
