@@ -1,0 +1,200 @@
+//@version=6
+// ═══════════════════════════════════════════════════════════════════════════
+//  KOSS SESSIONS  —  sessions de trading + plus haut / plus bas exacts
+//  Sydney · Tokyo · Londres · New York (+ plus haut / plus bas de la veille)
+//
+//  • Chaque session a SA couleur : boîte, plus haut, plus bas et étiquettes.
+//  • Plus haut / plus bas calculés sur les mèches (high / low) des bougies
+//    de la session : valeurs exactes, pas de tracé à la main.
+//  • Chaque session a son propre fuseau horaire : les changements d'heure
+//    (été / hiver) de Sydney, Londres et New York sont gérés automatiquement.
+//  • Graphique propre : seules les N dernières sessions sont gardées.
+// ═══════════════════════════════════════════════════════════════════════════
+indicator("Koss Sessions", shorttitle = "Koss Sessions", overlay = true,
+     max_boxes_count = 200, max_lines_count = 400, max_labels_count = 300)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 1. PARAMÈTRES
+// ═══════════════════════════════════════════════════════════════════════════
+const string G_SES = "1. Sessions (heure locale de chaque place)"
+onSyd   = input.bool(true, "Sydney", group = G_SES, inline = "syd")
+sessSyd = input.session("0700-1600", "", group = G_SES, inline = "syd")
+colSyd  = input.color(#AB47BC, "", group = G_SES, inline = "syd")
+onTok   = input.bool(true, "Tokyo", group = G_SES, inline = "tok")
+sessTok = input.session("0900-1800", "", group = G_SES, inline = "tok")
+colTok  = input.color(#EF5350, "", group = G_SES, inline = "tok")
+onLon   = input.bool(true, "Londres", group = G_SES, inline = "lon")
+sessLon = input.session("0800-1700", "", group = G_SES, inline = "lon")
+colLon  = input.color(#2962FF, "", group = G_SES, inline = "lon")
+onNy    = input.bool(true, "New York", group = G_SES, inline = "ny")
+sessNy  = input.session("0800-1700", "", group = G_SES, inline = "ny")
+colNy   = input.color(#FF9800, "", group = G_SES, inline = "ny")
+
+const string G_AFF = "2. Affichage"
+showBox   = input.bool(true, "Boîte de la session", group = G_AFF)
+boxTransp = input.int(92, "Transparence des boîtes", minval = 80, maxval = 100, group = G_AFF)
+showHL    = input.bool(true, "Lignes plus haut / plus bas", group = G_AFF)
+extendHL  = input.bool(true, "Prolonger H / B jusqu'à la session suivante", group = G_AFF,
+     tooltip = "Les niveaux de la dernière session restent visibles tant que la même session ne recommence pas.")
+lineW     = input.int(1, "Épaisseur des lignes", minval = 1, maxval = 3, group = G_AFF)
+showName  = input.bool(true, "Nom de la session", group = G_AFF)
+showPrice = input.bool(true, "Prix des derniers H / B", group = G_AFF)
+keepN     = input.int(3, "Nombre de sessions gardées (par place)", minval = 1, maxval = 20, group = G_AFF)
+maxTf     = input.timeframe("60", "Afficher jusqu'au timeframe", group = G_AFF,
+     tooltip = "Au-dessus de ce timeframe, les sessions ne sont pas dessinées (une bougie H4 ou D couvre plusieurs sessions).")
+showLeg   = input.bool(true, "Légende des couleurs", group = G_AFF)
+
+const string G_PD = "3. Veille (jour précédent)"
+showPD = input.bool(true, "Plus haut / plus bas de la veille (PDH / PDL)", group = G_PD)
+colPD  = input.color(#787B86, "Couleur", group = G_PD)
+
+// Les sessions ne sont dessinées que sur les petits timeframes
+bool tfOk = timeframe.isintraday and timeframe.in_seconds() <= timeframe.in_seconds(maxTf)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 2. FONCTION DE SESSION
+//    Chaque appel garde sa propre mémoire (variables « var ») : un appel par place.
+//    Renvoie [plus haut, plus bas] de la dernière session terminée.
+// ═══════════════════════════════════════════════════════════════════════════
+f_session(string nm, string sess, string tz, color c, bool on) =>
+    bool inS   = on and tfOk and not na(time(timeframe.period, sess, tz))
+    bool start = inS and not inS[1]
+
+    var float hi    = na
+    var float lo    = na
+    var int   hiBar = na
+    var int   loBar = na
+    var box   bx    = na
+    var line  hL    = na
+    var line  lL    = na
+    var label tag   = na
+    var label hTag  = na
+    var label lTag  = na
+    var array<box>   bxs  = array.new<box>()
+    var array<line>  lns  = array.new<line>()
+    var array<label> tags = array.new<label>()
+
+    if start
+        // ── Nouvelle session : on repart de la première bougie ─────────────
+        hi    := high
+        lo    := low
+        hiBar := bar_index
+        loBar := bar_index
+        bx    := na
+        hL    := na
+        lL    := na
+        tag   := na
+        if showBox
+            bx := box.new(bar_index, hi, bar_index, lo, border_color = color.new(c, 50), border_width = 1,
+                 border_style = line.style_dotted, bgcolor = color.new(c, boxTransp))
+            bxs.push(bx)
+        if showHL
+            hL := line.new(bar_index, hi, bar_index, hi, color = c, width = lineW)
+            lL := line.new(bar_index, lo, bar_index, lo, color = c, width = lineW)
+            lns.push(hL)
+            lns.push(lL)
+        if showName
+            tag := label.new(bar_index, hi, nm, color = color.new(c, 100), textcolor = c,
+                 style = label.style_label_lower_left, size = size.small)
+            tags.push(tag)
+        // ── Nettoyage : on ne garde que les N dernières sessions ───────────
+        while bxs.size() > keepN
+            box.delete(bxs.shift())
+        while lns.size() > keepN * 2
+            line.delete(lns.shift())
+        while tags.size() > keepN
+            label.delete(tags.shift())
+    else if inS
+        // ── Session en cours : mise à jour du plus haut / plus bas ─────────
+        if high > hi
+            hi    := high
+            hiBar := bar_index
+        if low < lo
+            lo    := low
+            loBar := bar_index
+        if not na(bx)
+            box.set_top(bx, hi)
+            box.set_bottom(bx, lo)
+            box.set_right(bx, bar_index)
+        if not na(hL)
+            line.set_xy1(hL, hiBar, hi)
+            line.set_xy2(hL, bar_index, hi)
+            line.set_xy1(lL, loBar, lo)
+            line.set_xy2(lL, bar_index, lo)
+        if not na(tag)
+            label.set_y(tag, hi)
+    else if extendHL and not na(hL)
+        // ── Session terminée : les niveaux restent visibles vers la droite ─
+        line.set_x2(hL, bar_index)
+        line.set_x2(lL, bar_index)
+
+    // ── Prix des derniers H / B, au bout des lignes (dernière bougie seulement)
+    if showPrice and showHL and barstate.islast and not na(hL)
+        if na(hTag)
+            hTag := label.new(bar_index, hi, "", color = color.new(c, 100), textcolor = c,
+                 style = label.style_label_left, size = size.small)
+            lTag := label.new(bar_index, lo, "", color = color.new(c, 100), textcolor = c,
+                 style = label.style_label_left, size = size.small)
+        label.set_xy(hTag, line.get_x2(hL), hi)
+        label.set_text(hTag, nm + " H  " + str.tostring(hi, format.mintick))
+        label.set_xy(lTag, line.get_x2(lL), lo)
+        label.set_text(lTag, nm + " B  " + str.tostring(lo, format.mintick))
+    // Niveaux renvoyés seulement une fois la session terminée (pour les alertes)
+    [inS ? float(na) : hi, inS ? float(na) : lo]
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 3. LES QUATRE SESSIONS (fuseau horaire propre à chaque place)
+// ═══════════════════════════════════════════════════════════════════════════
+[sydHi, sydLo] = f_session("Sydney",   sessSyd, "Australia/Sydney", colSyd, onSyd)
+[tokHi, tokLo] = f_session("Tokyo",    sessTok, "Asia/Tokyo",       colTok, onTok)
+[lonHi, lonLo] = f_session("Londres",  sessLon, "Europe/London",    colLon, onLon)
+[nyHi,  nyLo]  = f_session("New York", sessNy,  "America/New_York", colNy,  onNy)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 4. PLUS HAUT / PLUS BAS DE LA VEILLE
+//    [1] + lookahead_on = bougie journalière d'hier, déjà clôturée (pas de repaint)
+// ═══════════════════════════════════════════════════════════════════════════
+[pdh, pdl] = request.security(syminfo.tickerid, "D", [high[1], low[1]], lookahead = barmerge.lookahead_on)
+
+var line  pdhL = na
+var line  pdlL = na
+var label pdhT = na
+var label pdlT = na
+if showPD and timeframe.isintraday
+    if timeframe.change("D")
+        line.delete(pdhL)
+        line.delete(pdlL)
+        pdhL := line.new(bar_index, pdh, bar_index, pdh, color = colPD, style = line.style_dashed, width = 1)
+        pdlL := line.new(bar_index, pdl, bar_index, pdl, color = colPD, style = line.style_dashed, width = 1)
+    else if not na(pdhL)
+        line.set_x2(pdhL, bar_index)
+        line.set_x2(pdlL, bar_index)
+    if barstate.islast and not na(pdhL)
+        label.delete(pdhT)
+        label.delete(pdlT)
+        pdhT := label.new(bar_index, pdh, "PDH  " + str.tostring(pdh, format.mintick), color = color.new(colPD, 100),
+             textcolor = colPD, style = label.style_label_left, size = size.small)
+        pdlT := label.new(bar_index, pdl, "PDL  " + str.tostring(pdl, format.mintick), color = color.new(colPD, 100),
+             textcolor = colPD, style = label.style_label_left, size = size.small)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 5. LÉGENDE DES COULEURS (coin bas droit)
+// ═══════════════════════════════════════════════════════════════════════════
+var table leg = table.new(position.bottom_right, 1, 5)
+if showLeg and barstate.islast
+    table.cell(leg, 0, 0, onSyd ? "■ Sydney" : "", text_color = colSyd, text_size = size.small, text_halign = text.align_left)
+    table.cell(leg, 0, 1, onTok ? "■ Tokyo" : "", text_color = colTok, text_size = size.small, text_halign = text.align_left)
+    table.cell(leg, 0, 2, onLon ? "■ Londres" : "", text_color = colLon, text_size = size.small, text_halign = text.align_left)
+    table.cell(leg, 0, 3, onNy ? "■ New York" : "", text_color = colNy, text_size = size.small, text_halign = text.align_left)
+    table.cell(leg, 0, 4, tfOk ? "" : "Sessions masquées (TF > " + maxTf + ")", text_color = colPD,
+         text_size = size.small, text_halign = text.align_left)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 6. ALERTES : cassure d'un plus haut / plus bas de session (à la clôture)
+// ═══════════════════════════════════════════════════════════════════════════
+bool brkUp = ta.crossover(close, lonHi[1]) or ta.crossover(close, nyHi[1]) or ta.crossover(close, tokHi[1]) or ta.crossover(close, sydHi[1])
+bool brkDn = ta.crossunder(close, lonLo[1]) or ta.crossunder(close, nyLo[1]) or ta.crossunder(close, tokLo[1]) or ta.crossunder(close, sydLo[1])
+alertcondition(tfOk and brkUp, "Koss Sessions - Cassure d'un plus haut", "Koss Sessions : clôture au-dessus d'un plus haut de session sur {{ticker}} ({{close}})")
+alertcondition(tfOk and brkDn, "Koss Sessions - Cassure d'un plus bas", "Koss Sessions : clôture sous un plus bas de session sur {{ticker}} ({{close}})")
+alertcondition(tfOk and ta.crossover(close, pdh), "Koss Sessions - Cassure PDH", "Koss Sessions : clôture au-dessus du plus haut de la veille sur {{ticker}}")
+alertcondition(tfOk and ta.crossunder(close, pdl), "Koss Sessions - Cassure PDL", "Koss Sessions : clôture sous le plus bas de la veille sur {{ticker}}")
