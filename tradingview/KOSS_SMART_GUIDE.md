@@ -9,6 +9,7 @@ Deux fichiers :
 - [`koss_sessions.pine`](./koss_sessions.pine) + [`KOSS_SESSIONS_GUIDE.md`](./KOSS_SESSIONS_GUIDE.md) : **Koss Sessions**, sessions Sydney / Tokyo / Londres / New York avec plus haut / plus bas exacts et PDH / PDL.
 - [`koss_smart_pro.pine`](./koss_smart_pro.pine) + [`KOSS_SMART_PRO_GUIDE.md`](./KOSS_SMART_PRO_GUIDE.md) : **Koss Smart Pro**, modèle Liquidité → MSS → FVG en killzone, avec statistiques de réussite sur le graphique.
 - [`../mt5/KossSmartProSynth.mq5`](../mt5/KossSmartProSynth.mq5) + [`../mt5/KOSS_SMART_PRO_SYNTH_GUIDE.md`](../mt5/KOSS_SMART_PRO_SYNTH_GUIDE.md) : **Koss Smart Pro Synth**, EA MT5 pour GainX / PainX (Weltrade) et Boom / Crash (Deriv), sans sessions.
+- [`../mt5/KossSmartProVol.mq5`](../mt5/KossSmartProVol.mq5) + [`../mt5/KOSS_SMART_PRO_VOL_GUIDE.md`](../mt5/KOSS_SMART_PRO_VOL_GUIDE.md) : **Koss Smart Pro Vol**, EA MT5 pour FX Vol (Weltrade) et Volatility (Deriv), sans sessions, avec filtre de tendance.
 - [`../mt5/KossSmartEA.mq5`](../mt5/KossSmartEA.mq5) + [`../mt5/KOSS_SMART_EA_GUIDE.md`](../mt5/KOSS_SMART_EA_GUIDE.md) : **Koss Smart EA**, version MetaTrader 5 (ordres automatiques, backtest sur les données du courtier, mode contrôle).
 
 ## 1. Installation
