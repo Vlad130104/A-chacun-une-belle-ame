@@ -7,7 +7,7 @@ Il délimite automatiquement les sessions **Sydney, Tokyo, Londres et New York**
 
 ## 1. Installation
 
-1. TradingView → **Éditeur Pine** → nouveau script → coller `koss_sessions.pine`.
+1. TradingView → **Éditeur Pine** → nouveau script → **tout sélectionner (Ctrl + A) et effacer** le modèle proposé par TradingView (`indicator("Mon script")`, `plot(close)`…), puis coller `koss_sessions.pine`. Le script doit commencer par `//@version=6` et ne contenir **qu'un seul** `indicator(...)`.
 2. **Enregistrer** → **Ajouter au graphique**.
 3. Utiliser un timeframe **M1 à H1** (au-dessus, les sessions sont masquées : une bougie H4 couvre plusieurs sessions).
 

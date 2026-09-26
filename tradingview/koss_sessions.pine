@@ -192,9 +192,20 @@ if showLeg and barstate.islast
 // ═══════════════════════════════════════════════════════════════════════════
 // 6. ALERTES : cassure d'un plus haut / plus bas de session (à la clôture)
 // ═══════════════════════════════════════════════════════════════════════════
-bool brkUp = ta.crossover(close, lonHi[1]) or ta.crossover(close, nyHi[1]) or ta.crossover(close, tokHi[1]) or ta.crossover(close, sydHi[1])
-bool brkDn = ta.crossunder(close, lonLo[1]) or ta.crossunder(close, nyLo[1]) or ta.crossunder(close, tokLo[1]) or ta.crossunder(close, sydLo[1])
+// Chaque croisement est calculé à CHAQUE bougie (ta.* ne doit pas être dans un « or » / « and »)
+bool upLon = ta.crossover(close, lonHi[1])
+bool upNy  = ta.crossover(close, nyHi[1])
+bool upTok = ta.crossover(close, tokHi[1])
+bool upSyd = ta.crossover(close, sydHi[1])
+bool dnLon = ta.crossunder(close, lonLo[1])
+bool dnNy  = ta.crossunder(close, nyLo[1])
+bool dnTok = ta.crossunder(close, tokLo[1])
+bool dnSyd = ta.crossunder(close, sydLo[1])
+bool upPdh = ta.crossover(close, pdh)
+bool dnPdl = ta.crossunder(close, pdl)
+bool brkUp = upLon or upNy or upTok or upSyd
+bool brkDn = dnLon or dnNy or dnTok or dnSyd
 alertcondition(tfOk and brkUp, "Koss Sessions - Cassure d'un plus haut", "Koss Sessions : clôture au-dessus d'un plus haut de session sur {{ticker}} ({{close}})")
 alertcondition(tfOk and brkDn, "Koss Sessions - Cassure d'un plus bas", "Koss Sessions : clôture sous un plus bas de session sur {{ticker}} ({{close}})")
-alertcondition(tfOk and ta.crossover(close, pdh), "Koss Sessions - Cassure PDH", "Koss Sessions : clôture au-dessus du plus haut de la veille sur {{ticker}}")
-alertcondition(tfOk and ta.crossunder(close, pdl), "Koss Sessions - Cassure PDL", "Koss Sessions : clôture sous le plus bas de la veille sur {{ticker}}")
+alertcondition(tfOk and upPdh, "Koss Sessions - Cassure PDH", "Koss Sessions : clôture au-dessus du plus haut de la veille sur {{ticker}}")
+alertcondition(tfOk and dnPdl, "Koss Sessions - Cassure PDL", "Koss Sessions : clôture sous le plus bas de la veille sur {{ticker}}")
