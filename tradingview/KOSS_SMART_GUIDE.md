@@ -10,6 +10,7 @@ Deux fichiers :
 - [`koss_smart_pro.pine`](./koss_smart_pro.pine) + [`KOSS_SMART_PRO_GUIDE.md`](./KOSS_SMART_PRO_GUIDE.md) : **Koss Smart Pro**, modèle Liquidité → MSS → FVG en killzone, avec statistiques de réussite sur le graphique.
 - [`../mt5/KossSmartProSynth.mq5`](../mt5/KossSmartProSynth.mq5) + [`../mt5/KOSS_SMART_PRO_SYNTH_GUIDE.md`](../mt5/KOSS_SMART_PRO_SYNTH_GUIDE.md) : **Koss Smart Pro Synth**, EA MT5 pour GainX / PainX (Weltrade) et Boom / Crash (Deriv), sans sessions.
 - [`../mt5/KossSmartProVol.mq5`](../mt5/KossSmartProVol.mq5) + [`../mt5/KOSS_SMART_PRO_VOL_GUIDE.md`](../mt5/KOSS_SMART_PRO_VOL_GUIDE.md) : **Koss Smart Pro Vol**, EA MT5 pour FX Vol (Weltrade) et Volatility (Deriv), sans sessions, avec filtre de tendance.
+- [`../strategie/ANALYSE_SETUP_PAINX.md`](../strategie/ANALYSE_SETUP_PAINX.md) : **analyse du setup gagnant sur PainX 600 / 1200** (vente sur l'escalier d'offre) et règles proposées pour notre version.
 - [`../mt5/KossSmartEA.mq5`](../mt5/KossSmartEA.mq5) + [`../mt5/KOSS_SMART_EA_GUIDE.md`](../mt5/KOSS_SMART_EA_GUIDE.md) : **Koss Smart EA**, version MetaTrader 5 (ordres automatiques, backtest sur les données du courtier, mode contrôle).
 
 ## 1. Installation
