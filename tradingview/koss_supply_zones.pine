@@ -1,0 +1,597 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+//@version=6
+// ═══════════════════════════════════════════════════════════════════════════
+//  KOSS SUPPLY ZONES
+//  Vente sur l'escalier d'offre (et achat sur l'escalier de demande).
+//
+//  Stratégie tirée de vos trades PainX 600 (M30) et PainX 1200 (H1) :
+//   1. Chaque rebond s'arrête plus bas que le précédent et laisse une zone
+//      d'offre (l'« escalier »).
+//   2. Le prix revient dans la DERNIÈRE zone.
+//   3. Vente au bord inférieur de la zone, stop au-dessus, cible sur la
+//      liquidité (creux) sous le prix.
+//  Tout est calculé sur bougie clôturée : pas de repaint.
+//  Fiche : KOSS_SUPPLY_ZONES_GUIDE.md
+// ═══════════════════════════════════════════════════════════════════════════
+indicator("Koss Supply Zones", shorttitle = "KSZ", overlay = true, max_boxes_count = 200, max_lines_count = 300, max_labels_count = 300, max_bars_back = 500)
+
+// ─── Constantes des menus ───────────────────────────────────────────────────
+const string DIR_AUTO = "Auto (selon le symbole)"
+const string DIR_SELL = "Ventes (zones d'offre)"
+const string DIR_BUY  = "Achats (zones de demande)"
+const string DIR_BOTH = "Les deux"
+const string ZM_WB    = "Mèche + corps"
+const string ZM_FULL  = "Bougie entière"
+const string TG_NEAR  = "Liquidité la plus proche (≥ R min.)"
+const string TG_FAR   = "Creux / sommet le plus extrême"
+
+// ─── 1. Sens ────────────────────────────────────────────────────────────────
+const string G1 = "1. Sens des trades"
+iDir     = input.string(DIR_AUTO, "Sens", options = [DIR_AUTO, DIR_SELL, DIR_BUY, DIR_BOTH], group = G1, tooltip = "Auto : ventes sur PainX / Crash (indices qui chutent), achats sur GainX / Boom (indices à pics haussiers), les deux sinon.")
+
+// ─── 2. Zones ───────────────────────────────────────────────────────────────
+const string G2 = "2. Zones et escalier"
+iSwing   = input.int(3, "Longueur des swings", minval = 2, maxval = 10, group = G2, tooltip = "Nombre de bougies de chaque côté pour valider un sommet ou un creux.")
+iImp     = input.float(1.5, "Mouvement impulsif minimal (× ATR)", minval = 0.5, step = 0.1, group = G2, tooltip = "Taille minimale de la chute (ou hausse) qui crée la zone.")
+iSearch  = input.int(20, "Recherche de l'origine (bougies)", minval = 5, maxval = 100, group = G2)
+iZoneMd  = input.string(ZM_WB, "Hauteur de la zone", options = [ZM_WB, ZM_FULL], group = G2, tooltip = "Mèche + corps : du plus haut à l'ouverture de la dernière bougie haussière (offre). Bougie entière : du plus haut au plus bas.")
+iMinStep = input.int(2, "Marches minimales de l'escalier", minval = 1, maxval = 10, group = G2, tooltip = "2 = au moins deux sommets de plus en plus bas (offre) ou deux creux de plus en plus hauts (demande).")
+iMaxAge  = input.int(150, "Durée de vie d'une zone (bougies)", minval = 10, group = G2)
+iAtrLen  = input.int(14, "Période ATR", minval = 1, group = G2)
+
+// ─── 3. Entrée ──────────────────────────────────────────────────────────────
+const string G3 = "3. Entrée"
+iEntOff  = input.float(0.1, "Entrée : avant le bord de la zone (× ATR)", minval = 0.0, step = 0.05, group = G3, tooltip = "Vente à (bas de zone − 0,1 ATR), comme vos trades : 103 917 pour une zone qui commence à 103 920.")
+iConfirm = input.bool(true, "Confirmation de rejet", group = G3, tooltip = "Oui : après le toucher, attendre une bougie baissière (haussière pour un achat) qui clôture hors de la zone. Entrée à la clôture de cette bougie.\nNon : entrée directe au toucher (ordre limite).")
+iConfBar = input.int(5, "Délai de confirmation (bougies)", minval = 1, maxval = 50, group = G3)
+
+// ─── 4. Stop et objectifs ───────────────────────────────────────────────────
+const string G4 = "4. Stop et objectifs"
+iSlBuf   = input.float(0.2, "Stop : marge au-delà de la zone (× ATR)", minval = 0.0, step = 0.05, group = G4)
+iTp1R    = input.float(1.5, "TP1 (R)", minval = 0.5, step = 0.1, group = G4)
+iPart    = input.float(50, "Part fermée à TP1 (%)", minval = 0, maxval = 100, step = 5, group = G4)
+iBE      = input.bool(true, "Stop à l'entrée après TP1", group = G4)
+iTgtMd   = input.string(TG_NEAR, "Cible (TP2)", options = [TG_NEAR, TG_FAR], group = G4)
+iMinRR   = input.float(2.0, "Gain / risque minimal jusqu'à TP2 (R)", minval = 1.0, step = 0.1, group = G4)
+iTpBuf   = input.float(0.5, "TP2 : marge au-delà de la liquidité (× ATR)", minval = 0.0, step = 0.1, group = G4)
+iNoTgtR  = input.float(3.0, "Sans liquidité visible : TP2 à (R), 0 = pas de trade", minval = 0.0, step = 0.5, group = G4)
+iEqTol   = input.float(0.15, "Tolérance creux / sommets égaux (× ATR)", minval = 0.0, step = 0.05, group = G4)
+iMaxBars = input.int(48, "Durée max. d'un trade (bougies, 0 = off)", minval = 0, group = G4)
+
+// ─── 5. Taille de position ──────────────────────────────────────────────────
+const string G5 = "5. Taille de position"
+iCap     = input.float(1000, "Capital (USD)", minval = 1, group = G5)
+iRisk    = input.float(1.0, "Risque par trade (%)", minval = 0.1, maxval = 10, step = 0.1, group = G5)
+iPtVal   = input.float(1.0, "Valeur de 1 point de prix pour 1 lot (USD)", minval = 0.0001, step = 0.1, group = G5, tooltip = "PainX 600 / 1200 : environ 1 USD (mesuré sur vos captures MT5). Vérifiez chez votre courtier.")
+
+// ─── 6. Affichage ───────────────────────────────────────────────────────────
+const string G6 = "6. Affichage"
+iMaxZone = input.int(4, "Zones affichées par sens", minval = 1, maxval = 20, group = G6)
+iShowEq  = input.bool(true, "Creux / sommets égaux (EQL / EQH)", group = G6)
+iShowTr  = input.bool(true, "Trades (entrée, stop, TP)", group = G6)
+iKeepTr  = input.int(5, "Trades gardés sur le graphique", minval = 1, maxval = 50, group = G6)
+iPanel   = input.bool(true, "Panneau", group = G6)
+cSup     = input.color(#9C27B0, "Offre (ventes)", group = G6)
+cDem     = input.color(#00897B, "Demande (achats)", group = G6)
+cNeu     = input.color(#787B86, "Neutre", group = G6)
+cLoss    = input.color(#F23645, "Stop", group = G6)
+cWin     = input.color(#089981, "Objectifs", group = G6)
+
+// ─── Sens autorisé ──────────────────────────────────────────────────────────
+string symU      = str.upper(syminfo.ticker + " " + syminfo.description)
+bool   isDropIdx = str.contains(symU, "PAINX") or str.contains(symU, "CRASH")
+bool   isPumpIdx = str.contains(symU, "GAINX") or str.contains(symU, "BOOM")
+bool   autoMd    = iDir == DIR_AUTO
+bool   allowSell = iDir == DIR_SELL or iDir == DIR_BOTH or (autoMd and not isPumpIdx)
+bool   allowBuy  = iDir == DIR_BUY or iDir == DIR_BOTH or (autoMd and not isDropIdx)
+
+// ─── Types ──────────────────────────────────────────────────────────────────
+type Zone
+    int   dir              // -1 = offre (ventes), +1 = demande (achats)
+    float top
+    float bot
+    int   born             // bougie de création (cassure du creux / sommet)
+    int   step             // numéro de la marche dans l'escalier
+    int   left             // bougie d'origine (début du rectangle)
+    bool  touched  = false
+    int   touchBar = na
+    box   bx       = na
+
+type Level
+    float price
+    int   bar
+    bool  swept = false
+    line  ln    = na
+    label lb    = na
+
+type Trade
+    int   dir
+    float entry
+    float sl
+    float tp1
+    float tp2
+    float risk
+    float rr2
+    int   bar
+    bool  tp1Hit = false
+    bool  open   = true
+    line  lE     = na
+    line  lS     = na
+    line  l1     = na
+    line  l2     = na
+    label lb     = na
+    label lr     = na
+
+type Stats
+    int   n     = 0
+    int   wins  = 0
+    int   tp1   = 0
+    int   tp2   = 0
+    float sumR  = 0.0
+    float gWin  = 0.0
+    float gLoss = 0.0
+
+// ─── État ───────────────────────────────────────────────────────────────────
+var array<Zone>  zones  = array.new<Zone>()
+var array<Level> lowsA  = array.new<Level>()
+var array<Level> highsA = array.new<Level>()
+var array<Trade> hist   = array.new<Trade>()
+var Stats  st         = Stats.new()
+var Zone   actSup     = na
+var Zone   actDem     = na
+var Trade  tr         = na
+var float  lastSL     = na
+var float  lastSH     = na
+var bool   slUsed     = true
+var bool   shUsed     = true
+var float  prevSupTop = na
+var float  prevDemBot = na
+var int    supSteps   = 0
+var int    demSteps   = 0
+var string status     = "Recherche d'un escalier"
+
+// Événements de la bougie (pour les alertes)
+bool evZone  = false
+bool evTouch = false
+bool evSell  = false
+bool evBuy   = false
+bool evTp1   = false
+bool evTp2   = false
+bool evSl    = false
+
+// ─── Séries calculées à chaque bougie (jamais dans un if) ───────────────────
+float atr = ta.atr(iAtrLen)
+float ph  = ta.pivothigh(high, iSwing, iSwing)
+float pl  = ta.pivotlow(low, iSwing, iSwing)
+
+// ─── Fonctions ──────────────────────────────────────────────────────────────
+f_px(float p) => str.tostring(p, format.mintick)
+f_r(float r)  => (r >= 0 ? "+" : "") + str.tostring(r, "0.00") + "R"
+
+// Lot pour risquer iRisk % du capital sur une distance « risk » (en prix)
+f_lot(float risk) =>
+    float v = iCap * iRisk / 100.0 / (risk * iPtVal)
+    math.floor(v * 100) / 100
+
+// Ajoute un creux (isLow) ou un sommet, et repère les niveaux égaux
+f_addLevel(array<Level> arr, float p, int b, bool isLow, float tol) =>
+    Level nl = Level.new(p, b)
+    for o in arr
+        if not o.swept and math.abs(o.price - p) <= tol and na(nl.ln) and iShowEq
+            nl.ln := line.new(o.bar, o.price, b, o.price, extend = extend.right, color = color.new(cNeu, 20), style = line.style_dashed)
+            nl.lb := label.new(b, o.price, isLow ? "EQL" : "EQH", style = isLow ? label.style_label_up : label.style_label_down, color = color.new(cNeu, 100), textcolor = cNeu, size = size.tiny)
+    arr.push(nl)
+    if arr.size() > 30
+        Level old = arr.shift()
+        if not na(old.ln)
+            old.ln.delete()
+        if not na(old.lb)
+            old.lb.delete()
+    nl
+
+// Marque les niveaux pris par la mèche de la bougie
+f_sweep(array<Level> arr, bool isLow) =>
+    for o in arr
+        if not o.swept and (isLow ? low < o.price : high > o.price)
+            o.swept := true
+            if not na(o.ln)
+                o.ln.set_x2(bar_index)
+                o.ln.set_extend(extend.none)
+                o.ln.set_color(color.new(cNeu, 70))
+
+// Cible TP2 : liquidité non prise au-delà de l'entrée, avec au moins iMinRR
+f_target(int dir, float entry, float risk) =>
+    array<Level> arr = dir == -1 ? lowsA : highsA
+    float best = na
+    int   cnt  = 0
+    for o in arr
+        if not o.swept and (dir == -1 ? o.price < entry : o.price > entry)
+            cnt += 1
+            float tgt = dir == -1 ? o.price - iTpBuf * atr : o.price + iTpBuf * atr
+            if math.abs(entry - tgt) / risk >= iMinRR
+                bool better = iTgtMd == TG_NEAR ? (dir == -1 ? tgt > best : tgt < best) : (dir == -1 ? tgt < best : tgt > best)
+                if na(best) or better
+                    best := tgt
+    if na(best) and cnt == 0 and iNoTgtR > 0
+        best := dir == -1 ? entry - iNoTgtR * risk : entry + iNoTgtR * risk
+    best
+
+// Construit le trade (na si le setup ne respecte pas les règles)
+f_open(Zone z, float entry) =>
+    int   dir  = z.dir
+    float sl   = dir == -1 ? z.top + iSlBuf * atr : z.bot - iSlBuf * atr
+    float risk = dir == -1 ? sl - entry : entry - sl
+    Trade t = na
+    if risk > 0 and z.step >= iMinStep
+        float tp2 = f_target(dir, entry, risk)
+        if not na(tp2)
+            float tp1 = dir == -1 ? entry - iTp1R * risk : entry + iTp1R * risk
+            if (dir == -1 and tp1 <= tp2) or (dir == 1 and tp1 >= tp2)
+                tp1 := (entry + tp2) / 2
+            t := Trade.new(dir, entry, sl, tp1, tp2, risk, math.abs(tp2 - entry) / risk, bar_index)
+    t
+
+f_drawTrade(Trade t, int step) =>
+    if iShowTr
+        color c = t.dir == -1 ? cSup : cDem
+        t.lE := line.new(t.bar, t.entry, bar_index + 1, t.entry, color = c, width = 2)
+        t.lS := line.new(t.bar, t.sl, bar_index + 1, t.sl, color = cLoss, style = line.style_dashed)
+        t.l1 := line.new(t.bar, t.tp1, bar_index + 1, t.tp1, color = color.new(cWin, 40), style = line.style_dotted)
+        t.l2 := line.new(t.bar, t.tp2, bar_index + 1, t.tp2, color = cWin, style = line.style_dashed)
+        string txt = (t.dir == -1 ? "VENTE" : "ACHAT") + " · marche " + str.tostring(step) + "\nEntrée " + f_px(t.entry) + "\nStop " + f_px(t.sl) + "\nTP1 " + f_px(t.tp1) + " · TP2 " + f_px(t.tp2) + " (" + str.tostring(t.rr2, "0.0") + "R)\nLot " + str.tostring(f_lot(t.risk), "0.00")
+        t.lb := label.new(t.bar, t.entry, txt, style = label.style_label_right, color = color.new(c, 15), textcolor = color.white, size = size.small, textalign = text.align_left)
+
+// Clôture un trade virtuel et met à jour les statistiques
+f_close(Trade t, float res, float px, Stats s, array<Trade> h) =>
+    t.open := false
+    s.n += 1
+    s.sumR += res
+    if res > 0
+        s.wins += 1
+        s.gWin += res
+    else
+        s.gLoss -= res
+    if iShowTr
+        if not na(t.lE)
+            t.lE.set_x2(bar_index)
+            t.lS.set_x2(bar_index)
+            t.l1.set_x2(bar_index)
+            t.l2.set_x2(bar_index)
+        t.lr := label.new(bar_index, px, f_r(res), style = label.style_label_left, color = color.new(res > 0 ? cWin : res < 0 ? cLoss : cNeu, 20), textcolor = color.white, size = size.small)
+    h.push(t)
+    if h.size() > iKeepTr
+        Trade o = h.shift()
+        if not na(o.lE)
+            o.lE.delete()
+            o.lS.delete()
+            o.l1.delete()
+            o.l2.delete()
+        if not na(o.lb)
+            o.lb.delete()
+        if not na(o.lr)
+            o.lr.delete()
+
+f_zoneColors(Zone z, bool active) =>
+    if not na(z.bx)
+        color c = z.dir == -1 ? cSup : cDem
+        z.bx.set_bgcolor(color.new(c, active ? 75 : 92))
+        z.bx.set_border_color(color.new(c, active ? 0 : 60))
+        z.bx.set_border_width(active ? 2 : 1)
+        z.bx.set_text_color(color.new(c, active ? 0 : 50))
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  LOGIQUE (bougies clôturées uniquement)
+// ═══════════════════════════════════════════════════════════════════════════
+if barstate.isconfirmed and not na(atr)
+    float part = iPart / 100.0
+
+    // ── A. Gestion du trade en cours ─────────────────────────────────────────
+    if not na(tr) and tr.open and bar_index > tr.bar
+        bool  isS   = tr.dir == -1
+        bool  hitSl = isS ? high >= tr.sl : low <= tr.sl
+        bool  hitT1 = isS ? low <= tr.tp1 : high >= tr.tp1
+        bool  hitT2 = isS ? low <= tr.tp2 : high >= tr.tp2
+        float res   = na
+        float px    = na
+        if hitSl
+            // Hypothèse prudente : si stop et objectif sont touchés sur la même bougie, le stop compte.
+            res   := tr.tp1Hit ? part * iTp1R + (1 - part) * (iBE ? 0.0 : -1.0) : -1.0
+            px    := tr.sl
+            evSl  := true
+            status := tr.tp1Hit ? "Trade clos : stop à l'entrée après TP1" : "Trade clos : stop touché"
+        else
+            if not tr.tp1Hit and hitT1
+                tr.tp1Hit := true
+                st.tp1 += 1
+                evTp1 := true
+                status := "TP1 atteint : " + str.tostring(iPart, "0") + " % fermés" + (iBE ? ", stop à l'entrée" : "")
+                if iBE
+                    tr.sl := tr.entry
+                    if not na(tr.lS)
+                        tr.lS.set_y1(tr.entry)
+                        tr.lS.set_y2(tr.entry)
+            if hitT2
+                res   := part * iTp1R + (1 - part) * tr.rr2
+                px    := tr.tp2
+                st.tp2 += 1
+                evTp2 := true
+                status := "Trade clos : TP2 atteint"
+            else if iMaxBars > 0 and bar_index - tr.bar >= iMaxBars
+                float x = isS ? (tr.entry - close) / tr.risk : (close - tr.entry) / tr.risk
+                res   := tr.tp1Hit ? part * iTp1R + (1 - part) * x : x
+                px    := close
+                status := "Trade clos : durée maximale"
+        if not na(res)
+            f_close(tr, res, px, st, hist)
+        else if not na(tr.lE)
+            tr.lE.set_x2(bar_index + 1)
+            tr.lS.set_x2(bar_index + 1)
+            tr.l1.set_x2(bar_index + 1)
+            tr.l2.set_x2(bar_index + 1)
+
+    // ── B. Vie des zones : cassure (clôture au-delà) ou expiration ──────────
+    if zones.size() > 0
+        for i = zones.size() - 1 to 0
+            Zone z = zones.get(i)
+            if z.born < bar_index
+                bool inval = z.dir == -1 ? close > z.top : close < z.bot
+                bool old   = bar_index - z.born > iMaxAge
+                if inval or old
+                    if not na(z.bx)
+                        z.bx.delete()
+                    if z.dir == -1 and not na(actSup) and actSup.born == z.born
+                        actSup := na
+                    if z.dir == 1 and not na(actDem) and actDem.born == z.born
+                        actDem := na
+                    if inval and z.dir == -1
+                        supSteps   := 0
+                        prevSupTop := na
+                        status := "Zone d'offre cassée : escalier remis à zéro"
+                    if inval and z.dir == 1
+                        demSteps   := 0
+                        prevDemBot := na
+                        status := "Zone de demande cassée : escalier remis à zéro"
+                    zones.remove(i)
+                else if not na(z.bx)
+                    z.bx.set_right(bar_index + 3)
+
+    // ── C. Liquidité : niveaux pris, nouveaux creux / sommets ───────────────
+    f_sweep(lowsA, true)
+    f_sweep(highsA, false)
+    if not na(pl)
+        lastSL := pl
+        slUsed := false
+        f_addLevel(lowsA, pl, bar_index - iSwing, true, iEqTol * atr)
+    if not na(ph)
+        lastSH := ph
+        shUsed := false
+        f_addLevel(highsA, ph, bar_index - iSwing, false, iEqTol * atr)
+
+    // ── D. Nouvelle zone d'offre : clôture sous le dernier creux ────────────
+    if allowSell and not na(lastSL) and not slUsed and close < lastSL
+        slUsed := true
+        int   hIdx = 1
+        float hh   = high[1]
+        for k = 2 to iSearch
+            if high[k] > hh
+                hh   := high[k]
+                hIdx := k
+        int obIdx = -1
+        for k = hIdx to hIdx + 3
+            if obIdx < 0 and close[k] > open[k]
+                obIdx := k
+        int   src = obIdx >= 0 ? obIdx : hIdx
+        float top = hh
+        float bot = iZoneMd == ZM_FULL ? low[src] : (obIdx >= 0 ? open[obIdx] : math.min(open[hIdx], close[hIdx]))
+        if top - bot < 0.15 * atr
+            bot := top - 0.15 * atr
+        if top - close >= iImp * atr
+            supSteps   := supSteps > 0 and not na(prevSupTop) and top < prevSupTop ? supSteps + 1 : 1
+            prevSupTop := top
+            Zone z = Zone.new(-1, top, bot, bar_index, supSteps, bar_index - src)
+            z.bx := box.new(z.left, top, bar_index + 3, bot, border_color = cSup, bgcolor = color.new(cSup, 75), text = "Offre · marche " + str.tostring(supSteps), text_size = size.small, text_color = cSup, text_halign = text.align_right, text_valign = text.align_top)
+            if not na(actSup)
+                f_zoneColors(actSup, false)
+            actSup := z
+            f_zoneColors(z, true)
+            zones.push(z)
+            evZone := true
+            status := "Nouvelle zone d'offre (marche " + str.tostring(supSteps) + ")"
+            // Nettoyage : garder iMaxZone zones d'offre
+            int cntS = 0
+            for zz in zones
+                if zz.dir == -1
+                    cntS += 1
+            if cntS > iMaxZone
+                for j = 0 to zones.size() - 1
+                    Zone zo = zones.get(j)
+                    if zo.dir == -1
+                        if not na(zo.bx)
+                            zo.bx.delete()
+                        zones.remove(j)
+                        break
+
+    // ── D bis. Nouvelle zone de demande : clôture au-dessus du dernier sommet
+    if allowBuy and not na(lastSH) and not shUsed and close > lastSH
+        shUsed := true
+        int   lIdx = 1
+        float ll   = low[1]
+        for k = 2 to iSearch
+            if low[k] < ll
+                ll   := low[k]
+                lIdx := k
+        int obIdx = -1
+        for k = lIdx to lIdx + 3
+            if obIdx < 0 and close[k] < open[k]
+                obIdx := k
+        int   src = obIdx >= 0 ? obIdx : lIdx
+        float bot = ll
+        float top = iZoneMd == ZM_FULL ? high[src] : (obIdx >= 0 ? open[obIdx] : math.max(open[lIdx], close[lIdx]))
+        if top - bot < 0.15 * atr
+            top := bot + 0.15 * atr
+        if close - bot >= iImp * atr
+            demSteps   := demSteps > 0 and not na(prevDemBot) and bot > prevDemBot ? demSteps + 1 : 1
+            prevDemBot := bot
+            Zone z = Zone.new(1, top, bot, bar_index, demSteps, bar_index - src)
+            z.bx := box.new(z.left, top, bar_index + 3, bot, border_color = cDem, bgcolor = color.new(cDem, 75), text = "Demande · marche " + str.tostring(demSteps), text_size = size.small, text_color = cDem, text_halign = text.align_right, text_valign = text.align_bottom)
+            if not na(actDem)
+                f_zoneColors(actDem, false)
+            actDem := z
+            f_zoneColors(z, true)
+            zones.push(z)
+            evZone := true
+            status := "Nouvelle zone de demande (marche " + str.tostring(demSteps) + ")"
+            int cntB = 0
+            for zz in zones
+                if zz.dir == 1
+                    cntB += 1
+            if cntB > iMaxZone
+                for j = 0 to zones.size() - 1
+                    Zone zo = zones.get(j)
+                    if zo.dir == 1
+                        if not na(zo.bx)
+                            zo.bx.delete()
+                        zones.remove(j)
+                        break
+
+    // ── E. Signal de VENTE : retour dans la dernière zone d'offre ───────────
+    bool canTrade = na(tr) or not tr.open
+    if allowSell and not na(actSup) and actSup.born < bar_index
+        Zone  z    = actSup
+        float eLvl = z.bot - iEntOff * atr
+        if not z.touched and high >= eLvl
+            z.touched  := true
+            z.touchBar := bar_index
+            evTouch    := true
+            status     := "Prix dans la zone d'offre : " + (iConfirm ? "attente de la confirmation" : "entrée")
+        if z.touched
+            bool  done  = false
+            float entry = na
+            if not canTrade
+                done   := true
+                status := "Zone touchée pendant un trade : ignorée"
+            else if not iConfirm
+                entry := math.max(eLvl, open)
+                done  := true
+            else if close < eLvl and close < open
+                entry := close
+                done  := true
+            else if bar_index - z.touchBar >= iConfBar - 1
+                done   := true
+                status := "Pas de confirmation : zone abandonnée"
+            if not na(entry)
+                Trade t = f_open(z, entry)
+                if na(t)
+                    status := z.step < iMinStep ? "Setup ignoré : escalier trop court (" + str.tostring(z.step) + " marche)" : "Setup ignoré : cible à moins de " + str.tostring(iMinRR, "0.0") + "R"
+                else
+                    tr := t
+                    f_drawTrade(tr, z.step)
+                    evSell := true
+                    canTrade := false
+                    status := "VENTE en cours"
+                    alert("Koss Supply Zones : VENTE " + syminfo.ticker + " à " + f_px(t.entry) + " | stop " + f_px(t.sl) + " | TP1 " + f_px(t.tp1) + " | TP2 " + f_px(t.tp2) + " (" + str.tostring(t.rr2, "0.0") + "R) | lot " + str.tostring(f_lot(t.risk), "0.00"), alert.freq_once_per_bar_close)
+                    // Entrée au toucher : le stop peut être touché sur la même bougie
+                    if not iConfirm and high >= t.sl
+                        f_close(tr, -1.0, t.sl, st, hist)
+                        evSl := true
+                        status := "Trade clos : stop touché sur la bougie d'entrée"
+            if done
+                f_zoneColors(z, false)
+                actSup := na
+
+    // ── E bis. Signal d'ACHAT : retour dans la dernière zone de demande ─────
+    if allowBuy and not na(actDem) and actDem.born < bar_index
+        Zone  z    = actDem
+        float eLvl = z.top + iEntOff * atr
+        if not z.touched and low <= eLvl
+            z.touched  := true
+            z.touchBar := bar_index
+            evTouch    := true
+            status     := "Prix dans la zone de demande : " + (iConfirm ? "attente de la confirmation" : "entrée")
+        if z.touched
+            bool  done  = false
+            float entry = na
+            if not canTrade
+                done   := true
+                status := "Zone touchée pendant un trade : ignorée"
+            else if not iConfirm
+                entry := math.min(eLvl, open)
+                done  := true
+            else if close > eLvl and close > open
+                entry := close
+                done  := true
+            else if bar_index - z.touchBar >= iConfBar - 1
+                done   := true
+                status := "Pas de confirmation : zone abandonnée"
+            if not na(entry)
+                Trade t = f_open(z, entry)
+                if na(t)
+                    status := z.step < iMinStep ? "Setup ignoré : escalier trop court (" + str.tostring(z.step) + " marche)" : "Setup ignoré : cible à moins de " + str.tostring(iMinRR, "0.0") + "R"
+                else
+                    tr := t
+                    f_drawTrade(tr, z.step)
+                    evBuy := true
+                    status := "ACHAT en cours"
+                    alert("Koss Supply Zones : ACHAT " + syminfo.ticker + " à " + f_px(t.entry) + " | stop " + f_px(t.sl) + " | TP1 " + f_px(t.tp1) + " | TP2 " + f_px(t.tp2) + " (" + str.tostring(t.rr2, "0.0") + "R) | lot " + str.tostring(f_lot(t.risk), "0.00"), alert.freq_once_per_bar_close)
+                    if not iConfirm and low <= t.sl
+                        f_close(tr, -1.0, t.sl, st, hist)
+                        evSl := true
+                        status := "Trade clos : stop touché sur la bougie d'entrée"
+            if done
+                f_zoneColors(z, false)
+                actDem := na
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  PANNEAU
+// ═══════════════════════════════════════════════════════════════════════════
+var table tb = table.new(position.top_right, 2, 16, bgcolor = color.new(#131722, 10), border_color = color.new(cNeu, 60), border_width = 1, frame_color = color.new(cNeu, 40), frame_width = 1)
+
+f_row(int r, string a, string b, color cb) =>
+    tb.cell(0, r, a, text_color = color.new(color.white, 25), text_size = size.small, text_halign = text.align_left)
+    tb.cell(1, r, b, text_color = cb, text_size = size.small, text_halign = text.align_right)
+
+if iPanel and barstate.islast
+    string dirTxt = allowSell and allowBuy ? "achats et ventes" : allowSell ? "ventes (offre)" : "achats (demande)"
+    tb.cell(0, 0, "Koss Supply Zones", text_color = color.white, text_size = size.normal, text_halign = text.align_left)
+    tb.cell(1, 0, syminfo.ticker, text_color = color.white, text_size = size.normal, text_halign = text.align_right)
+    f_row(1, "Sens", dirTxt + (autoMd ? " (auto)" : ""), color.white)
+    f_row(2, "Escalier d'offre", allowSell ? str.tostring(supSteps) + " marche(s)" + (supSteps >= iMinStep ? " ✔" : "") : "–", supSteps >= iMinStep and allowSell ? cSup : cNeu)
+    f_row(3, "Escalier de demande", allowBuy ? str.tostring(demSteps) + " marche(s)" + (demSteps >= iMinStep ? " ✔" : "") : "–", demSteps >= iMinStep and allowBuy ? cDem : cNeu)
+    // Plan de la zone active la plus récente
+    Zone za = na
+    if not na(actSup) and not na(actDem)
+        za := actSup.born > actDem.born ? actSup : actDem
+    else
+        za := not na(actSup) ? actSup : actDem
+    if not na(za) and not na(atr)
+        bool  s  = za.dir == -1
+        float e  = s ? za.bot - iEntOff * atr : za.top + iEntOff * atr
+        float sl = s ? za.top + iSlBuf * atr : za.bot - iSlBuf * atr
+        float rk = math.abs(e - sl)
+        f_row(4, "Zone active", (s ? "offre " : "demande ") + f_px(za.bot) + " – " + f_px(za.top), s ? cSup : cDem)
+        f_row(5, "Plan", (s ? "vente " : "achat ") + f_px(e) + " · stop " + f_px(sl), color.white)
+        f_row(6, "Lot (" + str.tostring(iRisk, "0.0") + " % de " + str.tostring(iCap, "#") + " $)", str.tostring(f_lot(rk), "0.00") + " lot · risque " + f_px(rk), color.white)
+    else
+        f_row(4, "Zone active", "aucune", cNeu)
+        f_row(5, "Plan", "–", cNeu)
+        f_row(6, "Lot", "–", cNeu)
+    bool tOpen = not na(tr) and tr.open
+    f_row(7, "Trade", tOpen ? (tr.dir == -1 ? "VENTE " : "ACHAT ") + f_px(tr.entry) + (tr.tp1Hit ? " · TP1 ✔" : "") : "aucun", tOpen ? (tr.dir == -1 ? cSup : cDem) : cNeu)
+    f_row(8, "État", status, color.white)
+    tb.cell(0, 9, "Statistiques (historique chargé)", text_color = color.new(color.white, 40), text_size = size.small, text_halign = text.align_left)
+    tb.cell(1, 9, "", text_size = size.small)
+    f_row(10, "Trades", str.tostring(st.n), color.white)
+    f_row(11, "Réussite (R > 0)", st.n > 0 ? str.tostring(100.0 * st.wins / st.n, "0") + " %" : "–", color.white)
+    f_row(12, "TP1 / TP2 atteints", st.n > 0 ? str.tostring(100.0 * st.tp1 / st.n, "0") + " % / " + str.tostring(100.0 * st.tp2 / st.n, "0") + " %" : "–", color.white)
+    f_row(13, "Espérance", st.n > 0 ? f_r(st.sumR / st.n) + " par trade" : "–", st.sumR >= 0 ? cWin : cLoss)
+    f_row(14, "Total", st.n > 0 ? f_r(st.sumR) : "–", st.sumR >= 0 ? cWin : cLoss)
+    f_row(15, "Profit factor", st.gLoss > 0 ? str.tostring(st.gWin / st.gLoss, "0.00") : st.n > 0 ? "∞" : "–", color.white)
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  ALERTES (Créer une alerte → Condition : Koss Supply Zones)
+// ═══════════════════════════════════════════════════════════════════════════
+alertcondition(evSell, "KSZ : signal de VENTE", "Koss Supply Zones : VENTE sur {{ticker}} ({{interval}}) à {{close}}")
+alertcondition(evBuy, "KSZ : signal d'ACHAT", "Koss Supply Zones : ACHAT sur {{ticker}} ({{interval}}) à {{close}}")
+alertcondition(evTouch, "KSZ : prix dans la zone active", "Koss Supply Zones : le prix est revenu dans la zone active sur {{ticker}} ({{interval}})")
+alertcondition(evZone, "KSZ : nouvelle zone", "Koss Supply Zones : nouvelle zone sur {{ticker}} ({{interval}})")
+alertcondition(evTp1 or evTp2 or evSl, "KSZ : TP1 / TP2 / stop", "Koss Supply Zones : trade géré sur {{ticker}} ({{interval}}) à {{close}}")

@@ -128,7 +128,7 @@ Ce sont vos trades, rendus **mesurables** et **protégés**. Chaque règle a un 
 | 6 | **Entrée** | Vente limite **au bord inférieur de la zone, moins 0,1 × ATR** (c'est ce que vous faites déjà : 103 917 pour une zone qui commence à 103 920). |
 | 7 | **Confirmation (option)** | Le prix doit clôturer sous la zone sur l'unité de temps inférieure. Elle évite les cas comme le 2ᵉ trade. |
 | 8 | **Stop** | Au-dessus du haut de la zone **+ 0,2 × ATR**. **Obligatoire.** |
-| 9 | **TP1** | Dernier creux ou 2R : fermer 50 % et mettre le stop au prix d'entrée. |
+| 9 | **TP1** | 1,5R : fermer 50 % et mettre le stop au prix d'entrée. |
 | 10 | **TP2** | Sous la SSL (−0,5 × ATR), pour profiter des chutes. |
 | 11 | **Rapport gain / risque** | Minimum **2R** jusqu'à la cible, sinon pas de trade. |
 | 12 | **Taille de position** | **1 % du capital maximum** par zone, même en deux entrées (comme vos SELL 3 + SELL 2). |
@@ -153,7 +153,7 @@ Ce sont vos trades, rendus **mesurables** et **protégés**. Chaque règle a un 
 
 Je propose un indicateur dédié, plutôt que de modifier Koss Smart Pro : sa logique (sweep → MSS → FVG, entrée au milieu du FVG) n'est **pas** celle de vos trades.
 
-Nom proposé : **Koss Supply Zones** (TradingView, Pine Script v6).
+**Réalisé : Koss Supply Zones**, pour TradingView ([`../tradingview/koss_supply_zones.pine`](../tradingview/koss_supply_zones.pine)) et MT5 ([`../mt5/KossSupplyZones.mq5`](../mt5/KossSupplyZones.mq5)), confirmation activée par défaut. Mode d'emploi : [`../tradingview/KOSS_SUPPLY_ZONES_GUIDE.md`](../tradingview/KOSS_SUPPLY_ZONES_GUIDE.md).
 
 Ce qu'il fera :
 1. **Détecter et dessiner les zones d'offre** créées par une chute impulsive (règle 3), avec des rectangles propres qui s'arrêtent quand la zone est touchée ou cassée.
