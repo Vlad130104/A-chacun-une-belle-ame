@@ -24,13 +24,16 @@ const string ZM_WB    = "Mèche + corps"
 const string ZM_FULL  = "Bougie entière"
 const string TG_NEAR  = "Liquidité la plus proche (≥ R min.)"
 const string TG_FAR   = "Creux / sommet le plus extrême"
+const string PR_AUTO  = "Auto (selon l'unité de temps)"
+const string PR_MAN   = "Manuel (valeurs ci-dessous)"
 
 // ─── 1. Sens ────────────────────────────────────────────────────────────────
 const string G1 = "1. Sens des trades"
+iProfile = input.string(PR_AUTO, "Profil des réglages", options = [PR_AUTO, PR_MAN], group = G1, tooltip = "Auto : longueur des swings, impulsion, durées et délais adaptés à l'unité de temps (M1 à D1). Manuel : les valeurs des groupes 2, 3 et 4 sont utilisées telles quelles.")
 iDir     = input.string(DIR_AUTO, "Sens", options = [DIR_AUTO, DIR_SELL, DIR_BUY, DIR_BOTH], group = G1, tooltip = "Auto : ventes sur PainX / Crash (indices qui chutent), achats sur GainX / Boom (indices à pics haussiers), les deux sinon.")
 
 // ─── 2. Zones ───────────────────────────────────────────────────────────────
-const string G2 = "2. Zones et escalier"
+const string G2 = "2. Zones et escalier (profil manuel)"
 iSwing   = input.int(3, "Longueur des swings", minval = 2, maxval = 10, group = G2, tooltip = "Nombre de bougies de chaque côté pour valider un sommet ou un creux.")
 iImp     = input.float(1.5, "Mouvement impulsif minimal (× ATR)", minval = 0.5, step = 0.1, group = G2, tooltip = "Taille minimale de la chute (ou hausse) qui crée la zone.")
 iSearch  = input.int(20, "Recherche de l'origine (bougies)", minval = 5, maxval = 100, group = G2)
@@ -59,9 +62,11 @@ iEqTol   = input.float(0.15, "Tolérance creux / sommets égaux (× ATR)", minva
 iMaxBars = input.int(48, "Durée max. d'un trade (bougies, 0 = off)", minval = 0, group = G4)
 
 // ─── 5. Taille de position ──────────────────────────────────────────────────
-const string G5 = "5. Taille de position"
+const string G5 = "5. Taille de position et coûts"
 iCap     = input.float(1000, "Capital (USD)", minval = 1, group = G5)
 iRisk    = input.float(1.0, "Risque par trade (%)", minval = 0.1, maxval = 10, step = 0.1, group = G5)
+iSpread  = input.float(0.0, "Spread moyen (en prix, 0 = ignoré)", minval = 0.0, step = 0.1, group = G5, tooltip = "Ex. 10 si le spread de votre courtier est d'environ 10 points de prix. Il est retiré du résultat de chaque trade dans les statistiques.")
+iMaxSpr  = input.float(20.0, "Spread max. en % du risque", minval = 1.0, step = 1.0, group = G5, tooltip = "Au-delà, le setup est ignoré (stop trop serré par rapport au spread, fréquent en M1 / M5).")
 iPtVal   = input.float(1.0, "Valeur de 1 point de prix pour 1 lot (USD)", minval = 0.0001, step = 0.1, group = G5, tooltip = "PainX 600 / 1200 : environ 1 USD (mesuré sur vos captures MT5). Vérifiez chez votre courtier.")
 
 // ─── 6. Affichage ───────────────────────────────────────────────────────────
@@ -79,11 +84,28 @@ cWin     = input.color(#089981, "Objectifs", group = G6)
 
 // ─── Sens autorisé ──────────────────────────────────────────────────────────
 string symU      = str.upper(syminfo.ticker + " " + syminfo.description)
-bool   isDropIdx = str.contains(symU, "PAINX") or str.contains(symU, "CRASH")
-bool   isPumpIdx = str.contains(symU, "GAINX") or str.contains(symU, "BOOM")
+// Tous les PainX (400, 600, 800, 999, 1200…) et Crash : indices qui CHUTENT → ventes.
+// Tous les GainX et Boom : indices qui MONTENT par pics → achats (sens contraire).
+bool   isDropIdx = str.contains(symU, "PAINX") or str.contains(symU, "CRASH") or str.contains(symU, "PRICE DROP")
+bool   isPumpIdx = str.contains(symU, "GAINX") or str.contains(symU, "BOOM") or str.contains(symU, "PRICE RISE") or str.contains(symU, "PRICE JUMP")
+bool   famDrop   = isDropIdx and not isPumpIdx
+bool   famPump   = isPumpIdx and not isDropIdx
 bool   autoMd    = iDir == DIR_AUTO
-bool   allowSell = iDir == DIR_SELL or iDir == DIR_BOTH or (autoMd and not isPumpIdx)
-bool   allowBuy  = iDir == DIR_BUY or iDir == DIR_BOTH or (autoMd and not isDropIdx)
+bool   allowSell = iDir == DIR_SELL or iDir == DIR_BOTH or (autoMd and not famPump)
+bool   allowBuy  = iDir == DIR_BUY or iDir == DIR_BOTH or (autoMd and not famDrop)
+
+// ─── Profil selon l'unité de temps ──────────────────────────────────────────
+// 0 = M1 à M5, 1 = M10 à M30, 2 = H1 à H4, 3 = D1 et plus
+int    tfSec  = timeframe.in_seconds()
+int    band   = tfSec <= 300 ? 0 : tfSec <= 1800 ? 1 : tfSec <= 14400 ? 2 : 3
+bool   autoP  = iProfile == PR_AUTO
+int    pSwing   = autoP ? (band == 0 ? 5 : band == 3 ? 2 : 3) : iSwing
+float  pImp     = autoP ? (band == 0 ? 2.0 : band == 3 ? 1.2 : 1.5) : iImp
+int    pSearch  = autoP ? (band == 0 ? 30 : band == 3 ? 15 : 20) : iSearch
+int    pMaxAge  = autoP ? (band == 0 ? 300 : band == 1 ? 150 : band == 2 ? 120 : 60) : iMaxAge
+int    pConfBar = autoP ? (band == 0 ? 3 : band == 1 ? 5 : band == 2 ? 4 : 3) : iConfBar
+int    pMaxBars = autoP ? (band == 0 ? 120 : band == 1 ? 48 : band == 2 ? 36 : 20) : iMaxBars
+string bandTxt  = band == 0 ? "M1–M5" : band == 1 ? "M10–M30" : band == 2 ? "H1–H4" : "D1 et plus"
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 type Zone
@@ -121,6 +143,7 @@ type Trade
     line  l2     = na
     label lb     = na
     label lr     = na
+    float cost   = 0.0   // spread exprimé en R, retiré du résultat
 
 type Stats
     int   n     = 0
@@ -161,8 +184,8 @@ bool evSl    = false
 
 // ─── Séries calculées à chaque bougie (jamais dans un if) ───────────────────
 float atr = ta.atr(iAtrLen)
-float ph  = ta.pivothigh(high, iSwing, iSwing)
-float pl  = ta.pivotlow(low, iSwing, iSwing)
+float ph  = ta.pivothigh(high, pSwing, pSwing)
+float pl  = ta.pivotlow(low, pSwing, pSwing)
 
 // ─── Fonctions ──────────────────────────────────────────────────────────────
 f_px(float p) => str.tostring(p, format.mintick)
@@ -222,14 +245,21 @@ f_open(Zone z, float entry) =>
     float sl   = dir == -1 ? z.top + iSlBuf * atr : z.bot - iSlBuf * atr
     float risk = dir == -1 ? sl - entry : entry - sl
     Trade t = na
-    if risk > 0 and z.step >= iMinStep
+    if risk > 0 and z.step >= iMinStep and (iSpread <= 0 or 100 * iSpread / risk <= iMaxSpr)
         float tp2 = f_target(dir, entry, risk)
         if not na(tp2)
             float tp1 = dir == -1 ? entry - iTp1R * risk : entry + iTp1R * risk
             if (dir == -1 and tp1 <= tp2) or (dir == 1 and tp1 >= tp2)
                 tp1 := (entry + tp2) / 2
             t := Trade.new(dir, entry, sl, tp1, tp2, risk, math.abs(tp2 - entry) / risk, bar_index)
+            t.cost := iSpread / risk
     t
+
+// Raison d'un setup refusé (pour la ligne « État » du panneau)
+f_why(Zone z, float entry) =>
+    float sl   = z.dir == -1 ? z.top + iSlBuf * atr : z.bot - iSlBuf * atr
+    float risk = math.abs(entry - sl)
+    z.step < iMinStep ? "Setup ignoré : escalier trop court (" + str.tostring(z.step) + " marche)" : iSpread > 0 and 100 * iSpread / risk > iMaxSpr ? "Setup ignoré : spread > " + str.tostring(iMaxSpr, "0") + " % du risque" : "Setup ignoré : cible à moins de " + str.tostring(iMinRR, "0.0") + "R"
 
 f_drawTrade(Trade t, int step) =>
     if iShowTr
@@ -242,7 +272,8 @@ f_drawTrade(Trade t, int step) =>
         t.lb := label.new(t.bar, t.entry, txt, style = label.style_label_right, color = color.new(c, 15), textcolor = color.white, size = size.small, textalign = text.align_left)
 
 // Clôture un trade virtuel et met à jour les statistiques
-f_close(Trade t, float res, float px, Stats s, array<Trade> h) =>
+f_close(Trade t, float gross, float px, Stats s, array<Trade> h) =>
+    float res = gross - t.cost
     t.open := false
     s.n += 1
     s.sumR += res
@@ -316,7 +347,7 @@ if barstate.isconfirmed and not na(atr)
                 st.tp2 += 1
                 evTp2 := true
                 status := "Trade clos : TP2 atteint"
-            else if iMaxBars > 0 and bar_index - tr.bar >= iMaxBars
+            else if pMaxBars > 0 and bar_index - tr.bar >= pMaxBars
                 float x = isS ? (tr.entry - close) / tr.risk : (close - tr.entry) / tr.risk
                 res   := tr.tp1Hit ? part * iTp1R + (1 - part) * x : x
                 px    := close
@@ -335,7 +366,7 @@ if barstate.isconfirmed and not na(atr)
             Zone z = zones.get(i)
             if z.born < bar_index
                 bool inval = z.dir == -1 ? close > z.top : close < z.bot
-                bool old   = bar_index - z.born > iMaxAge
+                bool old   = bar_index - z.born > pMaxAge
                 if inval or old
                     if not na(z.bx)
                         z.bx.delete()
@@ -361,18 +392,18 @@ if barstate.isconfirmed and not na(atr)
     if not na(pl)
         lastSL := pl
         slUsed := false
-        f_addLevel(lowsA, pl, bar_index - iSwing, true, iEqTol * atr)
+        f_addLevel(lowsA, pl, bar_index - pSwing, true, iEqTol * atr)
     if not na(ph)
         lastSH := ph
         shUsed := false
-        f_addLevel(highsA, ph, bar_index - iSwing, false, iEqTol * atr)
+        f_addLevel(highsA, ph, bar_index - pSwing, false, iEqTol * atr)
 
     // ── D. Nouvelle zone d'offre : clôture sous le dernier creux ────────────
     if allowSell and not na(lastSL) and not slUsed and close < lastSL
         slUsed := true
         int   hIdx = 1
         float hh   = high[1]
-        for k = 2 to iSearch
+        for k = 2 to pSearch
             if high[k] > hh
                 hh   := high[k]
                 hIdx := k
@@ -385,7 +416,7 @@ if barstate.isconfirmed and not na(atr)
         float bot = iZoneMd == ZM_FULL ? low[src] : (obIdx >= 0 ? open[obIdx] : math.min(open[hIdx], close[hIdx]))
         if top - bot < 0.15 * atr
             bot := top - 0.15 * atr
-        if top - close >= iImp * atr
+        if top - close >= pImp * atr
             supSteps   := supSteps > 0 and not na(prevSupTop) and top < prevSupTop ? supSteps + 1 : 1
             prevSupTop := top
             Zone z = Zone.new(-1, top, bot, bar_index, supSteps, bar_index - src)
@@ -416,7 +447,7 @@ if barstate.isconfirmed and not na(atr)
         shUsed := true
         int   lIdx = 1
         float ll   = low[1]
-        for k = 2 to iSearch
+        for k = 2 to pSearch
             if low[k] < ll
                 ll   := low[k]
                 lIdx := k
@@ -429,7 +460,7 @@ if barstate.isconfirmed and not na(atr)
         float top = iZoneMd == ZM_FULL ? high[src] : (obIdx >= 0 ? open[obIdx] : math.max(open[lIdx], close[lIdx]))
         if top - bot < 0.15 * atr
             top := bot + 0.15 * atr
-        if close - bot >= iImp * atr
+        if close - bot >= pImp * atr
             demSteps   := demSteps > 0 and not na(prevDemBot) and bot > prevDemBot ? demSteps + 1 : 1
             prevDemBot := bot
             Zone z = Zone.new(1, top, bot, bar_index, demSteps, bar_index - src)
@@ -476,13 +507,13 @@ if barstate.isconfirmed and not na(atr)
             else if close < eLvl and close < open
                 entry := close
                 done  := true
-            else if bar_index - z.touchBar >= iConfBar - 1
+            else if bar_index - z.touchBar >= pConfBar - 1
                 done   := true
                 status := "Pas de confirmation : zone abandonnée"
             if not na(entry)
                 Trade t = f_open(z, entry)
                 if na(t)
-                    status := z.step < iMinStep ? "Setup ignoré : escalier trop court (" + str.tostring(z.step) + " marche)" : "Setup ignoré : cible à moins de " + str.tostring(iMinRR, "0.0") + "R"
+                    status := f_why(z, entry)
                 else
                     tr := t
                     f_drawTrade(tr, z.step)
@@ -520,13 +551,13 @@ if barstate.isconfirmed and not na(atr)
             else if close > eLvl and close > open
                 entry := close
                 done  := true
-            else if bar_index - z.touchBar >= iConfBar - 1
+            else if bar_index - z.touchBar >= pConfBar - 1
                 done   := true
                 status := "Pas de confirmation : zone abandonnée"
             if not na(entry)
                 Trade t = f_open(z, entry)
                 if na(t)
-                    status := z.step < iMinStep ? "Setup ignoré : escalier trop court (" + str.tostring(z.step) + " marche)" : "Setup ignoré : cible à moins de " + str.tostring(iMinRR, "0.0") + "R"
+                    status := f_why(z, entry)
                 else
                     tr := t
                     f_drawTrade(tr, z.step)
@@ -544,7 +575,7 @@ if barstate.isconfirmed and not na(atr)
 // ═══════════════════════════════════════════════════════════════════════════
 //  PANNEAU
 // ═══════════════════════════════════════════════════════════════════════════
-var table tb = table.new(position.top_right, 2, 16, bgcolor = color.new(#131722, 10), border_color = color.new(cNeu, 60), border_width = 1, frame_color = color.new(cNeu, 40), frame_width = 1)
+var table tb = table.new(position.top_right, 2, 18, bgcolor = color.new(#131722, 10), border_color = color.new(cNeu, 60), border_width = 1, frame_color = color.new(cNeu, 40), frame_width = 1)
 
 f_row(int r, string a, string b, color cb) =>
     tb.cell(0, r, a, text_color = color.new(color.white, 25), text_size = size.small, text_halign = text.align_left)
@@ -555,8 +586,10 @@ if iPanel and barstate.islast
     tb.cell(0, 0, "Koss Supply Zones", text_color = color.white, text_size = size.normal, text_halign = text.align_left)
     tb.cell(1, 0, syminfo.ticker, text_color = color.white, text_size = size.normal, text_halign = text.align_right)
     f_row(1, "Sens", dirTxt + (autoMd ? " (auto)" : ""), color.white)
-    f_row(2, "Escalier d'offre", allowSell ? str.tostring(supSteps) + " marche(s)" + (supSteps >= iMinStep ? " ✔" : "") : "–", supSteps >= iMinStep and allowSell ? cSup : cNeu)
-    f_row(3, "Escalier de demande", allowBuy ? str.tostring(demSteps) + " marche(s)" + (demSteps >= iMinStep ? " ✔" : "") : "–", demSteps >= iMinStep and allowBuy ? cDem : cNeu)
+    f_row(2, "Indice", famDrop ? "chutes (PainX / Crash)" : famPump ? "pics haussiers (GainX / Boom)" : "autre", famDrop ? cSup : famPump ? cDem : cNeu)
+    f_row(3, "Profil " + (autoP ? bandTxt : "manuel"), "swing " + str.tostring(pSwing) + " · impulsion " + str.tostring(pImp, "0.0") + " ATR" + (tfSec == 1800 or tfSec == 3600 ? "" : " · à tester"), tfSec == 1800 or tfSec == 3600 ? color.white : color.orange)
+    f_row(4, "Escalier d'offre", allowSell ? str.tostring(supSteps) + " marche(s)" + (supSteps >= iMinStep ? " ✔" : "") : "–", supSteps >= iMinStep and allowSell ? cSup : cNeu)
+    f_row(5, "Escalier de demande", allowBuy ? str.tostring(demSteps) + " marche(s)" + (demSteps >= iMinStep ? " ✔" : "") : "–", demSteps >= iMinStep and allowBuy ? cDem : cNeu)
     // Plan de la zone active la plus récente
     Zone za = na
     if not na(actSup) and not na(actDem)
@@ -568,24 +601,24 @@ if iPanel and barstate.islast
         float e  = s ? za.bot - iEntOff * atr : za.top + iEntOff * atr
         float sl = s ? za.top + iSlBuf * atr : za.bot - iSlBuf * atr
         float rk = math.abs(e - sl)
-        f_row(4, "Zone active", (s ? "offre " : "demande ") + f_px(za.bot) + " – " + f_px(za.top), s ? cSup : cDem)
-        f_row(5, "Plan", (s ? "vente " : "achat ") + f_px(e) + " · stop " + f_px(sl), color.white)
-        f_row(6, "Lot (" + str.tostring(iRisk, "0.0") + " % de " + str.tostring(iCap, "#") + " $)", str.tostring(f_lot(rk), "0.00") + " lot · risque " + f_px(rk), color.white)
+        f_row(6, "Zone active", (s ? "offre " : "demande ") + f_px(za.bot) + " – " + f_px(za.top), s ? cSup : cDem)
+        f_row(7, "Plan", (s ? "vente " : "achat ") + f_px(e) + " · stop " + f_px(sl), color.white)
+        f_row(8, "Lot (" + str.tostring(iRisk, "0.0") + " % de " + str.tostring(iCap, "#") + " $)", str.tostring(f_lot(rk), "0.00") + " lot · risque " + f_px(rk), color.white)
     else
-        f_row(4, "Zone active", "aucune", cNeu)
-        f_row(5, "Plan", "–", cNeu)
-        f_row(6, "Lot", "–", cNeu)
+        f_row(6, "Zone active", "aucune", cNeu)
+        f_row(7, "Plan", "–", cNeu)
+        f_row(8, "Lot", "–", cNeu)
     bool tOpen = not na(tr) and tr.open
-    f_row(7, "Trade", tOpen ? (tr.dir == -1 ? "VENTE " : "ACHAT ") + f_px(tr.entry) + (tr.tp1Hit ? " · TP1 ✔" : "") : "aucun", tOpen ? (tr.dir == -1 ? cSup : cDem) : cNeu)
-    f_row(8, "État", status, color.white)
-    tb.cell(0, 9, "Statistiques (historique chargé)", text_color = color.new(color.white, 40), text_size = size.small, text_halign = text.align_left)
-    tb.cell(1, 9, "", text_size = size.small)
-    f_row(10, "Trades", str.tostring(st.n), color.white)
-    f_row(11, "Réussite (R > 0)", st.n > 0 ? str.tostring(100.0 * st.wins / st.n, "0") + " %" : "–", color.white)
-    f_row(12, "TP1 / TP2 atteints", st.n > 0 ? str.tostring(100.0 * st.tp1 / st.n, "0") + " % / " + str.tostring(100.0 * st.tp2 / st.n, "0") + " %" : "–", color.white)
-    f_row(13, "Espérance", st.n > 0 ? f_r(st.sumR / st.n) + " par trade" : "–", st.sumR >= 0 ? cWin : cLoss)
-    f_row(14, "Total", st.n > 0 ? f_r(st.sumR) : "–", st.sumR >= 0 ? cWin : cLoss)
-    f_row(15, "Profit factor", st.gLoss > 0 ? str.tostring(st.gWin / st.gLoss, "0.00") : st.n > 0 ? "∞" : "–", color.white)
+    f_row(9, "Trade", tOpen ? (tr.dir == -1 ? "VENTE " : "ACHAT ") + f_px(tr.entry) + (tr.tp1Hit ? " · TP1 ✔" : "") : "aucun", tOpen ? (tr.dir == -1 ? cSup : cDem) : cNeu)
+    f_row(10, "État", status, color.white)
+    tb.cell(0, 11, iSpread > 0 ? "Statistiques (nettes de spread)" : "Statistiques (sans spread)", text_color = color.new(color.white, 40), text_size = size.small, text_halign = text.align_left)
+    tb.cell(1, 11, "", text_size = size.small)
+    f_row(12, "Trades", str.tostring(st.n), color.white)
+    f_row(13, "Réussite (R > 0)", st.n > 0 ? str.tostring(100.0 * st.wins / st.n, "0") + " %" : "–", color.white)
+    f_row(14, "TP1 / TP2 atteints", st.n > 0 ? str.tostring(100.0 * st.tp1 / st.n, "0") + " % / " + str.tostring(100.0 * st.tp2 / st.n, "0") + " %" : "–", color.white)
+    f_row(15, "Espérance", st.n > 0 ? f_r(st.sumR / st.n) + " par trade" : "–", st.sumR >= 0 ? cWin : cLoss)
+    f_row(16, "Total", st.n > 0 ? f_r(st.sumR) : "–", st.sumR >= 0 ? cWin : cLoss)
+    f_row(17, "Profit factor", st.gLoss > 0 ? str.tostring(st.gWin / st.gLoss, "0.00") : st.n > 0 ? "∞" : "–", color.white)
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  ALERTES (Créer une alerte → Condition : Koss Supply Zones)

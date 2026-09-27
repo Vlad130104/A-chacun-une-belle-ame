@@ -46,17 +46,67 @@ Les deux versions ont **la même logique et les mêmes réglages**. Elles **ne p
 
 **Les achats** (zones de demande, en vert) suivent la même logique à l'envers : chaque creux est plus haut, achat au retour dans la dernière zone de demande.
 
-## 2. Le sens automatique
+## 2. Tous les PainX et GainX : le sens automatique
 
-| Symbole | Sens en mode « Auto » | Pourquoi |
+La stratégie s'applique à **tous les PainX et tous les GainX, quel que soit leur chiffre** (400, 600, 800, 999, 1200…). Les **GainX** sont tradés **dans le sens contraire** des PainX.
+
+| Symbole | Comportement | Sens en mode « Auto » | Zones utilisées |
+|---|---|---|---|
+| **Tous les PainX**, Crash | Monte lentement, **chute** brutalement | **Ventes** | Escalier d'**offre** (sommets de plus en plus bas), en violet |
+| **Tous les GainX**, Boom | Baisse lentement, **monte** brutalement | **Achats** (sens contraire) | Escalier de **demande** (creux de plus en plus hauts), en vert |
+| Autres (Volatility, FX Vol, or, forex…) | Sans pics | Achats et ventes | Les deux |
+
+**Sur GainX, la stratégie est le miroir exact de vos trades PainX :**
+1. Chaque repli s'arrête **plus haut** que le précédent et laisse une **zone de demande** (l'escalier monte).
+2. Le prix redescend dans la **dernière** zone de demande.
+3. Une **bougie haussière clôture au-dessus** de la zone : c'est la confirmation.
+4. **Achat**, stop **sous** la zone, TP2 **au-dessus des sommets** (sommets égaux EQH).
+
+La détection lit le **nom** et la **description** du symbole (« price drop » pour PainX, « price rise » pour GainX). Vérifiez la ligne **Indice** du panneau :
+- « chutes (PainX / Crash) » : ventes ;
+- « pics haussiers (GainX / Boom) » : achats.
+
+Si le symbole n'est pas reconnu, choisissez le sens à la main.
+
+> Le sens GainX est une **hypothèse** : vos deux exemples sont des ventes sur PainX. Le miroir est logique, mais testez-le (partie 7) avant de l'utiliser.
+
+## 2 bis. Toutes les unités de temps : le profil automatique
+
+L'indicateur fonctionne de **M1 à D1**. Avec *Profil des réglages = Auto* (par défaut), il adapte ses réglages à l'unité de temps du graphique :
+
+| Unité de temps | Longueur des swings | Mouvement impulsif | Recherche de l'origine | Vie d'une zone | Délai de confirmation | Durée max. d'un trade |
+|---|---|---|---|---|---|---|
+| **M1 – M5** | 5 | 2,0 × ATR | 30 bougies | 300 bougies | 3 bougies | 120 bougies |
+| **M10 – M30** | 3 | 1,5 × ATR | 20 | 150 | 5 | 48 |
+| **H1 – H4** | 3 | 1,5 × ATR | 20 | 120 | 4 | 36 |
+| **D1 et plus** | 2 | 1,2 × ATR | 15 | 60 | 3 | 20 |
+
+**Pourquoi ces différences :**
+- **En M1 / M5**, il y a beaucoup de bruit :
+  - des swings plus longs et une chute plus forte (2 ATR) évitent les fausses zones ;
+  - une confirmation courte (3 bougies) évite d'entrer trop tard.
+- **En H4 / D1**, chaque bougie couvre beaucoup de temps. Les zones et les trades durent donc moins de bougies.
+- Tout le reste est **en multiples de l'ATR**, donc s'adapte tout seul à chaque unité de temps et à chaque indice :
+  - l'entrée, le stop et les cibles ;
+  - la tolérance des creux égaux.
+
+**Ce qu'il faut savoir sur chaque unité de temps :**
+
+| Unité de temps | Avantage | Risque |
 |---|---|---|
-| **PainX**, **Crash** | **Ventes** (zones d'offre) | L'indice chute brutalement : on vend dans le sens des chutes, comme vos trades |
-| **GainX**, **Boom** | **Achats** (zones de demande) | L'indice monte par pics : on achète dans le sens des pics |
-| Autres (Volatility, FX Vol, or, forex…) | Les deux | Pas de sens privilégié |
+| M1 – M5 | Plus de signaux, stop plus petit en points | Le **spread** pèse beaucoup plus lourd ; plus de faux signaux |
+| M15 – H1 | Là où vos deux trades ont été pris (M30, H1) | Moins de signaux |
+| H4 – D1 | Zones plus solides | Très peu de signaux, stop large (lot petit) |
 
-La détection lit le **nom du symbole**. Vérifiez la ligne « Sens » du panneau. Si le nom n'est pas reconnu, choisissez le sens à la main.
+Le panneau affiche le profil utilisé (ex. « Profil M10–M30 : swing 3 · impulsion 1,5 ATR »). La mention **« à tester »** apparaît hors M30 et H1 : je n'ai vu le setup fonctionner que sur ces deux unités de temps.
 
-> Le sens des indices « miroir » (GainX / Boom) est une **hypothèse** : vos deux exemples sont des ventes sur PainX. Testez-la avant de l'utiliser.
+**Le spread** est géré automatiquement sur les petites unités de temps :
+- un setup est **ignoré** si le spread dépasse **20 % du risque** ;
+- le spread est **retiré du résultat** de chaque trade dans les statistiques.
+
+Sur MT5, le spread est lu chez le courtier. Sur TradingView, **saisissez-le** (groupe 5).
+
+**Pour régler vous-même**, mettez *Profil = Manuel* : les valeurs des groupes 2, 3 et 4 sont alors utilisées telles quelles.
 
 ## 3. Installation
 
@@ -65,15 +115,15 @@ La détection lit le **nom du symbole**. Vérifiez la ligne « Sens » du pannea
 2. **Effacez tout** le modèle proposé par TradingView (Ctrl + A puis Suppr). Il ne doit rester **qu'une seule** ligne `indicator(...)`.
 3. Collez le contenu de `koss_supply_zones.pine`.
 4. Cliquez sur **Enregistrer**, puis **Ajouter au graphique**.
-5. Réglez le graphique :
-   - PainX 600 : **M30** ;
-   - PainX 1200 : **H1**.
+5. Ouvrez n'importe quel PainX ou GainX, sur l'unité de temps de votre choix. Vos setups de départ étaient sur :
+   - PainX 600 en **M30** ;
+   - PainX 1200 en **H1**.
 
 ### MetaTrader 5
 1. MT5 → **Fichier → Ouvrir le dossier des données → MQL5 → Indicators** : copiez `KossSupplyZones.mq5`.
 2. **F4** (MetaEditor) → ouvrez le fichier → **F7** (compiler) → **0 erreur** attendue.
 3. MT5 → *Navigateur* → *Indicateurs* → clic droit → *Actualiser*.
-4. Glissez **KossSupplyZones** sur le graphique PainX (M30 ou H1).
+4. Glissez **KossSupplyZones** sur le graphique PainX ou GainX (toutes unités de temps). Changer d'unité de temps recharge l'indicateur avec le bon profil.
 5. Le panneau s'affiche en haut à gauche.
 
 > Sur **MT5 mobile** (téléphone), les indicateurs personnalisés ne s'installent pas. Installez-le sur MT5 **ordinateur**, puis activez les **notifications** (partie 6) pour recevoir les signaux sur le téléphone.
@@ -96,21 +146,24 @@ La détection lit le **nom du symbole**. Vérifiez la ligne « Sens » du pannea
 | Ligne | Contenu |
 |---|---|
 | Sens | Sens actif (et « auto » si détecté par le symbole) |
+| Indice | Famille détectée : chutes (PainX / Crash) ou pics haussiers (GainX / Boom) |
+| Profil | Unité de temps et réglages utilisés ; « à tester » hors M30 / H1 |
 | Escalier d'offre / de demande | Nombre de marches (✔ quand le minimum est atteint) |
 | Zone active / Plan | Bornes de la zone, prix d'entrée et stop prévus |
 | Lot | Lot pour risquer votre % de capital sur ce plan |
 | Trade | Trade virtuel en cours |
 | État | Ce que fait l'indicateur (attente, confirmation, setup ignoré et pourquoi…) |
-| Statistiques | Sur tout l'historique chargé : nombre de trades, réussite, TP1 / TP2 atteints, espérance (R moyen), total, profit factor |
+| Statistiques | Sur tout l'historique chargé, **spread déduit** : nombre de trades, réussite, TP1 / TP2 atteints, espérance (R moyen), total, profit factor |
 
 ## 5. Les réglages
 
 ### 1. Sens des trades
 | Paramètre | Défaut | Rôle |
 |---|---|---|
+| Profil des réglages | Auto | Voir partie 2 bis |
 | Sens | Auto | Voir partie 2 |
 
-### 2. Zones et escalier
+### 2. Zones et escalier (utilisés en profil Manuel ; en Auto, voir le tableau de la partie 2 bis)
 | Paramètre | Défaut | Rôle |
 |---|---|---|
 | Longueur des swings | 3 | Bougies de chaque côté pour valider un creux / sommet |
@@ -145,7 +198,9 @@ La détection lit le **nom du symbole**. Vérifiez la ligne « Sens » du pannea
 |---|---|---|
 | Capital | À saisir (1 000 $ par défaut) | 0 = **équité du compte** |
 | Risque par trade | 1 % | 1 % |
-| Valeur d'un point pour 1 lot | À saisir (**≈ 1 USD sur PainX**, mesuré sur vos captures) | Lue automatiquement chez le courtier |
+| Valeur d'un point pour 1 lot | À saisir (**≈ 1 USD sur PainX**, mesuré sur vos captures ; vérifiez sur GainX) | Lue automatiquement chez le courtier |
+| Spread moyen | À saisir en prix (0 = ignoré) | Lu automatiquement (spread de chaque bougie) |
+| Spread max. en % du risque | 20 % | 20 % |
 
 **Exemple** (votre trade PainX 600) :
 - Entrée 103 917, stop 104 010 : **93 points** de risque.
@@ -187,12 +242,23 @@ Pour les recevoir sur le téléphone :
 
 ## 7. Le test qui compte (avant tout argent réel)
 
-1. **Statistiques du panneau.**
-   - Sur PainX 600 (M30) et PainX 1200 (H1), chargez le plus d'historique possible (sur TradingView, faites défiler vers la gauche).
-   - Notez le **nombre de trades**, l'**espérance** et le **profit factor**.
-2. **Retirez le spread.** Les statistiques n'en tiennent pas compte.
-   - Formule : spread ÷ risque moyen.
-   - Exemple : spread 10 points, risque 90 points → environ **0,11R à retirer** de l'espérance.
+1. **Statistiques du panneau, indice par indice et unité de temps par unité de temps.**
+   - Chargez le plus d'historique possible (sur TradingView, faites défiler vers la gauche).
+   - Notez le **nombre de trades**, l'**espérance** et le **profit factor** dans un tableau simple :
+
+   | Indice | M5 | M15 | M30 | H1 | H4 |
+   |---|---|---|---|---|---|
+   | PainX 600 | | | | | |
+   | PainX 1200 | | | | | |
+   | GainX 600 | | | | | |
+   | GainX 1200 | | | | | |
+   | (autres chiffres…) | | | | | |
+
+   Ne gardez que les cases où l'espérance est **positive avec au moins 30 trades**.
+2. **Vérifiez le spread.**
+   - Sur MT5, il est déduit automatiquement.
+   - Sur TradingView, saisissez-le (groupe 5), sinon les statistiques sont trop optimistes, surtout en M1 / M5.
+   - Exemple : spread 10 points, risque 90 points → **0,11R** de moins par trade.
 3. **Comparez avec et sans confirmation.** Sur des prix aléatoires, la confirmation divise le nombre de trades par environ **10**. Sur vos données, vérifiez qu'elle améliore vraiment l'espérance.
 4. **Test contraire.** Mettez *Sens = Achats (zones de demande)* sur PainX. Si les achats font aussi bien que les ventes, la stratégie n'a pas d'avantage propre.
 5. **Seuils de décision.** Il faut **30 trades minimum** pour une première idée, et **100 ou plus** pour décider.
@@ -210,12 +276,17 @@ Pour les recevoir sur le téléphone :
 1. **Retard des creux et sommets.** Un creux n'est validé qu'après 3 bougies. La zone apparaît donc après la chute, jamais avant. Rien n'est redessiné ensuite.
 2. **Statistiques prudentes mais simplifiées.**
    - Si le stop et un objectif sont touchés **dans la même bougie**, le stop compte.
-   - Le spread et le glissement ne sont **pas** comptés.
+   - Le spread est déduit (MT5 automatiquement, TradingView si vous le saisissez). Le **glissement** ne l'est pas.
 3. **Un seul trade virtuel à la fois.** Une zone touchée pendant un trade est ignorée.
 4. **Seule la dernière zone** peut donner un signal (c'est votre règle). Les anciennes zones sont affichées comme repères.
 5. **TradingView limite l'historique** : les statistiques ne couvrent que les bougies chargées (environ 5 000 à 20 000 selon l'abonnement).
 6. **Les deux plateformes peuvent différer légèrement** : prix du courtier, heure du serveur, historique disponible.
 7. **Indices générés par un algorithme** : un bon résultat passé ne garantit rien. Seul un test sur beaucoup de trades a de la valeur.
+8. **Profils par unité de temps = points de départ.** Ils sont choisis par logique, **pas optimisés**. Dans ma simulation sur prix aléatoires :
+   - avec confirmation, il y a environ **1 signal pour 700 à 3 000 bougies**, quelle que soit l'unité de temps ;
+   - sur vos vrais graphiques, comptez-les dans le panneau ;
+   - s'ils sont trop rares, essayez *Marches minimales = 1* ou *Confirmation = Non*, et comparez les statistiques.
+9. **Plusieurs unités de temps en même temps** : chaque graphique a ses propres zones et statistiques. Deux graphiques peuvent donner des signaux contraires : décidez à l'avance lequel prime (par exemple, ne prendre un signal M5 que dans le sens de l'escalier H1).
 
 ## 9. Problèmes fréquents
 

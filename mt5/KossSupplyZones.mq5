@@ -36,12 +36,18 @@ enum ENUM_KSZ_TGT
    KSZ_NEAREST = 0, // Liquidité la plus proche (≥ R min.)
    KSZ_EXTREME = 1  // Creux / sommet le plus extrême
   };
+enum ENUM_KSZ_PROFILE
+  {
+   KSZ_PR_AUTO   = 0, // Auto (selon l'unité de temps)
+   KSZ_PR_MANUAL = 1  // Manuel (valeurs ci-dessous)
+  };
 
 //--- 1. Sens
 input group "1. Sens des trades"
+input ENUM_KSZ_PROFILE InpProfile = KSZ_PR_AUTO; // Profil des réglages
 input ENUM_KSZ_DIR  InpDir      = KSZ_AUTO;     // Sens
 //--- 2. Zones
-input group "2. Zones et escalier"
+input group "2. Zones et escalier (profil manuel)"
 input int           InpSwing    = 3;            // Longueur des swings
 input double        InpImp      = 1.5;          // Mouvement impulsif minimal (× ATR)
 input int           InpSearch   = 20;           // Recherche de l'origine (bougies)
@@ -67,9 +73,10 @@ input double        InpNoTgtR   = 3.0;          // Sans liquidité visible : TP2
 input double        InpEqTol    = 0.15;         // Tolérance creux / sommets égaux (× ATR)
 input int           InpMaxBars  = 48;           // Durée max. d'un trade (bougies, 0 = off)
 //--- 5. Taille de position
-input group "5. Taille de position"
+input group "5. Taille de position et coûts"
 input double        InpCapital  = 0;            // Capital (USD), 0 = équité du compte
 input double        InpRisk     = 1.0;          // Risque par trade (%)
+input double        InpMaxSpr   = 20.0;         // Spread max. en % du risque
 //--- 6. Affichage et alertes
 input group "6. Affichage et alertes"
 input int           InpHistory  = 5000;         // Bougies analysées au chargement
@@ -119,6 +126,7 @@ struct KTrade
    double   tp2;
    double   risk;
    double   rr2;
+   double   cost;     // spread exprimé en R, retiré du résultat
    int      bar;
    bool     tp1Hit;
   };
@@ -140,6 +148,10 @@ double   prevSupTop = 0, prevDemBot = 0;
 int      supSteps = 0, demSteps = 0;
 bool     allowSell = true, allowBuy = true;
 string   dirTxt = "";
+string   famTxt = "", profTxt = "";
+//--- Réglages effectifs (profil auto ou manuel)
+int      pSwing = 3, pSearch = 20, pMaxAge = 150, pConfBar = 5, pMaxBars = 48;
+double   pImp = 1.5;
 string   status = "Recherche d'un escalier";
 bool     ready = false;
 //--- Statistiques virtuelles
@@ -156,10 +168,37 @@ int OnInit()
      }
    string s = _Symbol;
    StringToUpper(s);
-   bool drop = StringFind(s, "PAINX") >= 0 || StringFind(s, "CRASH") >= 0;
-   bool pump = StringFind(s, "GAINX") >= 0 || StringFind(s, "BOOM") >= 0;
+   // Tous les PainX (400, 600, 800, 999, 1200…) et Crash : indices qui CHUTENT → ventes.
+   // Tous les GainX et Boom : indices qui MONTENT par pics → achats (sens contraire).
+   s += " " + SymbolInfoString(_Symbol, SYMBOL_DESCRIPTION);
+   StringToUpper(s);
+   bool isDrop = StringFind(s, "PAINX") >= 0 || StringFind(s, "CRASH") >= 0 || StringFind(s, "PRICE DROP") >= 0;
+   bool isPump = StringFind(s, "GAINX") >= 0 || StringFind(s, "BOOM") >= 0 || StringFind(s, "PRICE RISE") >= 0 || StringFind(s, "PRICE JUMP") >= 0;
+   bool drop = isDrop && !isPump;
+   bool pump = isPump && !isDrop;
+   famTxt = drop ? "chutes (PainX / Crash)" : pump ? "pics haussiers (GainX / Boom)" : "autre";
    allowSell = InpDir == KSZ_SELL || InpDir == KSZ_BOTH || (InpDir == KSZ_AUTO && !pump);
    allowBuy  = InpDir == KSZ_BUY  || InpDir == KSZ_BOTH || (InpDir == KSZ_AUTO && !drop);
+   //--- Profil selon l'unité de temps : 0 = M1–M5, 1 = M10–M30, 2 = H1–H4, 3 = D1 et plus
+   int tfSec = PeriodSeconds();
+   int band  = tfSec <= 300 ? 0 : tfSec <= 1800 ? 1 : tfSec <= 14400 ? 2 : 3;
+   if(InpProfile == KSZ_PR_AUTO)
+     {
+      pSwing   = band == 0 ? 5 : band == 3 ? 2 : 3;
+      pImp     = band == 0 ? 2.0 : band == 3 ? 1.2 : 1.5;
+      pSearch  = band == 0 ? 30 : band == 3 ? 15 : 20;
+      pMaxAge  = band == 0 ? 300 : band == 1 ? 150 : band == 2 ? 120 : 60;
+      pConfBar = band == 0 ? 3 : band == 1 ? 5 : band == 2 ? 4 : 3;
+      pMaxBars = band == 0 ? 120 : band == 1 ? 48 : band == 2 ? 36 : 20;
+     }
+   else
+     {
+      pSwing = InpSwing; pImp = InpImp; pSearch = InpSearch;
+      pMaxAge = InpMaxAge; pConfBar = InpConfBar; pMaxBars = InpMaxBars;
+     }
+   string bandTxt = band == 0 ? "M1–M5" : band == 1 ? "M10–M30" : band == 2 ? "H1–H4" : "D1 et plus";
+   profTxt = StringFormat("%s : swing %d · impulsion %.1f ATR%s", InpProfile == KSZ_PR_AUTO ? "auto " + bandTxt : "manuel",
+                          pSwing, pImp, (tfSec == 1800 || tfSec == 3600) ? "" : " · à tester");
    dirTxt = allowSell && allowBuy ? "achats et ventes" : allowSell ? "ventes (offre)" : "achats (demande)";
    if(InpDir == KSZ_AUTO) dirTxt += " (auto)";
    IndicatorSetString(INDICATOR_SHORTNAME, "Koss Supply Zones");
@@ -203,13 +242,14 @@ int OnCalculate(const int rates_total,
                 const long &volume[],
                 const int &spread[])
   {
-   int need = InpAtrLen + 2 * InpSwing + InpSearch + 10;
+   int need = InpAtrLen + 2 * pSwing + pSearch + 10;
    if(rates_total < need) return(0);
    ArraySetAsSeries(time, false);
    ArraySetAsSeries(open, false);
    ArraySetAsSeries(high, false);
    ArraySetAsSeries(low, false);
    ArraySetAsSeries(close, false);
+   ArraySetAsSeries(spread, false);
 
    if(prev_calculated == 0)
      {
@@ -233,7 +273,7 @@ int OnCalculate(const int rates_total,
    //--- Bougies clôturées pas encore traitées
    for(int i = lastDone + 1; i <= rates_total - 2; i++)
      {
-      ProcessBar(i, ready, time, open, high, low, close);
+      ProcessBar(i, ready, time, open, high, low, close, spread);
       lastDone = i;
      }
    ready = true;
@@ -245,7 +285,7 @@ int OnCalculate(const int rates_total,
 //| Traitement d'une bougie clôturée                                  |
 //+------------------------------------------------------------------+
 void ProcessBar(const int i, const bool live, const datetime &t[], const double &o[],
-                const double &h[], const double &l[], const double &c[])
+                const double &h[], const double &l[], const double &c[], const int &sp[])
   {
    double atr = Atr[i];
    if(atr <= 0) return;
@@ -289,7 +329,7 @@ void ProcessBar(const int i, const bool live, const datetime &t[], const double 
             stTp2++;
             status = "Trade clos : TP2 atteint";
            }
-         else if(InpMaxBars > 0 && i - Tr.bar >= InpMaxBars)
+         else if(pMaxBars > 0 && i - Tr.bar >= pMaxBars)
            {
             double x = isS ? (Tr.entry - c[i]) / Tr.risk : (c[i] - Tr.entry) / Tr.risk;
             res = Tr.tp1Hit ? part * InpTp1R + (1 - part) * x : x;
@@ -306,7 +346,7 @@ void ProcessBar(const int i, const bool live, const datetime &t[], const double 
      {
       if(Z[k].born >= i) continue;
       bool inval = Z[k].dir == -1 ? c[i] > Z[k].top : c[i] < Z[k].bot;
-      bool old   = i - Z[k].born > InpMaxAge;
+      bool old   = i - Z[k].born > pMaxAge;
       if(inval || old)
         {
          ObjectsDeleteAll(0, ZName(Z[k].id, ""));
@@ -323,8 +363,8 @@ void ProcessBar(const int i, const bool live, const datetime &t[], const double 
    //--- C. Liquidité : niveaux pris, nouveaux creux / sommets
    Sweep(LowsA, true, l[i], i, t);
    Sweep(HighsA, false, h[i], i, t);
-   int j = i - InpSwing;
-   if(j - InpSwing >= 0)
+   int j = i - pSwing;
+   if(j - pSwing >= 0)
      {
       if(IsPivot(j, false, h, l)) { lastSL = l[j]; slUsed = false; AddLevel(LowsA, l[j], j, true, InpEqTol * atr, t); }
       if(IsPivot(j, true, h, l))  { lastSH = h[j]; shUsed = false; AddLevel(HighsA, h[j], j, false, InpEqTol * atr, t); }
@@ -335,14 +375,14 @@ void ProcessBar(const int i, const bool live, const datetime &t[], const double 
      {
       slUsed = true;
       int hIdx = 1; double hh = h[i - 1];
-      for(int k = 2; k <= InpSearch; k++) if(h[i - k] > hh) { hh = h[i - k]; hIdx = k; }
+      for(int k = 2; k <= pSearch; k++) if(h[i - k] > hh) { hh = h[i - k]; hIdx = k; }
       int ob = -1;
       for(int k = hIdx; k <= hIdx + 3; k++) if(ob < 0 && c[i - k] > o[i - k]) ob = k;
       int src = ob >= 0 ? ob : hIdx;
       double top = hh;
       double bot = InpZoneMd == KSZ_FULL ? l[i - src] : (ob >= 0 ? o[i - ob] : MathMin(o[i - hIdx], c[i - hIdx]));
       if(top - bot < 0.15 * atr) bot = top - 0.15 * atr;
-      if(top - c[i] >= InpImp * atr)
+      if(top - c[i] >= pImp * atr)
         {
          supSteps   = (supSteps > 0 && prevSupTop > 0 && top < prevSupTop) ? supSteps + 1 : 1;
          prevSupTop = top;
@@ -355,14 +395,14 @@ void ProcessBar(const int i, const bool live, const datetime &t[], const double 
      {
       shUsed = true;
       int lIdx = 1; double ll = l[i - 1];
-      for(int k = 2; k <= InpSearch; k++) if(l[i - k] < ll) { ll = l[i - k]; lIdx = k; }
+      for(int k = 2; k <= pSearch; k++) if(l[i - k] < ll) { ll = l[i - k]; lIdx = k; }
       int ob = -1;
       for(int k = lIdx; k <= lIdx + 3; k++) if(ob < 0 && c[i - k] < o[i - k]) ob = k;
       int src = ob >= 0 ? ob : lIdx;
       double bot = ll;
       double top = InpZoneMd == KSZ_FULL ? h[i - src] : (ob >= 0 ? o[i - ob] : MathMax(o[i - lIdx], c[i - lIdx]));
       if(top - bot < 0.15 * atr) top = bot + 0.15 * atr;
-      if(c[i] - bot >= InpImp * atr)
+      if(c[i] - bot >= pImp * atr)
         {
          demSteps   = (demSteps > 0 && prevDemBot > 0 && bot > prevDemBot) ? demSteps + 1 : 1;
          prevDemBot = bot;
@@ -372,15 +412,15 @@ void ProcessBar(const int i, const bool live, const datetime &t[], const double 
      }
 
    //--- E. Signaux : retour dans la dernière zone
-   if(allowSell) CheckSignal(-1, i, live, atr, t, o, h, l, c);
-   if(allowBuy)  CheckSignal(1, i, live, atr, t, o, h, l, c);
+   if(allowSell) CheckSignal(-1, i, live, atr, t, o, h, l, c, sp);
+   if(allowBuy)  CheckSignal(1, i, live, atr, t, o, h, l, c, sp);
   }
 
 //+------------------------------------------------------------------+
 //| Retour dans la zone active, confirmation, entrée                  |
 //+------------------------------------------------------------------+
 void CheckSignal(const int dir, const int i, const bool live, const double atr, const datetime &t[],
-                 const double &o[], const double &h[], const double &l[], const double &c[])
+                 const double &o[], const double &h[], const double &l[], const double &c[], const int &sp[])
   {
    int id = dir == -1 ? actSup : actDem;
    int k  = FindZone(id);
@@ -404,16 +444,20 @@ void CheckSignal(const int dir, const int i, const bool live, const double atr, 
      { entry = isS ? MathMax(eLvl, o[i]) : MathMin(eLvl, o[i]); done = true; }
    else if(isS ? (c[i] < eLvl && c[i] < o[i]) : (c[i] > eLvl && c[i] > o[i]))
      { entry = c[i]; done = true; }
-   else if(i - Z[k].touchBar >= InpConfBar - 1)
+   else if(i - Z[k].touchBar >= pConfBar - 1)
      { done = true; status = "Pas de confirmation : zone abandonnée"; }
 
    if(entry > 0)
      {
       double sl   = isS ? Z[k].top + InpSlBuf * atr : Z[k].bot - InpSlBuf * atr;
       double risk = isS ? sl - entry : entry - sl;
-      double tp2  = (risk > 0 && Z[k].step >= InpMinStep) ? Target(dir, entry, risk, atr) : 0;
-      if(risk <= 0 || Z[k].step < InpMinStep || tp2 <= 0)
+      // Spread de la bougie (historique du courtier), sinon spread actuel
+      double spr  = (sp[i] > 0 ? sp[i] : (double)SymbolInfoInteger(_Symbol, SYMBOL_SPREAD)) * _Point;
+      bool   sprOk = risk > 0 && 100.0 * spr / risk <= InpMaxSpr;
+      double tp2  = (risk > 0 && Z[k].step >= InpMinStep && sprOk) ? Target(dir, entry, risk, atr) : 0;
+      if(risk <= 0 || Z[k].step < InpMinStep || !sprOk || tp2 <= 0)
          status = Z[k].step < InpMinStep ? StringFormat("Setup ignoré : escalier trop court (%d marche)", Z[k].step)
+                  : !sprOk ? StringFormat("Setup ignoré : spread > %.0f %% du risque", InpMaxSpr)
                   : StringFormat("Setup ignoré : cible à moins de %.1fR", InpMinRR);
       else
         {
@@ -421,7 +465,7 @@ void CheckSignal(const int dir, const int i, const bool live, const double atr, 
          if((isS && tp1 <= tp2) || (!isS && tp1 >= tp2)) tp1 = (entry + tp2) / 2.0;
          Tr.open = true; Tr.id = ++seq; Tr.dir = dir; Tr.entry = entry; Tr.sl = sl;
          Tr.tp1 = tp1; Tr.tp2 = tp2; Tr.risk = risk; Tr.rr2 = MathAbs(tp2 - entry) / risk;
-         Tr.bar = i; Tr.tp1Hit = false;
+         Tr.bar = i; Tr.tp1Hit = false; Tr.cost = spr / risk;
          if(InpShowTr) DrawTrade(Z[k].step, i, t);
          status = isS ? "VENTE en cours" : "ACHAT en cours";
          if(live)
@@ -470,8 +514,9 @@ double Target(const int dir, const double entry, const double risk, const double
 //+------------------------------------------------------------------+
 //| Trades virtuels                                                   |
 //+------------------------------------------------------------------+
-void CloseTrade(const double res, const double px, const int i, const datetime &t[], const bool live)
+void CloseTrade(const double gross, const double px, const int i, const datetime &t[], const bool live)
   {
+   double res = gross - Tr.cost;   // résultat net de spread
    Tr.open = false;
    stN++; stSum += res;
    if(res > 0) { stWins++; stGWin += res; } else stGLoss -= res;
@@ -578,7 +623,7 @@ void RemoveZone(const int k)
 //+------------------------------------------------------------------+
 bool IsPivot(const int j, const bool isHigh, const double &h[], const double &l[])
   {
-   for(int k = 1; k <= InpSwing; k++)
+   for(int k = 1; k <= pSwing; k++)
      {
       if(isHigh && (h[j] <= h[j - k] || h[j] < h[j + k])) return(false);
       if(!isHigh && (l[j] >= l[j - k] || l[j] > l[j + k])) return(false);
@@ -708,13 +753,14 @@ void ShowPanel(const double price)
                                          Tr.dir == -1 ? "VENTE" : "ACHAT", Px(Tr.entry), Px(Tr.sl), Px(Tr.tp1),
                                          Tr.tp1Hit ? " ✔" : "", Px(Tr.tp2)) : "aucun";
    Comment(StringFormat(
-      "Koss Supply Zones  |  %s : %s\n"
+      "Koss Supply Zones  |  %s : %s  |  indice : %s\n"
+      "Profil %s\n"
       "Escalier d'offre : %s  |  Escalier de demande : %s  (minimum %d)\n"
       "Plan : %s\n"
       "Trade virtuel : %s\n"
       "État : %s\n"
-      "Stats (%d bougies) : %d trades · réussite %s · TP1 %s · TP2 %s · espérance %s · total %s · profit factor %s",
-      _Symbol, dirTxt,
+      "Stats nettes de spread (%d bougies) : %d trades · réussite %s · TP1 %s · TP2 %s · espérance %s · total %s · profit factor %s",
+      _Symbol, dirTxt, famTxt, profTxt,
       allowSell ? IntegerToString(supSteps) + " marche(s)" : "–",
       allowBuy ? IntegerToString(demSteps) + " marche(s)" : "–", InpMinStep,
       plan, trade, status, InpHistory,

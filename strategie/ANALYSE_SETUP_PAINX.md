@@ -120,7 +120,7 @@ Ce sont vos trades, rendus **mesurables** et **protégés**. Chaque règle a un 
 
 | # | Règle | Détail proposé |
 |---|---|---|
-| 1 | **Unité de temps** | PainX 600 → M30 ; PainX 1200 → H1 (comme vos captures). Contexte sur H4. |
+| 1 | **Unité de temps** | Setup vu sur PainX 600 en M30 et PainX 1200 en H1. L'indicateur s'applique de M1 à D1 avec un profil adapté, sur **tous les PainX (ventes) et tous les GainX (achats, sens contraire)**. |
 | 2 | **Structure** | Au moins **2 sommets de plus en plus bas**, chacun avec sa zone d'offre (l'escalier). |
 | 3 | **Zone valide** | Dernière bougie haussière avant une chute d'au moins **1,5 × ATR** qui **casse un creux**. Zone = du plus haut de cette bougie à son ouverture. |
 | 4 | **Zone fraîche** | Jamais retouchée depuis sa création. Invalide si une bougie **clôture au-dessus** de son haut. |
