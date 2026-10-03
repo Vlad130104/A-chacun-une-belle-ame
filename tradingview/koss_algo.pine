@@ -14,9 +14,9 @@
 //    2. Trace celles qui précèdent un CHoCH de l'unité d'entrée : rectangle
 //       ORANGE pâle.
 //
-//  Bougie algorithmique (définition chiffrée, réglable) :
-//    corps ≥ 1,5 × ATR(14) ET corps ≥ 70 % de la bougie (petites mèches),
-//    dans le sens du mouvement.
+//  Bougie algorithmique (votre définition : très petit corps, longues mèches) :
+//    corps ≤ 25 % de la bougie (mèches ≥ 75 %) ET taille de la bougie
+//    ≥ 1 × ATR(14), pour ne garder que les bougies bien visibles.
 //  Tout est calculé sur bougie clôturée : pas de repaint.
 //  Fiche : KOSS_ALGO_GUIDE.md
 // ═══════════════════════════════════════════════════════════════════════════
@@ -38,8 +38,9 @@ iKeepL   = input.int(3, "CHoCH gardés à l'écran (unité d'entrée)", minval =
 
 // ─── 3. Définition de la bougie algorithmique ───────────────────────────────
 const string G3 = "3. Bougie algorithmique"
-iBodyK   = input.float(1.5, "Corps minimal (× ATR 14)", minval = 0.5, step = 0.1, group = G3)
-iRatio   = input.float(70, "Corps minimal (% de la bougie)", minval = 30, maxval = 100, step = 5, group = G3) / 100
+iBodyK   = input.float(1.0, "Taille minimale de la bougie (× ATR 14)", minval = 0.2, step = 0.1, group = G3, tooltip = "Du plus haut au plus bas. Évite de marquer les petites bougies sans importance.")
+iRatio   = input.float(25, "Corps maximal (% de la bougie)", minval = 5, maxval = 50, step = 5, group = G3, tooltip = "25 % = le corps fait au plus un quart de la bougie, les mèches au moins trois quarts.") / 100
+iBoth    = input.bool(false, "Exiger deux longues mèches (haut ET bas)", group = G3, tooltip = "Oui : chaque mèche fait au moins 25 % de la bougie (forme de toupie / doji). Non : une seule longue mèche suffit.")
 iMaxAlgo = input.int(3, "Bougies algo max. par mouvement", minval = 1, maxval = 3, group = G3)
 iInclImp = input.bool(false, "Chercher aussi dans la jambe du CHoCH", group = G3, tooltip = "Non : seulement le dernier mouvement AVANT le CHoCH (votre règle). Oui : aussi la jambe qui fait le CHoCH.")
 
@@ -56,7 +57,7 @@ cChoch   = input.color(#9E9E9E, "Niveau du CHoCH (unité d'entrée)", group = G4
 //  [heure CHoCH, début, fin, haut, bas, niveau cassé, sens, nb algo,
 //   t1, h1, l1, t2, h2, l2, t3, h3, l3]
 // ═══════════════════════════════════════════════════════════════════════════
-f_core(int len, float bodyK, float ratio, int maxA, bool inclImp) =>
+f_core(int len, float bodyK, float ratio, int maxA, bool inclImp, bool both) =>
     var int   tr  = 0
     var float sh  = na
     var float sl  = na
@@ -120,7 +121,7 @@ f_core(int len, float bodyK, float ratio, int maxA, bool inclImp) =>
                         ext := high[k]
                         kX  := k
                     oppo := math.min(oppo, low[k])
-            // Bougies algo : les plus grands corps qui respectent la définition
+            // Bougies algo : petit corps + longues mèches ; on garde les plus grandes
             float b1 = 0.0
             float b2 = 0.0
             float b3 = 0.0
@@ -129,14 +130,14 @@ f_core(int len, float bodyK, float ratio, int maxA, bool inclImp) =>
             int   k3 = -1
             int   kEnd = inclImp ? 0 : kX
             for k = kEnd to kS
-                bool inLeg = k >= kX
-                // Dans le dernier mouvement : bougies dans le sens de ce mouvement
-                // (baissières avant un CHoCH haussier). Dans la jambe du CHoCH : l'inverse.
-                bool wantBear = (up == 1) == inLeg
                 float body  = math.abs(close[k] - open[k])
                 float rng   = high[k] - low[k]
-                bool  okDir = wantBear ? close[k] < open[k] : close[k] > open[k]
-                if okDir and rng > 0 and body >= bodyK * atr[k] and body >= ratio * rng
+                float upW   = high[k] - math.max(open[k], close[k])
+                float dnW   = math.min(open[k], close[k]) - low[k]
+                bool  okW   = not both or (upW >= 0.25 * rng and dnW >= 0.25 * rng)
+                if rng > 0 and rng >= bodyK * atr[k] and body <= ratio * rng and okW
+                    // Classement par taille de bougie (mèches comprises)
+                    body := rng
                     if body > b1
                         b3 := b2
                         k3 := k2
@@ -182,11 +183,11 @@ f_core(int len, float bodyK, float ratio, int maxA, bool inclImp) =>
 
 // Version « bougie précédente » pour l'unité d'analyse (aucun repaint)
 f_htf() =>
-    [a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16] = f_core(iHtfLen, iBodyK, iRatio, iMaxAlgo, iInclImp)
+    [a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16] = f_core(iHtfLen, iBodyK, iRatio, iMaxAlgo, iInclImp, iBoth)
     [a0[1], a1[1], a2[1], a3[1], a4[1], a5[1], a6[1], a7[1], a8[1], a9[1], a10[1], a11[1], a12[1], a13[1], a14[1], a15[1], a16[1]]
 
 [hEvT, hL, hR, hT, hB, hLvl, hDir, hN, hT1, hH1, hL1, hT2, hH2, hL2, hT3, hH3, hL3] = request.security(syminfo.tickerid, iHtf, f_htf(), lookahead = barmerge.lookahead_on)
-[lEvT, lL, lR, lT, lB, lLvl, lDir, lN, lT1, lH1, lL1, lT2, lH2, lL2, lT3, lH3, lL3] = f_core(iLtfLen, iBodyK, iRatio, iMaxAlgo, iInclImp)
+[lEvT, lL, lR, lT, lB, lLvl, lDir, lN, lT1, lH1, lL1, lT2, lH2, lL2, lT3, lH3, lL3] = f_core(iLtfLen, iBodyK, iRatio, iMaxAlgo, iInclImp, iBoth)
 
 bool htfOk  = timeframe.in_seconds(iHtf) > timeframe.in_seconds()
 int  htfMs  = timeframe.in_seconds(iHtf) * 1000

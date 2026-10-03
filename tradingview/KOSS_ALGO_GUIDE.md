@@ -11,7 +11,7 @@ Il n'y a **aucun signal d'achat ou de vente** : seulement les tracés demandés.
 
 > **À lire avant tout**
 > 1. **Non compilé ici** (ni éditeur Pine ni MetaEditor). En cas d'erreur, envoyez-moi une capture ou le texte exact.
-> 2. **« Bougie algorithmique » n'a pas de définition officielle.** J'ai pris une définition chiffrée et réglable (partie 1). Si la vôtre est différente, envoyez-moi une capture avec 2 ou 3 bougies algo entourées : j'adapterai les règles.
+> 2. **Définition de la bougie algo : la vôtre**, c'est-à-dire **très petit corps et longues mèches**, traduite en chiffres réglables (partie 1). Si les bougies marquées ne correspondent pas à ce que vous voyez, envoyez-moi une capture avec 2 ou 3 bougies algo entourées : j'ajusterai les seuils.
 
 ---
 
@@ -19,14 +19,15 @@ Il n'y a **aucun signal d'achat ou de vente** : seulement les tracés demandés.
 
 | Notion | Règle exacte (réglages par défaut) |
 |---|---|
-| **Bougie algorithmique** | Corps ≥ **1,5 × ATR(14)** et corps ≥ **70 %** de la bougie (petites mèches). C'est une bougie de « déplacement », dans le sens du mouvement. |
+| **Bougie algorithmique** | **Très petit corps et longues mèches** : corps ≤ **25 %** de la bougie, donc mèches ≥ 75 %. La bougie doit aussi mesurer au moins **1 × ATR(14)** du plus haut au plus bas, pour ignorer les petites bougies sans importance. Sa couleur (verte ou rouge) n'a pas d'importance. |
+| **Option « deux longues mèches »** | Si elle est activée, la mèche du haut **et** celle du bas font chacune au moins 25 % de la bougie (forme de toupie ou de doji). Désactivée par défaut : une seule longue mèche suffit (marteau, étoile filante). |
 | **Sommet / creux de structure** | Plus haut (ou plus bas) que les **3 bougies** de chaque côté |
 | **CHoCH haussier** | Une bougie **clôture au-dessus** du dernier sommet alors que la tendance était **baissière** |
 | **CHoCH baissier** | Une bougie **clôture sous** le dernier creux alors que la tendance était **haussière** |
-| **Dernier mouvement avant le CHoCH** | Pour un CHoCH haussier : la dernière **baisse**, du sommet cassé jusqu'au plus bas. Ses bougies algo sont **baissières**. C'est l'inverse pour un CHoCH baissier. |
+| **Dernier mouvement avant le CHoCH** | Pour un CHoCH haussier : la dernière **baisse**, du sommet cassé jusqu'au plus bas. C'est l'inverse pour un CHoCH baissier. |
 | **Mouvement CHoCH** (rectangle vert) | Du sommet cassé jusqu'à la bougie du CHoCH, entre le plus haut et le plus bas de cette période |
 
-Au maximum **3 bougies algo** par mouvement sont retenues : celles qui ont les plus grands corps.
+Au maximum **3 bougies algo** par mouvement sont retenues : les **plus grandes** (mèches comprises).
 
 ## 2. Étape 1 : unité d'analyse (Daily, H4 ou H1)
 
@@ -84,14 +85,16 @@ Rien d'autre n'est affiché : pas de panneau, pas de swings, pas de liquidité.
 | | Seulement dans la zone verte | **Oui** | Non = toutes les bougies algo avant un CHoCH |
 | | Niveau du CHoCH | Oui | Ligne grise pointillée |
 | | CHoCH gardés | 3 | |
-| 3. Bougie algo | Corps minimal | 1,5 × ATR | Plus petit = plus de bougies algo |
-| | Corps minimal en % | 70 % | Plus grand = mèches plus petites |
+| 3. Bougie algo | Taille minimale de la bougie | 1 × ATR | Plus petit = plus de bougies algo, y compris de petites |
+| | Corps maximal | 25 % | Plus petit (15 %) = corps plus minuscule, mèches plus longues |
+| | Exiger deux longues mèches | Non | Oui = seulement les toupies et les dojis |
 | | Bougies algo max. par mouvement | 3 | |
 | | Chercher aussi dans la jambe du CHoCH | Non | Oui = inclure le mouvement qui fait le CHoCH |
 | 4. Couleurs | Orange, orange pâle, vert, gris | | |
 | MT5 | Bougies analysées, alertes, notifications | 1 500 / 3 000, Oui, Non | |
 
-**Si vous voyez trop peu de bougies algo**, baissez le *corps minimal* à 1,2 × ATR. **S'il y en a trop**, montez à 2 × ATR.
+**Si vous voyez trop peu de bougies algo** : baissez la *taille minimale* à 0,7 × ATR ou montez le *corps maximal* à 33 %.
+**S'il y en a trop** : montez la *taille minimale* à 1,5 × ATR, baissez le *corps maximal* à 15 % ou activez *deux longues mèches*.
 
 ## 7. Alertes
 - *CHoCH + bougies algo (unité d'analyse)* : un nouveau rectangle vert apparaît.
@@ -103,6 +106,6 @@ Sur MT5, les mêmes alertes sont disponibles, avec les notifications sur le tél
 
 1. **Retard de confirmation** : un sommet ou un creux n'est confirmé que 3 bougies après. Un CHoCH n'est donc reconnu qu'à la clôture de la bougie qui casse.
 2. **Pas de repaint** : l'étape 1 utilise uniquement les bougies H4 (ou D1, H1) **clôturées**, et l'étape 2 les bougies clôturées du graphique.
-3. **La définition de « bougie algo » est la mienne.** Comparez avec ce que vous repérez à l'œil et dites-moi ce qu'il faut ajuster.
+3. **Les seuils (25 %, 1 × ATR) sont des points de départ.** Comparez avec ce que vous repérez à l'œil et dites-moi ce qu'il faut ajuster.
 4. **Cet indicateur ne dit pas** si le prix va réagir sur ces bougies : il les montre, c'est vous qui décidez.
 5. **TradingView et MT5 peuvent différer légèrement** (historique et heure du courtier, surtout en Daily).

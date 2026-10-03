@@ -8,7 +8,8 @@
 //|  Étape 2 (graphique M5 / M15 / M30) : bougies algo présentes dans |
 //|    la zone verte et situées avant un CHoCH = rectangles orange    |
 //|    pâle.                                                           |
-//|  Bougie algo : corps ≥ 1,5 ATR(14) et corps ≥ 70 % de la bougie.   |
+//|  Bougie algo : très petit corps (≤ 25 %) et longues mèches,        |
+//|  taille de la bougie ≥ 1 ATR(14).                                 |
 //|  Bougies clôturées uniquement. Indicateur : aucun ordre.          |
 //|  Fiche : tradingview/KOSS_ALGO_GUIDE.md                           |
 //+------------------------------------------------------------------+
@@ -39,8 +40,9 @@ input bool        InpShowCh  = true;    // Afficher le niveau du CHoCH (unité d
 input int         InpKeepL   = 3;       // CHoCH gardés à l'écran (unité d'entrée)
 input int         InpLtfBars = 3000;    // Bougies analysées (unité d'entrée)
 input group "3. Bougie algorithmique"
-input double      InpBodyK   = 1.5;     // Corps minimal (× ATR 14)
-input double      InpRatio   = 70;      // Corps minimal (% de la bougie)
+input double      InpBodyK   = 1.0;     // Taille minimale de la bougie (× ATR 14)
+input double      InpRatio   = 25;      // Corps maximal (% de la bougie)
+input bool        InpBoth    = false;   // Exiger deux longues mèches (haut ET bas)
 input int         InpMaxAlgo = 3;       // Bougies algo max. par mouvement (1 à 3)
 input bool        InpInclImp = false;   // Chercher aussi dans la jambe du CHoCH
 input group "4. Couleurs et alertes"
@@ -171,17 +173,17 @@ void Scan(const MqlRates &r[], const int n, const int len, const ENUM_TIMEFRAMES
          if(up == 1) { if(r[k].low < ext) { ext = r[k].low; x = k; }  oppo = MathMax(oppo, r[k].high); }
          else        { if(r[k].high > ext) { ext = r[k].high; x = k; } oppo = MathMin(oppo, r[k].low); }
         }
-      // Bougies algo : les plus grands corps
+      // Bougies algo : petit corps + longues mèches ; on garde les plus grandes
       double b[3] = {0, 0, 0};
       int    kk[3] = {-1, -1, -1};
       int last = InpInclImp ? i : x;
       for(int k = start; k <= last; k++)
         {
-         bool inLeg = k <= x;
-         bool wantBear = (up == 1) == inLeg;
          double body = MathAbs(r[k].close - r[k].open), rng = r[k].high - r[k].low;
-         bool okDir = wantBear ? r[k].close < r[k].open : r[k].close > r[k].open;
-         if(!okDir || rng <= 0 || body < InpBodyK * atr[k] || body < InpRatio / 100.0 * rng) continue;
+         double upW = r[k].high - MathMax(r[k].open, r[k].close), dnW = MathMin(r[k].open, r[k].close) - r[k].low;
+         if(rng <= 0 || rng < InpBodyK * atr[k] || body > InpRatio / 100.0 * rng) continue;
+         if(InpBoth && (upW < 0.25 * rng || dnW < 0.25 * rng)) continue;
+         body = rng;   // classement par taille de bougie (mèches comprises)
          for(int m = 0; m < 3; m++)
             if(body > b[m])
               {
