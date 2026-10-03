@@ -59,13 +59,14 @@ npx vercel link          # dans apps/web, puis dans apps/admin
 npx vercel --prod
 ```
 
-Variable à poser sur les deux projets, quand les écrans consommeront l'API :
+Variable à poser sur le projet `web` (le back-office ne consomme pas encore l'API) :
 
 ```
 NEXT_PUBLIC_API_URL=https://acuba-api.onrender.com/api/v1
 ```
 
-Elle n'est encore lue nulle part : aucune façade n'appelle l'API à ce jour.
+Depuis F-01, l'inscription l'utilise. Avant de la poser, lire §7 : avec les domaines gratuits, la session ne
+survit pas au rechargement de la page.
 
 ---
 
@@ -108,7 +109,8 @@ bruyamment au lancement, jamais silencieusement à la première requête.
 | `ENCRYPTION_KEY`                     |     oui     | 32 octets en base64                                                                           |
 | `JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY` |     oui     | RS256. Sans elles, repli HS256 de développement                                               |
 | `S3_MEDIA_BUCKET` / `S3_KYC_BUCKET`  |     oui     | **Deux buckets distincts** — le démarrage le vérifie                                          |
-| `CORS_ALLOWED_ORIGINS`               |     oui     | Les domaines Vercel, séparés par des virgules                                                 |
+| `CORS_ALLOWED_ORIGINS`               |     oui     | Les domaines Vercel, séparés par des virgules. Sert aussi de liste blanche CSRF — voir §7     |
+| `SESSION_COOKIE_*`                   |     non     | Valeurs par défaut sûres ; **lire §7** avant tout déploiement sur domaines gratuits           |
 | `PROCESS_ROLE`                       |     oui     | `api` sur le service web, `worker` sur le worker                                              |
 | `ALLOW_MOCK_PROVIDERS_IN_PRODUCTION` |   recette   | Sans elle, `NODE_ENV=production` **refuse de démarrer** tant que SMS et paiement sont simulés |
 
@@ -158,7 +160,44 @@ local avant la première mise en ligne.
 
 ---
 
-## 7. Ordre de mise en ligne
+## 7. Le cookie de session et les domaines — story F-02, à décider avant la recette
+
+Depuis F-02, le navigateur ne voit plus jamais le jeton de rafraîchissement : l'API le pose dans un cookie
+`httpOnly`, limité aux routes `/api/v1/auth`. Le site garde seulement le jeton d'accès de 15 minutes, en mémoire.
+C'est ce qui empêche un script injecté d'emporter une session de 30 jours.
+
+**Le point à comprendre avant de déployer.** Un cookie ne circule bien que si le site et l'API appartiennent au
+**même site** au sens du navigateur, c'est-à-dire au même domaine enregistrable. Or `vercel.app` et `onrender.com`
+figurent tous deux sur la liste publique des suffixes : `acuba-web.vercel.app` et `acuba-api.onrender.com` sont,
+pour un navigateur, **deux sites étrangers l'un à l'autre**. Le cookie de l'API devient un cookie tiers.
+
+| Configuration                                                                  | Ce qui se passe                                                                                                                                                                                                           |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Domaine personnalisé** : `app.<domaine>` (Vercel) + `api.<domaine>` (Render) | **Recommandé.** Même site : `SESSION_COOKIE_SAMESITE=strict` fonctionne partout, iPhone compris. Laisser `SESSION_COOKIE_DOMAIN` vide.                                                                                    |
+| Domaines gratuits, `SESSION_COOKIE_SAMESITE=strict` (valeur par défaut)        | La connexion aboutit, mais le navigateur **refuse le cookie**. La session meurt au premier rechargement de la page : il faut redemander un code.                                                                          |
+| Domaines gratuits, `SESSION_COOKIE_SAMESITE=none`                              | Fonctionne sur Chrome et Edge tant qu'ils acceptent les cookies tiers. **Safari les bloque par défaut** : sur iPhone, même résultat que la ligne précédente. Acceptable pour une recette sur Android, pas pour le public. |
+
+Aucune de ces configurations ne casse la connexion elle-même : dans le pire cas, la personne doit se reconnecter
+à chaque rechargement. C'est dégradé, pas dangereux — mais personne ne garderait un service qui fait cela.
+
+**Recommandation : réserver un domaine avant d'ouvrir la recette à de vrais testeurs.** Vercel et Render acceptent
+tous deux un domaine personnalisé sans surcoût ; seul le domaine se paie.
+
+Variables, sur le service `acuba-api` :
+
+| Variable                  | Valeur recommandée | Note                                                                                       |
+| ------------------------- | ------------------ | ------------------------------------------------------------------------------------------ |
+| `SESSION_COOKIE_SAMESITE` | `strict`           | `none` seulement pour une recette sur domaines gratuits, en connaissance de cause          |
+| `SESSION_COOKIE_SECURE`   | `true`             | `false` **refuse de démarrer** en production                                               |
+| `SESSION_COOKIE_DOMAIN`   | _(vide)_           | Vide = cookie attaché au seul hôte de l'API, le plus restrictif. Inutile de le renseigner. |
+| `CORS_ALLOWED_ORIGINS`    | origine exacte     | `https://app.<domaine>` — **sert aussi de liste blanche CSRF** pour les routes du cookie   |
+
+Une origine absente de `CORS_ALLOWED_ORIGINS` est refusée (`403 AUTH_FORBIDDEN`) sur la validation du code et le
+rafraîchissement. Une faute de frappe dans cette variable se voit donc tout de suite, à la première connexion.
+
+---
+
+## 8. Ordre de mise en ligne
 
 1. Réserver PostgreSQL et Redis, exécuter `bootstrap-production.sql`, puis `db:migrate:deploy` et `db:seed`.
 2. Déployer l'API et le worker depuis `render.yaml`, avec `ALLOW_MOCK_PROVIDERS_IN_PRODUCTION=true`.

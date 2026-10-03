@@ -72,7 +72,7 @@ Méthode STRIDE, appliquée aux surfaces réelles du produit.
 | M9  | Rejeu ou falsification de webhook       |   T    |    Élevée    | Signature vérifiée avant lecture, unicité `(provider, eventId)`, traitement idempotent                                  |
 | M10 | Extorsion à partir de contenu intime    |   I    |    Élevée    | Modération des pièces jointes, signalement en deux touches, procédure d'escalade                                        |
 | M11 | Énumération d'utilisateurs              |   I    |   Moyenne    | Réponses et temps de réponse uniformes, 404 indistinct, rate limiting                                                   |
-| M12 | Injection SQL / XSS                     |  T/E   |    Élevée    | Prisma paramétré, validation Zod stricte, assainissement des textes, CSP                                                |
+| M12 | Injection SQL / XSS                     |  T/E   |    Élevée    | Prisma paramétré, validation Zod stricte, assainissement des textes, CSP (back-office seulement — site public : F-09)   |
 | M13 | Envoi de fichier hostile                |   E    |    Élevée    | Signature binaire, ré-encodage systématique, taille et dimensions bornées, stockage privé sans exécution                |
 | M14 | Épuisement de ressources (OTP, médias)  |   D    |   Moyenne    | Rate limiting multi-dimension, quotas, plafond de dépense SMS avec alerte                                               |
 | M15 | Fuite par les logs                      |   I    |    Élevée    | Rédaction automatique par liste noire de clés, test dédié en CI                                                         |
@@ -98,8 +98,9 @@ Méthode STRIDE, appliquée aux surfaces réelles du produit.
 ### 4.1 Authentification et sessions
 
 Argon2id (paramètres à réévaluer annuellement) · access token 15 min RS256 · refresh token opaque 30 j **haché**,
-rotatif, par famille · détection de réutilisation → révocation totale + audit + notification · verrouillage
-progressif · 2FA prête côté membre, **obligatoire** côté back-office · révocation individuelle et globale.
+rotatif, par famille · détection de réutilisation → révocation totale + audit + notification · **sur le web,
+refresh token en cookie `httpOnly` limité à `/api/v1/auth`, jamais lisible par JavaScript, `Origin` exigée
+contre le CSRF** (F-02) · verrouillage progressif · 2FA prête côté membre, **obligatoire** côté back-office · révocation individuelle et globale.
 
 ### 4.2 Autorisation
 

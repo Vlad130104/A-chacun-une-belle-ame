@@ -84,6 +84,12 @@ export interface RequeteOptions {
   body?: unknown;
   /** Jeton d'accès. Fourni explicitement : le client ne lit aucun stockage. */
   accessToken?: string | null;
+  /**
+   * Joint les cookies à la requête. Réservé aux routes d'authentification, qui
+   * seules lisent ou posent le cookie de session `httpOnly` (story F-02) — et
+   * qui, côté serveur, refusent toute origine non déclarée.
+   */
+  avecCookies?: boolean;
   signal?: AbortSignal;
 }
 
@@ -114,9 +120,11 @@ export async function appelerApi<T>(chemin: string, options: RequeteOptions = {}
       headers: entetes,
       ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
       signal: controleur.signal,
-      // Aucun cookie : la session passe par l'en-tête Authorization. Envoyer les
-      // cookies ouvrirait une surface CSRF sans contrepartie.
-      credentials: 'omit',
+      // Par défaut, aucun cookie : les routes métier s'authentifient par
+      // l'en-tête Authorization. Joindre les cookies partout élargirait la
+      // surface CSRF sans rien apporter ; seules les routes d'authentification
+      // en ont besoin, et le demandent explicitement.
+      credentials: options.avecCookies === true ? 'include' : 'omit',
     });
   } catch {
     // Réseau coupé, DNS, échéance dépassée : indistincts pour le membre, et

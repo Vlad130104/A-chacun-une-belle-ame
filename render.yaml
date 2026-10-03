@@ -64,6 +64,13 @@ services:
       - { key: S3_MEDIA_BUCKET, sync: false }
       - { key: S3_KYC_BUCKET, sync: false }
       - { key: CORS_ALLOWED_ORIGINS, sync: false }
+      # Cookie de session web (F-02). `strict` suppose un domaine personnalisé
+      # commun au site et à l'API : lire docs/15-hebergement.md §7 avant de
+      # déployer sur *.vercel.app + *.onrender.com.
+      - key: SESSION_COOKIE_SAMESITE
+        value: strict
+      - key: SESSION_COOKIE_SECURE
+        value: 'true'
 
   - type: worker
     name: acuba-worker

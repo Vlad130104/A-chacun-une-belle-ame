@@ -15,6 +15,12 @@ const bool = z
   .default(false)
   .transform((value) => value === true || value === 'true' || value === '1');
 
+/** Même lecture, mais vrai par défaut : pour les réglages dont l'absence doit rester sûre. */
+const boolDefaultTrue = z
+  .union([z.boolean(), z.string()])
+  .default(true)
+  .transform((value) => value === true || value === 'true' || value === '1');
+
 export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
@@ -150,6 +156,15 @@ export const envSchema = z.object({
 
   // ── Sécurité ───────────────────────────────────────────────────────────────
   CORS_ALLOWED_ORIGINS: z.string().default(''),
+  /**
+   * Cookie de session web (story F-02). `Strict` suppose que le site et l'API
+   * partagent un domaine enregistrable ; voir docs/15-hebergement.md §7.
+   */
+  SESSION_COOKIE_SAMESITE: z.enum(['strict', 'lax', 'none']).default('strict'),
+  /** Faux seulement en local sur HTTP. Interdit en production. */
+  SESSION_COOKIE_SECURE: boolDefaultTrue,
+  /** Vide = cookie attaché au seul hôte de l'API, le réglage le plus restrictif. */
+  SESSION_COOKIE_DOMAIN: z.string().default(''),
   RATE_LIMIT_GLOBAL_PER_MINUTE: z.coerce.number().int().positive().default(120),
   RATE_LIMIT_AUTH_PER_HOUR: z.coerce.number().int().positive().default(10),
   RATE_LIMIT_OTP_PER_10_MIN: z.coerce.number().int().positive().default(3),
@@ -230,6 +245,23 @@ export function validateEnv(raw: Record<string, unknown>): Env {
     throw new EnvValidationError([
       `les échéances SLA doivent être strictement croissantes de P0 à P3 (obtenu : ${sla.join(' < ')}). ` +
         'Une échéance critique plus longue qu’une échéance basse inverserait la file de modération.',
+    ]);
+  }
+
+  // Cookie de session : deux combinaisons que le navigateur accepterait en
+  // silence, ou refuserait en silence. Dans les deux cas personne ne verrait
+  // rien avant les premières déconnexions inexpliquées.
+  if (env.NODE_ENV === 'production' && !env.SESSION_COOKIE_SECURE) {
+    throw new EnvValidationError([
+      'SESSION_COOKIE_SECURE=false est interdit en production : le jeton de rafraîchissement ' +
+        'circulerait en clair sur toute connexion HTTP.',
+    ]);
+  }
+  if (env.SESSION_COOKIE_SAMESITE === 'none' && !env.SESSION_COOKIE_SECURE) {
+    throw new EnvValidationError([
+      'SESSION_COOKIE_SAMESITE=none exige SESSION_COOKIE_SECURE=true : les navigateurs ' +
+        'rejettent sans le dire un cookie SameSite=None non sécurisé, et aucune session web ' +
+        'ne survivrait au rechargement de la page.',
     ]);
   }
 

@@ -113,13 +113,20 @@ describe('réseau indisponible', () => {
 });
 
 describe('en-têtes de la requête', () => {
-  it('n’envoie AUCUN cookie', async () => {
-    // La session passe par l'en-tête Authorization : envoyer les cookies
-    // ouvrirait une surface CSRF sans contrepartie.
+  it('n’envoie AUCUN cookie par défaut', async () => {
+    // Les routes métier passent par l'en-tête Authorization : joindre les
+    // cookies partout élargirait la surface CSRF sans contrepartie.
     repondre(reponse(200, {}));
     await appelerApi('/x');
 
     expect(appelsFetch[0]?.[1].credentials).toBe('omit');
+  });
+
+  it('joint les cookies seulement quand l’appelant le demande', async () => {
+    repondre(reponse(200, {}));
+    await appelerApi('/auth/refresh', { method: 'POST', body: {}, avecCookies: true });
+
+    expect(appelsFetch[0]?.[1].credentials).toBe('include');
   });
 
   it('n’ajoute d’en-tête d’autorisation QUE si un jeton est fourni', async () => {

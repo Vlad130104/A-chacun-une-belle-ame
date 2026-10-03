@@ -120,6 +120,12 @@ paths:
       operationId: postAuthOtpVerify
       tags: [auth]
       summary: Valider un code OTP et obtenir les jetons
+      description: |
+        Transport du refresh token selon `device.type` (story F-02) :
+        - `WEB` : posé en cookie `httpOnly` (`__Secure-acuba_rt`, `Path=/api/v1/auth`), **absent
+          du corps**. L'en-tête `Origin` doit figurer dans `CORS_ALLOWED_ORIGINS`, sinon 403
+          `AUTH_FORBIDDEN` — contrôlé avant de consommer le code.
+        - autre ou absent (application mobile) : rendu dans le corps, aucun cookie.
       security: []
       x-authorization: PUBLIC
       requestBody:
@@ -136,10 +142,19 @@ paths:
       responses:
         '200':
           description: Authentifié
+          headers:
+            Set-Cookie:
+              description: Navigateur uniquement — refresh token en cookie `httpOnly`
+              schema: { type: string }
           content:
             application/json:
               schema: { $ref: '#/components/schemas/AuthTokens' }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '403':
+          description: Navigateur dont l'origine n'est pas déclarée (`AUTH_FORBIDDEN`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '401':
           description: Code invalide, expiré ou nombre d'essais dépassé
           content:
@@ -154,6 +169,12 @@ paths:
       description: |
         Le refresh token est à usage unique. La présentation d'un token déjà consommé est
         traitée comme un vol : toute la famille de sessions est révoquée (`AUTH_TOKEN_REUSED`).
+
+        Deux transports (story F-02) :
+        - `refreshToken` dans le corps (application mobile) : réponse dans le corps, aucun cookie.
+        - corps `{}` et cookie `httpOnly` (navigateur) : `Origin` obligatoire et déclarée dans
+          `CORS_ALLOWED_ORIGINS` (protection CSRF), cookie pivoté, `refreshToken` **absent** du
+          corps. En cas d'échec, le cookie est effacé.
       security: []
       x-authorization: PUBLIC (le refresh token fait foi)
       requestBody:
@@ -162,16 +183,24 @@ paths:
           application/json:
             schema:
               type: object
-              required: [refreshToken]
               properties:
-                refreshToken: { type: string }
+                refreshToken: { type: string, description: 'Absent pour un navigateur' }
       responses:
         '200':
           description: Nouveaux jetons
+          headers:
+            Set-Cookie:
+              description: Transport par cookie uniquement — cookie pivoté, ou effacé en cas d'échec
+              schema: { type: string }
           content:
             application/json:
               schema: { $ref: '#/components/schemas/AuthTokens' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Transport par cookie depuis une origine absente ou non déclarée
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   /auth/logout-all:
     post:
@@ -1261,7 +1290,7 @@ components:
       type: object
       properties:
         accessToken: { type: string }
-        refreshToken: { type: string }
+        refreshToken: { type: string, description: 'Absent pour un navigateur : voir le cookie' }
         expiresIn: { type: integer, example: 900 }
         user: { $ref: '#/components/schemas/Me' }
 

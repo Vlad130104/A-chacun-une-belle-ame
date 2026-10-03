@@ -1,93 +1,56 @@
 'use client';
 
 /**
- * Conservation de la session côté navigateur (tranche F1).
+ * Session côté navigateur (story F-02).
  *
- * **Réserve de sécurité, énoncée franchement.** Le jeton de rafraîchissement est
- * rendu par l'API dans le corps de la réponse, et doit bien être conservé
- * quelque part côté client. Tout emplacement accessible au JavaScript — dont
- * `sessionStorage` — est lisible par un script injecté en cas de faille XSS.
+ * **Plus aucun jeton dans un stockage lisible par JavaScript.**
  *
- * Deux choix limitent la portée du problème sans le résoudre :
+ *  - Le jeton de RAFRAÎCHISSEMENT (30 jours) est posé par l'API dans un cookie
+ *    `httpOnly`. Ce module ne le voit jamais, ne le lit jamais, ne l'écrit
+ *    jamais : un script injecté ne peut donc pas l'emporter.
+ *  - Le jeton d'ACCÈS (15 minutes) vit dans la mémoire du module. Il disparaît
+ *    au rechargement de la page ; `restaurerSession()` (lib/auth.ts) en obtient
+ *    alors un nouveau grâce au cookie.
  *
- *  - le jeton d'ACCÈS ne quitte jamais la mémoire du module. Il n'est écrit
- *    dans aucun stockage, donc il disparaît à la fermeture de l'onglet et ne se
- *    retrouve pas dans une sauvegarde de navigateur ;
- *  - le jeton de RAFRAÎCHISSEMENT va dans `sessionStorage`, pas dans
- *    `localStorage` : il meurt avec l'onglet au lieu de survivre des semaines
- *    sur un téléphone partagé — situation courante dans les pays visés.
- *
- * La vraie correction est un cookie `httpOnly` posé par l'API, inaccessible au
- * JavaScript. Elle suppose une modification côté serveur et une protection
- * CSRF ; elle n'est donc pas dans cette tranche.
- *
- * TODO(F-02) : émettre la session en cookie `httpOnly` + `SameSite=Strict`.
+ * Ce qui reste vrai, dit franchement : un script injecté qui s'exécute DANS la
+ * page peut toujours utiliser le jeton d'accès tant qu'elle est ouverte. Le
+ * cookie empêche le vol du jeton de longue durée, pas l'abus en direct. La
+ * défense contre l'injection elle-même reste l'échappement et la politique de
+ * sécurité du contenu.
  */
 
-const CLE_RAFRAICHISSEMENT = 'acuba.refresh';
-
 /** En mémoire seulement : rien ne l'écrit sur disque. */
-let jetonAcces: string | null = null;
+let courante: Session | null = null;
 
+/** Ce que l'API rend à un navigateur : jamais de jeton de rafraîchissement. */
 export interface Session {
   accessToken: string;
-  refreshToken: string;
+  expiresIn: number;
   userId: string;
   accountStatus: string;
   verificationStatus: string;
 }
 
 export function ouvrirSession(session: Session): void {
-  jetonAcces = session.accessToken;
-  ecrire(CLE_RAFRAICHISSEMENT, session.refreshToken);
+  courante = session;
+}
+
+export function sessionCourante(): Session | null {
+  return courante;
 }
 
 export function jetonDAcces(): string | null {
-  return jetonAcces;
-}
-
-export function jetonDeRafraichissement(): string | null {
-  return lire(CLE_RAFRAICHISSEMENT);
+  return courante?.accessToken ?? null;
 }
 
 /**
- * Ferme la session localement.
+ * Oublie la session en mémoire.
  *
- * Elle n'appelle pas l'API : la révocation côté serveur est une action
- * distincte, qui doit réussir ou échouer visiblement. Effacer le jeton ici
- * pendant qu'il reste valide en base donnerait l'illusion d'une déconnexion.
+ * N'appelle pas l'API : la révocation côté serveur, et l'effacement du cookie
+ * qui l'accompagne, passent par `deconnecter()` (lib/auth.ts), qui doit réussir
+ * ou échouer visiblement. Oublier le jeton ici pendant que la session reste
+ * valide en base donnerait l'illusion d'une déconnexion.
  */
 export function fermerSession(): void {
-  jetonAcces = null;
-  effacer(CLE_RAFRAICHISSEMENT);
-}
-
-// ── Accès au stockage, tolérants ────────────────────────────────────────────
-//
-// `sessionStorage` lève une exception en navigation privée sur certains
-// navigateurs, et n'existe pas pendant le rendu serveur. Un accès non protégé
-// ferait planter la page entière pour une commodité.
-
-function ecrire(cle: string, valeur: string): void {
-  try {
-    window.sessionStorage.setItem(cle, valeur);
-  } catch {
-    // Sans stockage, la session vit le temps de la page. C'est dégradé, pas cassé.
-  }
-}
-
-function lire(cle: string): string | null {
-  try {
-    return window.sessionStorage.getItem(cle);
-  } catch {
-    return null;
-  }
-}
-
-function effacer(cle: string): void {
-  try {
-    window.sessionStorage.removeItem(cle);
-  } catch {
-    // Rien à faire : il n'y avait rien à effacer.
-  }
+  courante = null;
 }

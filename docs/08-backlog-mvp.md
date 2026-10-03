@@ -539,13 +539,14 @@ Ce lot construit les écrans, dans l'ordre du parcours réel d'un membre.
 | ID   | Story                                                                 | État             | Pts |
 | ---- | --------------------------------------------------------------------- | ---------------- | :-: |
 | F-01 | Socle client API et parcours d'inscription (formulaire, OTP, session) | ✅ livré         |  8  |
-| F-02 | **Session en cookie `httpOnly`** plutôt qu'en stockage navigateur     | ⬜ **non livré** |  5  |
+| F-02 | **Session en cookie `httpOnly`** plutôt qu'en stockage navigateur     | ✅ livré         |  5  |
 | F-03 | Dépôt de la pièce d'identité et du selfie, suivi de la vérification   | ⬜ **non livré** |  8  |
 | F-04 | Profil : création, photos, complétion, publication                    | ⬜ **non livré** | 13  |
 | F-05 | Découverte, intérêts et matchs                                        | ⬜ **non livré** |  8  |
 | F-06 | Messagerie, avec le canal temps réel                                  | ⬜ **non livré** | 13  |
 | F-07 | Signalement et blocage, accessibles depuis chaque écran               | ⬜ **non livré** |  5  |
 | F-08 | Back-office : files de vérification et de modération                  | ⬜ **non livré** | 13  |
+| F-09 | **Politique de sécurité du contenu (CSP) sur le site public**         | ⬜ **non livré** |  3  |
 
 **F-01 — ce qui est livré.** Un client `fetch` sans dépendance, avec une échéance explicite : sans elle, une requête
 sur un réseau mobile dégradé laisse l'écran figé, la personne appuie plusieurs fois, et plusieurs inscriptions
@@ -558,9 +559,35 @@ serveur, qui seul décide ; un contrôle client ne serait qu'un confort d'affich
 l'écran OTP vient du **serveur** : tant que l'envoi de SMS est simulé, aucun code n'arrive, et sans cet
 avertissement la personne attendrait indéfiniment un message qui ne viendra jamais.
 
-**F-02 — pourquoi la session n'est pas encore sûre.** L'API rend les jetons dans le corps de la réponse ; il faut
-bien les conserver côté client, et tout emplacement accessible au JavaScript est lisible par un script injecté en cas
-de faille XSS. Deux choix limitent la portée sans résoudre le problème : le jeton d'accès ne quitte jamais la mémoire
-du module, et le jeton de rafraîchissement va dans `sessionStorage` — il meurt avec l'onglet au lieu de survivre des
-semaines sur un téléphone partagé, situation courante dans les pays visés. La vraie correction est un cookie
-`httpOnly` posé par l'API, avec la protection CSRF qui l'accompagne : c'est une modification côté serveur.
+**F-02 — ce qui est livré.** Le navigateur ne voit plus jamais le jeton de rafraîchissement. L'API le pose dans un
+cookie `httpOnly`, `Secure`, `SameSite=Strict` par défaut, limité aux routes `/api/v1/auth` ; il n'apparaît plus
+dans le corps des réponses destinées au web. Le site ne garde que le jeton d'accès de 15 minutes, en mémoire, et le
+renouvelle par le cookie au rechargement de la page. Un script injecté ne peut donc plus **emporter** une session
+de 30 jours. L'application mobile garde le transport par corps : elle range le jeton dans le trousseau chiffré du
+système et n'a pas de cookies.
+
+Trois points qu'on aurait pu manquer :
+
+- **Protection CSRF.** Les routes qui posent ou lisent le cookie exigent un en-tête `Origin` déclaré dans
+  `CORS_ALLOWED_ORIGINS` ; sur la validation du code, le contrôle a lieu **avant** de consommer le code, pour ne
+  pas brûler un code valide. Les autres routes exigent `Authorization`, qu'un site tiers ne peut pas faire ajouter.
+- **Deux onglets rechargés ensemble.** Le jeton est à usage unique et sa réutilisation révoque toute la session
+  (ADR-005). Sans précaution, le second onglet serait pris pour un voleur. Les rafraîchissements sont sérialisés
+  par `navigator.locks` entre onglets, et partagés dans un même onglet — ce qui couvre aussi le double appel du
+  mode strict de React. Un test démontre la course, et un autre documente la limite : sans `navigator.locks`
+  (navigateurs antérieurs à 2022), seule la protection dans l'onglet s'applique.
+- **Déconnexion honnête.** Le cookie est effacé **après** la révocation en base ; si elle échoue, l'erreur
+  remonte et la session reste ouverte, plutôt que de donner l'illusion d'une déconnexion.
+
+**Réserve d'hébergement, bloquante pour une recette utile.** `vercel.app` et `onrender.com` sont deux sites
+distincts pour un navigateur : sur ces domaines gratuits, le cookie devient un cookie tiers, refusé en
+`SameSite=Strict` et bloqué par Safari en `SameSite=None`. La connexion aboutit, mais la session meurt au
+rechargement. La correction est un domaine personnalisé commun (`app.` et `api.`) — `docs/15-hebergement.md` §7.
+
+**Ce que F-02 ne résout pas.** Un script injecté qui s'exécute dans la page peut toujours utiliser le jeton
+d'accès tant qu'elle est ouverte. La défense contre l'injection elle-même est la CSP — et le site public **n'en
+a aucune** : `SECURITY.md` (M12) l'annonce, seul le back-office l'applique. D'où F-09.
+
+**F-09 — CSP absente du site public.** Trouvée pendant F-02. `apps/admin` pose une `Content-Security-Policy`,
+`apps/web` non. Une CSP pour Next.js demande un nonce par requête (les scripts d'amorçage sont en ligne) ; ce
+n'est pas un en-tête à recopier, d'où une story distincte plutôt qu'un ajout précipité.

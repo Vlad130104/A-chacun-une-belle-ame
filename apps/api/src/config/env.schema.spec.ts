@@ -29,6 +29,43 @@ describe('validation de la configuration', () => {
     );
   });
 
+  describe('cookie de session web (F-02)', () => {
+    it('est sûr par défaut : Strict, Secure, attaché au seul hôte de l’API', () => {
+      const env = validateEnv(baseEnv);
+      expect(env.SESSION_COOKIE_SAMESITE).toBe('strict');
+      expect(env.SESSION_COOKIE_SECURE).toBe(true);
+      expect(env.SESSION_COOKIE_DOMAIN).toBe('');
+    });
+
+    it('REFUSE un cookie non sécurisé en production', () => {
+      // Le jeton de rafraîchissement circulerait en clair sur toute connexion HTTP.
+      expect(() =>
+        validateEnv({
+          ...baseEnv,
+          NODE_ENV: 'production',
+          ALLOW_MOCK_PROVIDERS_IN_PRODUCTION: 'true',
+          SESSION_COOKIE_SECURE: 'false',
+        }),
+      ).toThrow(/SESSION_COOKIE_SECURE=false est interdit en production/);
+    });
+
+    it('refuse SameSite=None sans Secure, que le navigateur rejetterait en silence', () => {
+      expect(() =>
+        validateEnv({
+          ...baseEnv,
+          SESSION_COOKIE_SAMESITE: 'none',
+          SESSION_COOKIE_SECURE: 'false',
+        }),
+      ).toThrow(/SameSite=None non sécurisé/);
+    });
+
+    it('accepte un cookie non sécurisé en développement local', () => {
+      expect(
+        validateEnv({ ...baseEnv, SESSION_COOKIE_SECURE: 'false' }).SESSION_COOKIE_SECURE,
+      ).toBe(false);
+    });
+  });
+
   describe('séparation des stockages', () => {
     it('refuse un bucket unique pour les médias et les pièces d’identité', () => {
       expect(() =>

@@ -54,6 +54,7 @@ import {
   RevokeSessionUseCase,
 } from './application/session.use-cases';
 import { AuthController } from './infrastructure/auth.controller';
+import { SessionCookie, sessionCookieConfigFrom } from './infrastructure/session-cookie';
 import {
   Argon2PasswordHasher,
   JwtTokenService,
@@ -262,6 +263,21 @@ import {
         }),
       // TODO(D8-02): brancher ici la notification de sécurité et l'événement d'audit
       // émis lors d'une réutilisation de refresh token détectée.
+    },
+    {
+      provide: SessionCookie,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<Env, true>) =>
+        new SessionCookie(
+          sessionCookieConfigFrom({
+            API_GLOBAL_PREFIX: config.get('API_GLOBAL_PREFIX', { infer: true }),
+            CORS_ALLOWED_ORIGINS: config.get('CORS_ALLOWED_ORIGINS', { infer: true }),
+            REFRESH_TOKEN_TTL_DAYS: config.get('REFRESH_TOKEN_TTL_DAYS', { infer: true }),
+            SESSION_COOKIE_SAMESITE: config.get('SESSION_COOKIE_SAMESITE', { infer: true }),
+            SESSION_COOKIE_SECURE: config.get('SESSION_COOKIE_SECURE', { infer: true }),
+            SESSION_COOKIE_DOMAIN: config.get('SESSION_COOKIE_DOMAIN', { infer: true }),
+          }),
+        ),
     },
     {
       provide: LogoutUseCase,

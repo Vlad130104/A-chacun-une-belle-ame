@@ -5,7 +5,6 @@ import { useState, type FormEvent } from 'react';
 import { ApiError } from '../../../lib/api-client';
 import { validerCode } from '../../../lib/auth';
 import { champTexte } from '../../../lib/formulaire';
-import { ouvrirSession } from '../../../lib/session';
 
 /**
  * Saisie et validation du code OTP (tranche F1).
@@ -29,7 +28,7 @@ export function FormulaireCode({ challengeId }: { challengeId: string }) {
     const code = champTexte(new FormData(evenement.currentTarget), 'code').trim();
 
     try {
-      ouvrirSession(await validerCode(challengeId, code));
+      await validerCode(challengeId, code);
       router.push('/verification');
     } catch (cause) {
       if (cause instanceof ApiError) {
