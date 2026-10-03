@@ -1,0 +1,3 @@
+# Le cœur n'utilise que la bibliothèque standard.
+# Optionnel, pour l'analyste IA (python -m trader simulate --ai) :
+anthropic>=1.0
