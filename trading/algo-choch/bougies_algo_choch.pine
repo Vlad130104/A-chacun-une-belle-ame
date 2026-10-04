@@ -1,0 +1,266 @@
+//@version=6
+// ════════════════════════════════════════════════════════════════════════════
+//  Bougies Algo × CHoCH
+//
+//  Bougie algo : corps <= 35 % de l'amplitude ET mèche(s) >= 65 % de l'amplitude.
+//
+//  Étape 1 — graphique D / H4 / H1 (mode « Analyse ») :
+//    • repère les bougies algo de la dernière jambe avant chaque CHoCH,
+//    • les trace en zones marron,
+//    • encadre tout le mouvement du CHoCH d'un rectangle violet fin
+//      (uniquement s'il contient au moins une bougie algo).
+//
+//  Étape 2 — graphique M30 / M15 / M5 (mode « Entrée ») :
+//    • récupère les rectangles violets du timeframe supérieur (H4 par défaut),
+//    • repère les bougies algo de la dernière jambe avant chaque CHoCH du TF d'entrée,
+//    • ne trace en marron que celles situées dans un rectangle violet.
+// ════════════════════════════════════════════════════════════════════════════
+indicator("Bougies Algo × CHoCH", shorttitle = "Algo×CHoCH", overlay = true, max_boxes_count = 500, max_lines_count = 200, max_labels_count = 200, max_bars_back = 1000)
+
+// ─── Constantes ─────────────────────────────────────────────────────────────
+const string MODE_AUTO    = "Auto (selon le timeframe du graphique)"
+const string MODE_ANALYSE = "Analyse : D / H4 / H1 (étape 1)"
+const string MODE_ENTREE  = "Entrée : M30 / M15 / M5 (étape 2)"
+const string WICK_TOTAL   = "Mèches cumulées (haute + basse)"
+const string WICK_SINGLE  = "Une seule mèche (la plus longue)"
+const string F_RECT       = "Dans le rectangle (temps + prix)"
+const string F_RETOUR     = "Rectangle + retour du prix (validité limitée)"
+const string BRK_CLOSE    = "Clôture"
+const string BRK_WICK     = "Mèche"
+const int    MAX_CANDS    = 3000
+
+// ─── Paramètres ─────────────────────────────────────────────────────────────
+const string G_ALGO = "1. Bougie algo"
+float  maxBodyPct = input.float(35.0, "Corps maximum (% de l'amplitude)", minval = 0.0, maxval = 100.0, step = 1.0, group = G_ALGO)
+float  minWickPct = input.float(65.0, "Mèche minimum (% de l'amplitude)", minval = 0.0, maxval = 100.0, step = 1.0, group = G_ALGO)
+string wickMode   = input.string(WICK_TOTAL, "Mesure de la mèche", options = [WICK_TOTAL, WICK_SINGLE], group = G_ALGO, tooltip = "Mèches cumulées : corps <= 35 % équivaut mathématiquement à mèches >= 65 % (les deux règles sont la même).\nUne seule mèche : la plus longue des deux mèches doit faire à elle seule >= 65 % (type pin bar), c'est plus strict.")
+float  minAtrMult = input.float(0.0, "Amplitude minimale (× ATR 14)", minval = 0.0, step = 0.1, group = G_ALGO, tooltip = "0 = désactivé. Ex. 0.5 : ignore les micro-dojis dont l'amplitude est inférieure à la moitié de l'ATR (utile en M5 pour garder un graphique propre).")
+
+const string G_STRUCT = "2. Structure (CHoCH)"
+string modeIn = input.string(MODE_AUTO, "Mode", options = [MODE_AUTO, MODE_ANALYSE, MODE_ENTREE], group = G_STRUCT, tooltip = "Auto : timeframe >= H1 → Analyse ; timeframe < H1 → Entrée.")
+int    htfLen = input.int(5, "Force des swings — TF d'analyse", minval = 2, maxval = 50, group = G_STRUCT, tooltip = "Nombre de bougies de chaque côté pour valider un sommet ou un creux. Plus la valeur est grande, moins il y a de CHoCH (structure plus « majeure »).")
+int    ltfLen = input.int(5, "Force des swings — TF d'entrée", minval = 2, maxval = 50, group = G_STRUCT)
+string brkSrc = input.string(BRK_CLOSE, "Cassure validée par", options = [BRK_CLOSE, BRK_WICK], group = G_STRUCT)
+int    maxLeg = input.int(300, "Longueur max d'une jambe (bougies)", minval = 20, maxval = 900, group = G_STRUCT, tooltip = "Au-delà, le CHoCH est ignoré (sécurité de calcul).")
+
+const string G_ENTRY = "3. Étape 2 — TF d'entrée"
+string htfTF       = input.timeframe("240", "Timeframe du rectangle violet", group = G_ENTRY)
+string filterMode  = input.string(F_RECT, "Filtre de la zone", options = [F_RECT, F_RETOUR], group = G_ENTRY, tooltip = "Dans le rectangle : seules les bougies algo situées dans le rectangle violet (dans le temps ET dans le prix) sont tracées.\nRetour du prix : accepte aussi les bougies algo formées APRÈS le rectangle, quand le prix revient dans sa fourchette de prix, pendant la durée de validité ci-dessous.")
+int    validBars   = input.int(50, "Validité en mode « retour » (bougies du TF violet)", minval = 1, group = G_ENTRY)
+bool   showHtfRect = input.bool(true, "Afficher le rectangle violet du TF supérieur", group = G_ENTRY)
+
+const string G_VIEW = "4. Affichage"
+color brownFill   = input.color(color.new(#8B4513, 65), "Zone algo — fond", group = G_VIEW)
+color brownBorder = input.color(#8B4513, "Zone algo — bordure", group = G_VIEW)
+color violetCol   = input.color(#8A2BE2, "Rectangle CHoCH (violet)", group = G_VIEW)
+int   extBars     = input.int(10, "Prolonger les zones marron (bougies)", minval = 0, maxval = 500, group = G_VIEW)
+int   maxStruct   = input.int(15, "Nombre max de structures affichées", minval = 1, maxval = 100, group = G_VIEW, tooltip = "Les plus anciennes sont effacées pour garder le graphique propre.")
+bool  showLevel   = input.bool(false, "Afficher le niveau cassé (CHoCH)", group = G_VIEW)
+
+// ─── Types et état ──────────────────────────────────────────────────────────
+type Struct
+    int        left
+    int        right
+    float      top
+    float      bottom
+    box        frame
+    array<box> zones
+    line       lvlLine
+    label      lvlLabel
+
+type Cand
+    int   t
+    float h
+    float l
+    int   endT
+
+var array<Struct>  structs = array.new<Struct>()
+var array<Cand>    cands   = array.new<Cand>()
+var map<int, bool> drawn   = map.new<int, bool>()
+
+bool isEntry  = modeIn == MODE_ENTREE or (modeIn == MODE_AUTO and timeframe.in_seconds() < 3600)
+int  chartLen = isEntry ? ltfLen : htfLen
+bool useClose = brkSrc == BRK_CLOSE
+int  extMs    = extBars * timeframe.in_seconds() * 1000
+int  htfMs    = timeframe.in_seconds(htfTF) * 1000
+
+// ─── Fonctions ──────────────────────────────────────────────────────────────
+// Vrai si la bougie respecte la définition « algo ».
+isAlgo(float o, float h, float l, float c, float atrVal) =>
+    float rng       = h - l
+    bool  bigEnough = minAtrMult <= 0 or (not na(atrVal) and rng >= minAtrMult * atrVal)
+    bool  ok        = false
+    if rng > 0 and bigEnough
+        float body  = math.abs(c - o)
+        float upper = h - math.max(o, c)
+        float lower = math.min(o, c) - l
+        float wick  = wickMode == WICK_TOTAL ? upper + lower : math.max(upper, lower)
+        ok := body / rng * 100 <= maxBodyPct and wick / rng * 100 >= minWickPct
+    ok
+
+// Détecte un CHoCH sur la bougie courante.
+// Retour : [dir, startOff, endOff, top, bottom, level]
+//   dir      : 1 = CHoCH haussier, -1 = CHoCH baissier, 0 = rien
+//   startOff : décalage (en bougies) du swing cassé = début de la dernière jambe
+//   endOff   : décalage de l'extrême de la jambe (creux le plus bas / sommet le plus haut)
+//   top/bottom : bornes de tout le mouvement, du début de la jambe jusqu'à la cassure
+//   level    : prix du swing cassé
+detectChoch(simple int len, bool closeBreak, int maxLegBars) =>
+    var float shPrice = na
+    var int   shBar   = na
+    var bool  shLive  = false
+    var float slPrice = na
+    var int   slBar   = na
+    var bool  slLive  = false
+    var int   trend   = 0
+    float ph = ta.pivothigh(high, len, len)
+    float pl = ta.pivotlow(low, len, len)
+    if not na(ph)
+        shPrice := ph
+        shBar   := bar_index - len
+        shLive  := true
+    if not na(pl)
+        slPrice := pl
+        slBar   := bar_index - len
+        slLive  := true
+    int   dir      = 0
+    int   startOff = na
+    int   endOff   = na
+    float top      = na
+    float bottom   = na
+    float level    = na
+    float upSrc    = closeBreak ? close : high
+    float dnSrc    = closeBreak ? close : low
+    if shLive and upSrc > shPrice
+        shLive := false
+        // Cassure d'un sommet alors que la tendance était baissière = CHoCH haussier
+        if trend == -1 and bar_index - shBar <= maxLegBars
+            dir      := 1
+            startOff := bar_index - shBar
+            level    := shPrice
+        trend := 1
+    else if slLive and dnSrc < slPrice
+        slLive := false
+        // Cassure d'un creux alors que la tendance était haussière = CHoCH baissier
+        if trend == 1 and bar_index - slBar <= maxLegBars
+            dir      := -1
+            startOff := bar_index - slBar
+            level    := slPrice
+        trend := -1
+    if dir != 0
+        float ext = dir == 1 ? low[startOff] : high[startOff]
+        endOff := startOff
+        top    := high[startOff]
+        bottom := low[startOff]
+        for k = startOff to 0
+            top    := math.max(top, high[k])
+            bottom := math.min(bottom, low[k])
+            if dir == 1 and low[k] <= ext
+                ext    := low[k]
+                endOff := k
+            else if dir == -1 and high[k] >= ext
+                ext    := high[k]
+                endOff := k
+    [dir, startOff, endOff, top, bottom, level]
+
+// Calculé dans le contexte du TF supérieur : dernier rectangle violet
+// (CHoCH contenant au moins une bougie algo). Décalé de [1] + lookahead_on
+// pour ne jamais repeindre.
+htfRect() =>
+    [dir, sOff, eOff, top, bottom, lvl] = detectChoch(htfLen, useClose, maxLeg)
+    float atrH = ta.atr(14)
+    var int   rLeft  = na
+    var int   rRight = na
+    var float rTop   = na
+    var float rBot   = na
+    if dir != 0
+        bool found = false
+        for k = eOff to sOff
+            if isAlgo(open[k], high[k], low[k], close[k], atrH[k])
+                found := true
+                break
+        if found
+            rLeft  := time[sOff]
+            rRight := time_close
+            rTop   := top
+            rBot   := bottom
+    [rLeft[1], rRight[1], rTop[1], rBot[1]]
+
+// Ajoute une structure et efface la plus ancienne au-delà de la limite.
+pushStruct(Struct s) =>
+    structs.push(s)
+    if structs.size() > maxStruct
+        Struct old = structs.shift()
+        if not na(old.frame)
+            old.frame.delete()
+        if not na(old.lvlLine)
+            old.lvlLine.delete()
+        if not na(old.lvlLabel)
+            old.lvlLabel.delete()
+        for z in old.zones
+            z.delete()
+    s
+
+// Trace une zone marron (une seule fois par bougie).
+addZone(Struct s, int t, float h, float l, int endT) =>
+    bool added = false
+    if not drawn.contains(t)
+        drawn.put(t, true)
+        s.zones.push(box.new(t, h, endT + extMs, l, xloc = xloc.bar_time, border_color = brownBorder, border_width = 1, bgcolor = brownFill))
+        added := true
+    added
+
+// La bougie candidate (TF d'entrée) est-elle dans le rectangle violet ?
+matches(Struct s, Cand c) =>
+    bool priceIn = c.l <= s.top and c.h >= s.bottom
+    bool timeIn  = filterMode == F_RECT ? (c.t >= s.left and c.t < s.right) : (c.t >= s.left and c.t <= s.right + validBars * htfMs)
+    priceIn and timeIn
+
+// ─── Calculs (appelés à chaque bougie) ──────────────────────────────────────
+[cDir, cS, cE, cTop, cBot, cLvl] = detectChoch(chartLen, useClose, maxLeg)
+float atrC = ta.atr(14)
+[hLeft, hRight, hTop, hBot] = request.security(syminfo.tickerid, htfTF, htfRect(), lookahead = barmerge.lookahead_on)
+
+// ─── Étape 1 : timeframe d'analyse ──────────────────────────────────────────
+if not isEntry and cDir != 0 and barstate.isconfirmed
+    Struct s = na
+    int    n = 0
+    for k = cE to cS
+        if isAlgo(open[k], high[k], low[k], close[k], atrC[k])
+            if na(s)
+                box   fr = box.new(time[cS], cTop, time_close, cBot, xloc = xloc.bar_time, border_color = violetCol, border_width = 1, bgcolor = color.new(violetCol, 100))
+                line  ln = showLevel ? line.new(time[cS], cLvl, time_close, cLvl, xloc = xloc.bar_time, color = violetCol, style = line.style_dashed, width = 1) : na
+                label lb = showLevel ? label.new(time_close, cLvl, "CHoCH", xloc = xloc.bar_time, style = label.style_none, textcolor = violetCol, size = size.tiny) : na
+                s := pushStruct(Struct.new(time[cS], time_close, cTop, cBot, fr, array.new<box>(), ln, lb))
+            if addZone(s, time[k], high[k], low[k], time_close)
+                n += 1
+    if n > 0
+        alert("CHoCH " + (cDir == 1 ? "haussier" : "baissier") + " avec " + str.tostring(n) + " bougie(s) algo — " + syminfo.ticker + " " + timeframe.period, alert.freq_once_per_bar_close)
+
+// ─── Étape 2 : timeframe d'entrée ───────────────────────────────────────────
+if isEntry
+    int n = 0
+    // a) Nouveau rectangle violet venu du TF supérieur
+    if not na(hRight) and hRight != nz(hRight[1])
+        box fr = showHtfRect ? box.new(hLeft, hTop, hRight, hBot, xloc = xloc.bar_time, border_color = violetCol, border_width = 1, bgcolor = color.new(violetCol, 100)) : na
+        Struct s = pushStruct(Struct.new(hLeft, hRight, hTop, hBot, fr, array.new<box>(), na, na))
+        // Bougies algo déjà repérées avant des CHoCH du TF d'entrée
+        for c in cands
+            if matches(s, c)
+                if addZone(s, c.t, c.h, c.l, c.endT)
+                    n += 1
+    // b) Nouveau CHoCH sur le TF d'entrée
+    if cDir != 0 and barstate.isconfirmed
+        for k = cE to cS
+            if isAlgo(open[k], high[k], low[k], close[k], atrC[k])
+                Cand c = Cand.new(time[k], high[k], low[k], time_close)
+                cands.push(c)
+                if cands.size() > MAX_CANDS
+                    cands.shift()
+                for s in structs
+                    if matches(s, c)
+                        if addZone(s, c.t, c.h, c.l, c.endT)
+                            n += 1
+                        break
+    if n > 0
+        alert(str.tostring(n) + " bougie(s) algo " + timeframe.period + " dans une zone " + htfTF + " — " + syminfo.ticker, alert.freq_once_per_bar_close)
