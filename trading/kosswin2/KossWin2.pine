@@ -1,0 +1,447 @@
+//@version=6
+// ════════════════════════════════════════════════════════════════════════════
+//  KossWin2
+//
+//  • Tendance par la structure : BOS (cassure dans le sens) et CHoCH (cassure
+//    contre le sens), validés à la clôture.
+//  • Liquidité : BSL / SSL (sommets et creux non pris) et EQH / EQL (égaux).
+//  • Sweep : la mèche dépasse un niveau de liquidité mais la bougie clôture
+//    de l'autre côté → point rouge.
+//  • Premium / Discount : moitié haute / basse de la dernière jambe de structure.
+//  • Zones : Order Block + FVG et Supply / Demand, nés de la jambe qui a cassé
+//    la structure. Une zone n'est AFFICHÉE qu'après la prise de son inducement
+//    (premier repli interne formé après la cassure).
+//
+//  La logique est identique dans KossWin2.mq5 (MetaTrader 5).
+// ════════════════════════════════════════════════════════════════════════════
+indicator("KossWin2", overlay = true, max_boxes_count = 500, max_lines_count = 500, max_labels_count = 500, max_bars_back = 1500)
+
+// ─── Paramètres ─────────────────────────────────────────────────────────────
+const string G_STR = "Structure"
+int    swingLen  = input.int(5, "Force des swings (structure)", minval = 2, maxval = 50, group = G_STR, tooltip = "Nombre de bougies de chaque côté pour valider un sommet / creux de structure. Plus grand = structure plus majeure, moins de BOS / CHoCH.")
+int    idmLen    = input.int(2, "Force des swings internes (inducement)", minval = 1, maxval = 10, group = G_STR, tooltip = "Taille des petits replis utilisés comme inducement.")
+string brkIn     = input.string("Clôture", "Cassure validée par", options = ["Clôture", "Mèche"], group = G_STR)
+int    maxLeg    = input.int(300, "Longueur max d'une jambe (bougies)", minval = 20, maxval = 1000, group = G_STR)
+int    maxStruct = input.int(4, "BOS / CHoCH affichés", minval = 0, maxval = 50, group = G_STR)
+color  bullCol   = input.color(#089981, "Haussier", inline = "tc", group = G_STR)
+color  bearCol   = input.color(#F23645, "Baissier", inline = "tc", group = G_STR)
+
+const string G_ZONE = "Zones (affichées seulement après inducement)"
+bool  showOB      = input.bool(true, "Order Block + FVG", inline = "ob", group = G_ZONE)
+color obBullCol   = input.color(color.new(#089981, 72), "achat", inline = "ob", group = G_ZONE)
+color obBearCol   = input.color(color.new(#F23645, 72), "vente", inline = "ob", group = G_ZONE)
+bool  showSD      = input.bool(true, "Demand / Supply", inline = "sd", group = G_ZONE)
+color demCol      = input.color(color.new(#2962FF, 78), "demand", inline = "sd", group = G_ZONE)
+color supCol      = input.color(color.new(#FF9800, 78), "supply", inline = "sd", group = G_ZONE)
+int   obLookback  = input.int(5, "OB : recherche avant l'origine (bougies)", minval = 0, maxval = 20, group = G_ZONE)
+float dispMult    = input.float(1.5, "S/D : bougie de départ ≥ x ATR", minval = 0.5, step = 0.1, group = G_ZONE)
+int   baseMax     = input.int(3, "S/D : bougies de base max", minval = 1, maxval = 6, group = G_ZONE)
+bool  hideOverlap = input.bool(true, "Masquer une S/D qui chevauche un OB+FVG", group = G_ZONE)
+int   expiry      = input.int(300, "Attente max de l'inducement (bougies)", minval = 10, maxval = 2000, group = G_ZONE)
+int   maxZones    = input.int(4, "Zones affichées max par sens", minval = 1, maxval = 20, group = G_ZONE)
+int   extBars     = input.int(15, "Prolonger les zones (bougies)", minval = 0, maxval = 200, group = G_ZONE)
+bool  delTouched  = input.bool(false, "Effacer une zone après le 1er contact", group = G_ZONE)
+bool  showIdm     = input.bool(true, "Afficher l'inducement pris (IDM)", group = G_ZONE)
+
+const string G_LIQ = "Liquidité et sweeps"
+bool  showLiq   = input.bool(true, "Niveaux de liquidité (BSL / SSL / EQH / EQL)", group = G_LIQ)
+int   maxLiq    = input.int(3, "Niveaux affichés par côté", minval = 1, maxval = 10, group = G_LIQ)
+float eqTol     = input.float(0.1, "Tolérance EQH / EQL (× ATR)", minval = 0.0, maxval = 1.0, step = 0.05, group = G_LIQ)
+color liqCol    = input.color(#787B86, "Couleur des niveaux", group = G_LIQ)
+bool  showSweep = input.bool(true, "Point rouge sur les sweeps", group = G_LIQ)
+color sweepCol  = input.color(color.red, "Couleur du point", group = G_LIQ)
+
+const string G_PD = "Premium / Discount"
+bool  showPD    = input.bool(true, "Afficher Premium / Discount", group = G_PD)
+color premCol   = input.color(#F23645, "Premium", inline = "pd", group = G_PD)
+color discCol   = input.color(#089981, "Discount", inline = "pd", group = G_PD)
+bool  showPanel = input.bool(true, "Panneau de tendance", group = G_PD)
+
+// ─── Types et état ──────────────────────────────────────────────────────────
+type Zone
+    int   dir                // 1 = achat (OB haussier / demand), -1 = vente
+    int   kind               // 0 = OB + FVG, 1 = Supply / Demand
+    float top
+    float bottom
+    int   left
+    int   created            // bougie de la cassure qui a créé la zone
+    float idm     = na       // niveau d'inducement
+    int   idmBar  = na
+    bool  active  = false    // true = inducement pris, zone affichée
+    bool  touched = false
+    box   bx
+    line  idmLn
+    label idmLb
+
+type Liq
+    float price
+    int   bar
+    bool  isHigh
+    bool  isEq = false
+    line  ln
+    label lb
+
+var array<Zone>  zones    = array.new<Zone>()
+var array<Liq>   liqs     = array.new<Liq>()
+var array<line>  stLines  = array.new<line>()
+var array<label> stLabels = array.new<label>()
+
+var float  shPrice = na
+var int    shBar   = na
+var bool   shLive  = false
+var float  slPrice = na
+var int    slBar   = na
+var bool   slLive  = false
+var int    trend   = 0
+var string lastTag = "—"
+var int    rStart  = na
+var float  rTop    = na
+var float  rBot    = na
+
+const int MAX_PENDING = 40
+
+// ─── Séries (calculées à chaque bougie) ─────────────────────────────────────
+float atr        = ta.atr(14)
+float ph         = ta.pivothigh(high, swingLen, swingLen)
+float pl         = ta.pivotlow(low, swingLen, swingLen)
+float iph        = ta.pivothigh(high, idmLen, idmLen)
+float ipl        = ta.pivotlow(low, idmLen, idmLen)
+bool  closeBreak = brkIn == "Clôture"
+
+// ─── Fonctions : zones ──────────────────────────────────────────────────────
+zoneColor(Zone z) =>
+    z.kind == 0 ? (z.dir == 1 ? obBullCol : obBearCol) : (z.dir == 1 ? demCol : supCol)
+
+zoneText(Zone z) =>
+    z.kind == 0 ? "OB+FVG" : (z.dir == 1 ? "Demand" : "Supply")
+
+deleteZone(Zone z) =>
+    if not na(z.bx)
+        z.bx.delete()
+    if not na(z.idmLn)
+        z.idmLn.delete()
+    if not na(z.idmLb)
+        z.idmLb.delete()
+    true
+
+activateZone(Zone z) =>
+    color c = zoneColor(z)
+    z.active := true
+    z.bx := box.new(z.left, z.top, bar_index + extBars, z.bottom, border_color = color.new(c, 40), border_width = 1, bgcolor = c, text = zoneText(z), text_size = size.tiny, text_color = color.new(c, 0), text_halign = text.align_right, text_valign = text.align_center)
+    if showIdm
+        z.idmLn := line.new(z.idmBar, z.idm, bar_index, z.idm, color = liqCol, style = line.style_dotted, width = 1)
+        z.idmLb := label.new(math.round((z.idmBar + bar_index) / 2), z.idm, "IDM", style = z.dir == 1 ? label.style_label_up : label.style_label_down, color = color(na), textcolor = liqCol, size = size.tiny)
+    true
+
+// Garde au plus `maxZones` zones affichées dans un sens (efface les plus anciennes).
+enforceCap(int dir) =>
+    int n = 0
+    for z in zones
+        if z.active and z.dir == dir
+            n += 1
+    while n > maxZones
+        int idx = -1
+        for i = 0 to zones.size() - 1
+            if zones.get(i).active and zones.get(i).dir == dir
+                idx := i
+                break
+        deleteZone(zones.get(idx))
+        zones.remove(idx)
+        n -= 1
+    n
+
+// Garde au plus MAX_PENDING zones en attente d'inducement.
+capPending() =>
+    int n = 0
+    for z in zones
+        if not z.active
+            n += 1
+    while n > MAX_PENDING
+        int idx = -1
+        for i = 0 to zones.size() - 1
+            if not zones.get(i).active
+                idx := i
+                break
+        zones.remove(idx)
+        n -= 1
+    n
+
+// Crée les zones (en attente) nées de la jambe qui vient de casser la structure.
+//   dir : 1 = cassure haussière (zones d'achat), -1 = cassure baissière
+//   o   : bar_index de l'origine de la jambe (creux / sommet extrême)
+createZones(int dir, int o) =>
+    bool  bull  = dir == 1
+    int   oOff  = bar_index - o
+    float obTop = na
+    float obBot = na
+    // 1) Order Block + FVG : premier FVG de la jambe, puis dernière bougie
+    //    de couleur opposée avant ce déplacement.
+    if showOB and oOff >= 2
+        int fvgOff = na
+        for off = oOff - 1 to 1
+            bool gap = bull ? low[off - 1] > high[off + 1] : high[off - 1] < low[off + 1]
+            if gap
+                fvgOff := off
+                break
+        if not na(fvgOff)
+            int kOff = na
+            for off = fvgOff + 1 to oOff + obLookback
+                if bull ? close[off] < open[off] : close[off] > open[off]
+                    kOff := off
+                    break
+            if na(kOff)
+                kOff := oOff
+            obTop := high[kOff]
+            obBot := low[kOff]
+            zones.push(Zone.new(dir, 0, obTop, obBot, bar_index - kOff, bar_index))
+    // 2) Supply / Demand : base (1 à baseMax petites bougies) juste avant une
+    //    bougie de départ forte dans le sens de la cassure.
+    if showSD
+        for off = oOff to 0
+            float rng = high[off] - low[off]
+            bool  dep = rng > 0 and rng >= dispMult * atr[off] and math.abs(close[off] - open[off]) / rng >= 0.6 and (bull ? close[off] > open[off] : close[off] < open[off])
+            if dep
+                int   cnt  = 0
+                float bTop = na
+                float bBot = na
+                for m = 1 to baseMax
+                    int   b  = off + m
+                    float br = high[b] - low[b]
+                    if br > 0 and math.abs(close[b] - open[b]) / br <= 0.5
+                        cnt  += 1
+                        bTop := na(bTop) ? high[b] : math.max(bTop, high[b])
+                        bBot := na(bBot) ? low[b] : math.min(bBot, low[b])
+                    else
+                        break
+                if cnt > 0
+                    bool overlap = not na(obTop) and bTop >= obBot and bBot <= obTop
+                    if not (hideOverlap and overlap)
+                        zones.push(Zone.new(dir, 1, bTop, bBot, bar_index - (off + cnt), bar_index))
+                    break
+    capPending()
+
+// ─── Fonctions : liquidité et structure ─────────────────────────────────────
+liqText(Liq q) =>
+    q.isEq ? (q.isHigh ? "EQH" : "EQL") : (q.isHigh ? "BSL" : "SSL")
+
+deleteLiq(Liq q) =>
+    if not na(q.ln)
+        q.ln.delete()
+    if not na(q.lb)
+        q.lb.delete()
+    true
+
+addLiq(float price, int b, bool isHigh) =>
+    bool merged = false
+    for q in liqs
+        if q.isHigh == isHigh and math.abs(q.price - price) <= eqTol * atr
+            q.isEq  := true
+            q.price := isHigh ? math.max(q.price, price) : math.min(q.price, price)
+            merged  := true
+            break
+    if not merged
+        Liq q = Liq.new(price, b, isHigh)
+        if showLiq
+            q.ln := line.new(b, price, bar_index, price, color = liqCol, style = line.style_dashed, width = 1)
+            q.lb := label.new(bar_index, price, liqText(q), style = label.style_label_left, color = color(na), textcolor = liqCol, size = size.tiny)
+        liqs.push(q)
+        int n = 0
+        for x in liqs
+            if x.isHigh == isHigh
+                n += 1
+        if n > maxLiq
+            int idx = -1
+            for i = 0 to liqs.size() - 1
+                if liqs.get(i).isHigh == isHigh
+                    idx := i
+                    break
+            deleteLiq(liqs.get(idx))
+            liqs.remove(idx)
+    merged
+
+drawStruct(int fromBar, float price, string tag, int dir) =>
+    if maxStruct > 0
+        color c = dir == 1 ? bullCol : bearCol
+        stLines.push(line.new(fromBar, price, bar_index, price, color = c, style = line.style_dashed, width = 1))
+        stLabels.push(label.new(math.round((fromBar + bar_index) / 2), price, tag, style = dir == 1 ? label.style_label_down : label.style_label_up, color = color(na), textcolor = c, size = size.tiny))
+        if stLines.size() > maxStruct
+            stLines.shift().delete()
+            stLabels.shift().delete()
+    true
+
+// ─── Moteur (uniquement sur bougie clôturée : aucun repaint) ────────────────
+bool sweepHi  = false
+bool sweepLo  = false
+int  newZones = 0
+
+if barstate.isconfirmed
+    // A) Range de la dernière jambe (Premium / Discount)
+    if not na(rStart)
+        rTop := math.max(rTop, high)
+        rBot := math.min(rBot, low)
+
+    // B) Liquidité : prise (clôture au-delà) ou sweep (mèche au-delà, clôture en deçà)
+    if liqs.size() > 0
+        for i = liqs.size() - 1 to 0
+            Liq  q   = liqs.get(i)
+            bool hit = q.isHigh ? high > q.price : low < q.price
+            if hit
+                if q.isHigh and close < q.price
+                    sweepHi := true
+                if not q.isHigh and close > q.price
+                    sweepLo := true
+                deleteLiq(q)
+                liqs.remove(i)
+
+    // C) Vie des zones : invalidation, inducement pris, contact
+    if zones.size() > 0
+        for i = zones.size() - 1 to 0
+            Zone z       = zones.get(i)
+            bool bull    = z.dir == 1
+            bool invalid = bull ? close < z.bottom : close > z.top
+            bool inZone  = bull ? low <= z.top : high >= z.bottom
+            bool kill    = false
+            bool justOn  = false
+            if invalid
+                kill := true
+            else
+                if not z.active
+                    if bar_index - z.created > expiry
+                        kill := true
+                    else if na(z.idm)
+                        // Le prix revient dans la zone sans inducement : zone rejetée.
+                        kill := inZone
+                    else if bull ? low < z.idm : high > z.idm
+                        activateZone(z)
+                        justOn   := true
+                        newZones += 1
+                if z.active and inZone and not z.touched
+                    z.touched := true
+                    if delTouched and not justOn
+                        kill := true
+                    else
+                        color c = zoneColor(z)
+                        z.bx.set_bgcolor(color.new(c, math.min(95, color.t(c) + 12)))
+            if kill
+                deleteZone(z)
+                zones.remove(i)
+        enforceCap(1)
+        enforceCap(-1)
+
+    // D) Inducement : premier repli interne formé après la cassure, devant la zone
+    if not na(ipl) or not na(iph)
+        int p = bar_index - idmLen
+        for z in zones
+            if not z.active and na(z.idm) and p > z.created
+                if z.dir == 1 and not na(ipl) and ipl > z.top
+                    z.idm    := ipl
+                    z.idmBar := p
+                else if z.dir == -1 and not na(iph) and iph < z.bottom
+                    z.idm    := iph
+                    z.idmBar := p
+
+    // E) Nouveaux swings de structure (= nouveaux niveaux de liquidité)
+    if not na(ph)
+        shPrice := ph
+        shBar   := bar_index - swingLen
+        shLive  := true
+        addLiq(ph, shBar, true)
+    if not na(pl)
+        slPrice := pl
+        slBar   := bar_index - swingLen
+        slLive  := true
+        addLiq(pl, slBar, false)
+
+    // F) BOS / CHoCH
+    float upSrc = closeBreak ? close : high
+    float dnSrc = closeBreak ? close : low
+    if shLive and upSrc > shPrice
+        shLive := false
+        string tag = trend == -1 ? "CHoCH" : "BOS"
+        trend   := 1
+        lastTag := tag
+        drawStruct(shBar, shPrice, tag, 1)
+        int len = bar_index - shBar
+        if len <= maxLeg
+            int   o   = shBar
+            float ext = low[len]
+            for k = len to 0
+                if low[k] <= ext
+                    ext := low[k]
+                    o   := bar_index - k
+            float top = high[bar_index - o]
+            for k = bar_index - o to 0
+                top := math.max(top, high[k])
+            rStart := o
+            rBot   := ext
+            rTop   := top
+            createZones(1, o)
+    else if slLive and dnSrc < slPrice
+        slLive := false
+        string tag = trend == 1 ? "CHoCH" : "BOS"
+        trend   := -1
+        lastTag := tag
+        drawStruct(slBar, slPrice, tag, -1)
+        int len = bar_index - slBar
+        if len <= maxLeg
+            int   o   = slBar
+            float ext = high[len]
+            for k = len to 0
+                if high[k] >= ext
+                    ext := high[k]
+                    o   := bar_index - k
+            float bot = low[bar_index - o]
+            for k = bar_index - o to 0
+                bot := math.min(bot, low[k])
+            rStart := o
+            rTop   := ext
+            rBot   := bot
+            createZones(-1, o)
+
+    if newZones > 0
+        alert("KossWin2 : " + str.tostring(newZones) + " zone(s) validée(s) par inducement — " + syminfo.ticker + " " + timeframe.period, alert.freq_once_per_bar_close)
+    if sweepHi or sweepLo
+        alert("KossWin2 : sweep de liquidité " + (sweepHi ? "haute" : "basse") + " — " + syminfo.ticker + " " + timeframe.period, alert.freq_once_per_bar_close)
+
+// ─── Sweeps : point rouge ───────────────────────────────────────────────────
+plotshape(showSweep and sweepHi, "Sweep (haut)", shape.circle, location.abovebar, sweepCol, size = size.small)
+plotshape(showSweep and sweepLo, "Sweep (bas)", shape.circle, location.belowbar, sweepCol, size = size.small)
+
+// ─── Mise à jour visuelle sur la dernière bougie ────────────────────────────
+var box   pdPrem = na
+var box   pdDisc = na
+var line  pdEq   = na
+var table panel  = table.new(position.top_right, 1, 2, bgcolor = color.new(color.gray, 88), border_width = 0)
+
+if barstate.islast
+    for z in zones
+        if z.active and not na(z.bx)
+            z.bx.set_right(bar_index + extBars)
+    for q in liqs
+        if not na(q.ln)
+            q.ln.set_xy1(q.bar, q.price)
+            q.ln.set_xy2(bar_index + 5, q.price)
+            q.lb.set_xy(bar_index + 5, q.price)
+            q.lb.set_text(liqText(q))
+
+    if not na(pdPrem)
+        pdPrem.delete()
+        pdDisc.delete()
+        pdEq.delete()
+    if showPD and not na(rStart)
+        float eq = (rTop + rBot) / 2
+        int   x2 = bar_index + extBars
+        // La moitié utile selon la tendance est mise en avant :
+        // tendance haussière → Discount (achats), baissière → Premium (ventes).
+        color pc = color.new(premCol, trend == -1 ? 84 : 95)
+        color dc = color.new(discCol, trend == 1 ? 84 : 95)
+        pdPrem := box.new(rStart, rTop, x2, eq, border_color = color.new(premCol, 100), bgcolor = pc, text = "Premium", text_size = size.tiny, text_color = premCol, text_halign = text.align_left, text_valign = text.align_top)
+        pdDisc := box.new(rStart, eq, x2, rBot, border_color = color.new(discCol, 100), bgcolor = dc, text = "Discount", text_size = size.tiny, text_color = discCol, text_halign = text.align_left, text_valign = text.align_bottom)
+        pdEq   := line.new(rStart, eq, x2, eq, color = color.new(liqCol, 20), style = line.style_dotted, width = 1)
+
+    if showPanel
+        string tTxt = trend == 1 ? "HAUSSIÈRE ▲" : trend == -1 ? "BAISSIÈRE ▼" : "INDÉFINIE"
+        color  tCol = trend == 1 ? bullCol : trend == -1 ? bearCol : liqCol
+        string where = na(rStart) ? "—" : close > (rTop + rBot) / 2 ? "Premium" : "Discount"
+        table.cell(panel, 0, 0, "KossWin2 · Tendance " + tTxt + " (" + lastTag + ")", text_color = tCol, text_size = size.small, text_halign = text.align_right)
+        table.cell(panel, 0, 1, "Prix en zone " + where, text_color = liqCol, text_size = size.small, text_halign = text.align_right)
