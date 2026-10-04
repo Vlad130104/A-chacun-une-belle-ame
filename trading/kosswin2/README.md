@@ -28,7 +28,7 @@ Deux fichiers, une seule logique :
 | ---------------------- | ---------------------------------------------------- | ---------------------------------- |
 | BOS / CHoCH            | Ligne pointillée + texte                             | Vert (haussier) / rouge (baissier) |
 | Liquidité              | Ligne en tirets + `BSL` `SSL` `EQH` `EQL`            | Gris                               |
-| Sweep                  | **Point rouge** au-dessus ou en dessous de la bougie | Rouge                              |
+| Sweep d'EQH / EQL      | **Point rouge** au-dessus ou en dessous de la bougie | Rouge                              |
 | OB + FVG achat / vente | Rectangle plein `OB+FVG`                             | Vert / rouge                       |
 | Demand / Supply        | Rectangle plein `Demand` / `Supply`                  | Bleu / orange                      |
 | Inducement pris        | Ligne pointillée `IDM`                               | Gris                               |
@@ -49,8 +49,9 @@ Ces notions n'ont pas de définition unique en SMC. Voici celles que le code app
 ### 3.2 Liquidité et sweeps
 
 - **BSL / SSL** : les derniers sommets et creux de structure **non encore pris** (3 par côté au maximum).
-- **EQH / EQL** : deux sommets (ou deux creux) séparés de moins de `0,1 × ATR`. La liquidité y est regroupée.
-- **Sweep (point rouge)** : la **mèche** dépasse un niveau de liquidité, mais la bougie **clôture de l'autre côté**. Le niveau est alors retiré.
+- **EQH / EQL** : deux petits sommets (ou creux), swings de force `3` réglable, séparés de moins de `0,1 × ATR`, **dans un sens comme dans l'autre**. Entre les deux, le prix ne doit pas avoir dépassé le premier de plus que cette tolérance. La liquidité y est regroupée.
+- **Sweep (point rouge) : uniquement sur les EQH / EQL.** La **mèche** dépasse le niveau égal, mais la bougie **clôture de l'autre côté**. Le niveau est alors retiré.
+- Les BSL / SSL simples restent affichés comme niveaux de liquidité, mais leur prise **ne donne pas** de point rouge.
 - Si la bougie **clôture** au-delà du niveau, c'est une prise de liquidité par cassure : le niveau est retiré sans point rouge.
 
 ### 3.3 Premium / Discount
@@ -112,15 +113,15 @@ Tout se règle dans les paramètres, et chaque élément peut être masqué.
 - **TradingView** : Créer une alerte → condition « KossWin2 » → « Tout appel de fonction alert() ».
 - **MT5** : popup automatique si le paramètre `Alertes` est activé.
 
-Deux événements déclenchent une alerte : une zone validée par inducement, et un sweep.
+Deux événements déclenchent une alerte : une zone validée par inducement, et un sweep d'EQH / EQL.
 
 ## 6. Analyse critique
 
 1. **« Fortes probabilités de réaction » n'est pas démontré.** Aucun indicateur ne peut le garantir. KossWin2 applique des règles fixes. Si ces règles donnent un avantage, seul un test sur au moins 50 à 100 cas notés (gagnants **et** perdants) peut le montrer. Sans ce test, on ne retient que les zones qui ont fonctionné : c'est le biais de confirmation.
 2. **OB et Supply/Demand se recoupent.** Ce sont souvent deux noms pour le même endroit. Les afficher tous les deux ne double pas la probabilité. C'est pourquoi les chevauchements sont masqués par défaut.
-3. **L'inducement a plusieurs définitions** : premier repli après la cassure, dernier repli avant la zone, repli interne ou externe… J'ai codé « le premier repli interne après la cassure ». Si ta définition est différente, dis-le et je l'adapte.
+3. **« L'inducement selon SMC/ICT » n'est pas une définition unique.** Le terme vient surtout des formateurs SMC ; ICT parle plutôt de liquidité « engineered ». La définition la plus répandue est celle codée ici : **le premier repli valide après le BOS/CHoCH, qui doit être pris avant que le prix touche la zone**. D'autres variantes existent : dernier repli avant le sommet, repli « valide » seulement s'il casse le bas de la bougie précédente… L'indicateur approche cette notion de repli valide par un swing interne de force 2, réglable.
 4. **Tout dépend du réglage « Force des swings ».** Avec 3, beaucoup de BOS/CHoCH ; avec 10, peu. Ce n'est pas « la » structure du marché, c'est une structure à une échelle choisie.
-5. **Les sweeps peuvent être nombreux.** Sur les données simulées, un point rouge apparaît environ toutes les 25 bougies. Sur un vrai marché, si c'est trop, réduis le nombre de niveaux par côté ou augmente la force des swings.
+5. **Les points rouges sont rares, et c'est voulu.** Seuls les sweeps d'EQH / EQL sont marqués. Sur les données simulées, cela donne environ un point toutes les 250 bougies, contre un toutes les 25 quand tous les niveaux comptaient. Une détection EQH / EQL limitée aux gros swings n'en aurait donné qu'un toutes les 900 bougies environ, d'où la force dédiée. Pour en voir davantage : tolérance 0,2 ATR (environ 1 toutes les 130 bougies) ou force EQH / EQL de 2.
 6. **TradingView et MT5 ne donneront pas exactement les mêmes zones.** Les flux de prix et les fuseaux horaires des bougies diffèrent d'un courtier à l'autre, et les cas d'égalité entre sommets peuvent être traités différemment. La logique est la même ; les données ne le sont pas.
 7. **MT5 n'a pas de vraie transparence pour les rectangles.** Le remplissage est donc mélangé avec la couleur de fond du graphique pour la simuler. Premium / Discount y est dessiné en contour seulement : trait plein pour la moitié mise en avant, pointillé pour l'autre.
 
@@ -132,5 +133,5 @@ Deux événements déclenchent une alerte : une zone validée par inducement, et
   - l'IDM a bien été pris à la bougie d'affichage ;
   - le prix n'a jamais touché la zone avant l'IDM ;
   - aucune clôture n'a traversé la zone avant son affichage.
-- Sur chaque sweep : la mèche dépasse le niveau et la clôture revient de l'autre côté.
+- Sur chaque sweep : le niveau est un EQH / EQL, la mèche le dépasse et la clôture revient de l'autre côté.
 - **Non vérifié** : la compilation dans TradingView et dans MetaEditor, et le comportement sur de vraies données de marché.

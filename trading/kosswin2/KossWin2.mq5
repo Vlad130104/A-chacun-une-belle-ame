@@ -6,15 +6,15 @@
 //+------------------------------------------------------------------+
 #property copyright   "KossWin2"
 #property version     "1.00"
-#property description "Structure BOS/CHoCH, liquidité, sweeps (point rouge), Premium/Discount, OB+FVG et Supply/Demand affichés seulement après inducement."
+#property description "Structure BOS/CHoCH, liquidité, sweeps d'EQH/EQL (point rouge), Premium/Discount, OB+FVG et Supply/Demand affichés seulement après inducement."
 #property indicator_chart_window
 #property indicator_buffers 3
 #property indicator_plots   2
-#property indicator_label1  "Sweep haut"
+#property indicator_label1  "Sweep EQH"
 #property indicator_type1   DRAW_ARROW
 #property indicator_color1  clrRed
 #property indicator_width1  3
-#property indicator_label2  "Sweep bas"
+#property indicator_label2  "Sweep EQL"
 #property indicator_type2   DRAW_ARROW
 #property indicator_color2  clrRed
 #property indicator_width2  3
@@ -50,9 +50,10 @@ input bool   InpShowIdm     = true;           // Afficher l'inducement pris (IDM
 input group "Liquidité et sweeps"
 input bool   InpShowLiq     = true;           // Niveaux de liquidité (BSL / SSL / EQH / EQL)
 input int    InpMaxLiq      = 3;              // Niveaux affichés par côté
+input int    InpEqLen       = 3;              // Force des swings EQH / EQL
 input double InpEqTol       = 0.1;            // Tolérance EQH / EQL (x ATR)
 input color  InpLiqCol      = clrGray;        // Couleur des niveaux
-input bool   InpShowSweep   = true;           // Point rouge sur les sweeps
+input bool   InpShowSweep   = true;           // Point rouge sur les sweeps d'EQH / EQL
 
 input group "Premium / Discount"
 input bool   InpShowPD      = true;           // Afficher Premium / Discount
@@ -106,6 +107,8 @@ int    g_trend;
 string g_lastTag;
 int    g_rStart;
 double g_rTop, g_rBot;
+double g_eqHiP, g_eqLoP;   // derniers petits sommet / creux candidats à un EQH / EQL
+int    g_eqHiB, g_eqLoB;   // -1 = aucun
 int    g_newZones;
 bool   g_sweepNow;
 
@@ -462,6 +465,23 @@ void AddLiq(double price, int b, bool isHigh, int i, const datetime &t[])
            }
   }
 
+// EQH / EQL : marque un niveau existant proche comme égal, sinon en crée un.
+void AddEqLiq(double price, int b, bool isHigh, int i, const datetime &t[])
+  {
+   for(int k = 0; k < ArraySize(g_liqs); k++)
+      if(g_liqs[k].isHigh == isHigh && MathAbs(g_liqs[k].price - price) <= InpEqTol * g_atr[i])
+        {
+         g_liqs[k].isEq  = true;
+         g_liqs[k].price = isHigh ? MathMax(g_liqs[k].price, price) : MathMin(g_liqs[k].price, price);
+         DrawLiq(g_liqs[k], i, t);
+         return;
+        }
+   AddLiq(price, b, isHigh, i, t);
+   int n = ArraySize(g_liqs) - 1;
+   g_liqs[n].isEq = true;
+   DrawLiq(g_liqs[n], i, t);
+  }
+
 void DrawStruct(int fromBar, int i, double price, const string tag, int dir, const datetime &t[])
   {
    if(InpMaxStruct <= 0)
@@ -493,7 +513,7 @@ void ProcessBar(int i, const datetime &t[], const double &op[], const double &h[
       g_rBot = MathMin(g_rBot, l[i]);
      }
 
-//--- B) Liquidité : prise ou sweep
+//--- B) Liquidité : prise, ou sweep d'EQH / EQL (mèche au-delà, clôture en deçà)
    for(int k = ArraySize(g_liqs) - 1; k >= 0; k--)
      {
       double p   = g_liqs[k].price;
@@ -501,12 +521,12 @@ void ProcessBar(int i, const datetime &t[], const double &op[], const double &h[
       bool   hit = hi ? h[i] > p : l[i] < p;
       if(!hit)
          continue;
-      if(InpShowSweep && hi && c[i] < p)
+      if(InpShowSweep && g_liqs[k].isEq && hi && c[i] < p)
         {
          g_sweepHi[i] = h[i];
          g_sweepNow   = true;
         }
-      if(InpShowSweep && !hi && c[i] > p)
+      if(InpShowSweep && g_liqs[k].isEq && !hi && c[i] > p)
         {
          g_sweepLo[i] = l[i];
          g_sweepNow   = true;
@@ -581,7 +601,33 @@ void ProcessBar(int i, const datetime &t[], const double &op[], const double &h[
            }
      }
 
-//--- E) Nouveaux swings de structure (= niveaux de liquidité)
+//--- E) EQH / EQL : deux petits sommets (ou creux) à moins de InpEqTol x ATR,
+//       sans que le prix ait dépassé le premier de plus que cette tolérance.
+   double tol = InpEqTol * g_atr[i];
+   if(g_eqHiB >= 0 && h[i] > g_eqHiP + tol)
+      g_eqHiB = -1;
+   if(g_eqLoB >= 0 && l[i] < g_eqLoP - tol)
+      g_eqLoB = -1;
+   if(i >= 2 * InpEqLen)
+     {
+      int p = i - InpEqLen;
+      if(IsPivotHigh(h, p, InpEqLen))
+        {
+         if(g_eqHiB >= 0 && MathAbs(h[p] - g_eqHiP) <= tol)
+            AddEqLiq(MathMax(h[p], g_eqHiP), g_eqHiB, true, i, t);
+         g_eqHiP = h[p];
+         g_eqHiB = p;
+        }
+      if(IsPivotLow(l, p, InpEqLen))
+        {
+         if(g_eqLoB >= 0 && MathAbs(l[p] - g_eqLoP) <= tol)
+            AddEqLiq(MathMin(l[p], g_eqLoP), g_eqLoB, false, i, t);
+         g_eqLoP = l[p];
+         g_eqLoB = p;
+        }
+     }
+
+//--- Nouveaux swings de structure (= niveaux de liquidité BSL / SSL)
    if(i >= 2 * InpSwingLen)
      {
       int p = i - InpSwingLen;
@@ -731,6 +777,10 @@ void ResetAll()
    g_rStart  = -1;
    g_rTop    = 0.0;
    g_rBot    = 0.0;
+   g_eqHiP   = 0.0;
+   g_eqLoP   = 0.0;
+   g_eqHiB   = -1;
+   g_eqLoB   = -1;
   }
 
 // ATR 14 de Wilder (même calcul que ta.atr de TradingView).
@@ -825,7 +875,7 @@ int OnCalculate(const int rates_total,
       if(g_newZones > 0)
          Alert("KossWin2 : ", g_newZones, " zone(s) validée(s) par inducement — ", _Symbol, " ", EnumToString(_Period));
       if(g_sweepNow)
-         Alert("KossWin2 : sweep de liquidité — ", _Symbol, " ", EnumToString(_Period));
+         Alert("KossWin2 : sweep d'EQH / EQL — ", _Symbol, " ", EnumToString(_Period));
      }
 
    Refresh(rates_total - 1, close, time);

@@ -5,8 +5,8 @@
 //  • Tendance par la structure : BOS (cassure dans le sens) et CHoCH (cassure
 //    contre le sens), validés à la clôture.
 //  • Liquidité : BSL / SSL (sommets et creux non pris) et EQH / EQL (égaux).
-//  • Sweep : la mèche dépasse un niveau de liquidité mais la bougie clôture
-//    de l'autre côté → point rouge.
+//  • Sweep d'EQH / EQL : la mèche dépasse le niveau égal mais la bougie
+//    clôture de l'autre côté → point rouge (les BSL / SSL simples n'en ont pas).
 //  • Premium / Discount : moitié haute / basse de la dernière jambe de structure.
 //  • Zones : Order Block + FVG et Supply / Demand, nés de la jambe qui a cassé
 //    la structure. Une zone n'est AFFICHÉE qu'après la prise de son inducement
@@ -46,9 +46,10 @@ bool  showIdm     = input.bool(true, "Afficher l'inducement pris (IDM)", group =
 const string G_LIQ = "Liquidité et sweeps"
 bool  showLiq   = input.bool(true, "Niveaux de liquidité (BSL / SSL / EQH / EQL)", group = G_LIQ)
 int   maxLiq    = input.int(3, "Niveaux affichés par côté", minval = 1, maxval = 10, group = G_LIQ)
-float eqTol     = input.float(0.1, "Tolérance EQH / EQL (× ATR)", minval = 0.0, maxval = 1.0, step = 0.05, group = G_LIQ)
+int   eqLen     = input.int(3, "Force des swings EQH / EQL", minval = 1, maxval = 20, group = G_LIQ, tooltip = "Les sommets / creux égaux se forment surtout sur de petits swings : cette force est indépendante de celle de la structure.")
+float eqTol     = input.float(0.1, "Tolérance EQH / EQL (× ATR)", minval = 0.0, maxval = 1.0, step = 0.05, group = G_LIQ, tooltip = "Écart maximal entre deux sommets (ou creux) pour les considérer comme égaux, dans un sens comme dans l'autre.")
 color liqCol    = input.color(#787B86, "Couleur des niveaux", group = G_LIQ)
-bool  showSweep = input.bool(true, "Point rouge sur les sweeps", group = G_LIQ)
+bool  showSweep = input.bool(true, "Point rouge sur les sweeps d'EQH / EQL", group = G_LIQ)
 color sweepCol  = input.color(color.red, "Couleur du point", group = G_LIQ)
 
 const string G_PD = "Premium / Discount"
@@ -97,6 +98,10 @@ var string lastTag = "—"
 var int    rStart  = na
 var float  rTop    = na
 var float  rBot    = na
+var float  eqHiP   = na      // dernier petit sommet candidat à un EQH
+var int    eqHiB   = na
+var float  eqLoP   = na      // dernier petit creux candidat à un EQL
+var int    eqLoB   = na
 
 const int MAX_PENDING = 40
 
@@ -106,6 +111,8 @@ float ph         = ta.pivothigh(high, swingLen, swingLen)
 float pl         = ta.pivotlow(low, swingLen, swingLen)
 float iph        = ta.pivothigh(high, idmLen, idmLen)
 float ipl        = ta.pivotlow(low, idmLen, idmLen)
+float eph        = ta.pivothigh(high, eqLen, eqLen)
+float epl        = ta.pivotlow(low, eqLen, eqLen)
 bool  closeBreak = brkIn == "Clôture"
 
 // ─── Fonctions : zones ──────────────────────────────────────────────────────
@@ -259,6 +266,21 @@ addLiq(float price, int b, bool isHigh) =>
             liqs.remove(idx)
     merged
 
+// EQH / EQL : marque un niveau existant proche comme égal, sinon en crée un.
+addEqLiq(float price, int b, bool isHigh) =>
+    bool found = false
+    for q in liqs
+        if q.isHigh == isHigh and math.abs(q.price - price) <= eqTol * atr
+            q.isEq  := true
+            q.price := isHigh ? math.max(q.price, price) : math.min(q.price, price)
+            found   := true
+            break
+    if not found
+        addLiq(price, b, isHigh)
+        Liq nq = liqs.last()
+        nq.isEq := true
+    found
+
 drawStruct(int fromBar, float price, string tag, int dir) =>
     if maxStruct > 0
         color c = dir == 1 ? bullCol : bearCol
@@ -280,15 +302,16 @@ if barstate.isconfirmed
         rTop := math.max(rTop, high)
         rBot := math.min(rBot, low)
 
-    // B) Liquidité : prise (clôture au-delà) ou sweep (mèche au-delà, clôture en deçà)
+    // B) Liquidité : prise (clôture au-delà) ou sweep d'EQH / EQL
+    //    (mèche au-delà, clôture en deçà)
     if liqs.size() > 0
         for i = liqs.size() - 1 to 0
             Liq  q   = liqs.get(i)
             bool hit = q.isHigh ? high > q.price : low < q.price
             if hit
-                if q.isHigh and close < q.price
+                if q.isEq and q.isHigh and close < q.price
                     sweepHi := true
-                if not q.isHigh and close > q.price
+                if q.isEq and not q.isHigh and close > q.price
                     sweepLo := true
                 deleteLiq(q)
                 liqs.remove(i)
@@ -340,7 +363,24 @@ if barstate.isconfirmed
                     z.idm    := iph
                     z.idmBar := p
 
-    // E) Nouveaux swings de structure (= nouveaux niveaux de liquidité)
+    // E) EQH / EQL : deux petits sommets (ou creux) à moins de eqTol × ATR,
+    //    sans que le prix ait dépassé le premier de plus que cette tolérance.
+    if not na(eqHiP) and high > eqHiP + eqTol * atr
+        eqHiP := na
+    if not na(eqLoP) and low < eqLoP - eqTol * atr
+        eqLoP := na
+    if not na(eph)
+        if not na(eqHiP) and math.abs(eph - eqHiP) <= eqTol * atr
+            addEqLiq(math.max(eph, eqHiP), eqHiB, true)
+        eqHiP := eph
+        eqHiB := bar_index - eqLen
+    if not na(epl)
+        if not na(eqLoP) and math.abs(epl - eqLoP) <= eqTol * atr
+            addEqLiq(math.min(epl, eqLoP), eqLoB, false)
+        eqLoP := epl
+        eqLoB := bar_index - eqLen
+
+    // Nouveaux swings de structure (= nouveaux niveaux de liquidité BSL / SSL)
     if not na(ph)
         shPrice := ph
         shBar   := bar_index - swingLen
@@ -401,11 +441,11 @@ if barstate.isconfirmed
     if newZones > 0
         alert("KossWin2 : " + str.tostring(newZones) + " zone(s) validée(s) par inducement — " + syminfo.ticker + " " + timeframe.period, alert.freq_once_per_bar_close)
     if sweepHi or sweepLo
-        alert("KossWin2 : sweep de liquidité " + (sweepHi ? "haute" : "basse") + " — " + syminfo.ticker + " " + timeframe.period, alert.freq_once_per_bar_close)
+        alert("KossWin2 : sweep " + (sweepHi ? "d'EQH" : "d'EQL") + " — " + syminfo.ticker + " " + timeframe.period, alert.freq_once_per_bar_close)
 
-// ─── Sweeps : point rouge ───────────────────────────────────────────────────
-plotshape(showSweep and sweepHi, "Sweep (haut)", shape.circle, location.abovebar, sweepCol, size = size.small)
-plotshape(showSweep and sweepLo, "Sweep (bas)", shape.circle, location.belowbar, sweepCol, size = size.small)
+// ─── Sweeps d'EQH / EQL : point rouge ───────────────────────────────────────────────────
+plotshape(showSweep and sweepHi, "Sweep EQH", shape.circle, location.abovebar, sweepCol, size = size.small)
+plotshape(showSweep and sweepLo, "Sweep EQL", shape.circle, location.belowbar, sweepCol, size = size.small)
 
 // ─── Mise à jour visuelle sur la dernière bougie ────────────────────────────
 var box   pdPrem = na
