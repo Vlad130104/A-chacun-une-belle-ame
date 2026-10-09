@@ -16,8 +16,7 @@
 //    avant la cassure + bougie de cassure), affichés en violet seulement après
 //    une première réaction du prix sur leur zone.
 //
-//  Version TradingView. KossWin2.mq5 (MetaTrader 5) n'intègre pas encore le
-//  biais directionnel ni les doji, et affiche toujours Premium / Discount.
+//  La logique est identique dans KossWin2.mq5 (MetaTrader 5).
 // ════════════════════════════════════════════════════════════════════════════
 indicator("KossWin2", overlay = true, max_boxes_count = 500, max_lines_count = 500, max_labels_count = 500, max_bars_back = 1500)
 

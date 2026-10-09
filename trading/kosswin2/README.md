@@ -1,11 +1,13 @@
 # KossWin2 : guide de l'indicateur
 
-| Plateforme   | Fichier                          | Version                                                                 |
-| ------------ | -------------------------------- | ----------------------------------------------------------------------- |
-| TradingView  | `KossWin2.pine` (Pine Script v6) | **À jour** : biais directionnel, doji de CHoCH, sans Premium / Discount |
-| MetaTrader 5 | `KossWin2.mq5` (MQL5)            | **Ancienne version** : Premium / Discount, sans biais ni doji           |
+Deux fichiers, une seule logique :
 
-> Les deux fichiers ne sont plus identiques. Les dernières modifications n'ont été faites que dans la version TradingView. Le fichier MT5 peut être mis à niveau sur demande.
+| Plateforme   | Fichier                          |
+| ------------ | -------------------------------- |
+| TradingView  | `KossWin2.pine` (Pine Script v6) |
+| MetaTrader 5 | `KossWin2.mq5` (MQL5), version 2 |
+
+Les deux versions sont au même niveau : biais directionnel, doji de CHoCH, points de sweep réduits, sans Premium / Discount.
 
 ## 1. Installation
 
@@ -139,7 +141,7 @@ Tout se règle dans les paramètres, et chaque élément peut être masqué.
 - **TradingView** : Créer une alerte → condition « KossWin2 » → « Tout appel de fonction alert() ».
 - **MT5** : popup automatique si le paramètre `Alertes` est activé.
 
-Trois événements déclenchent une alerte (TradingView) : une zone validée par inducement, un sweep d'EQH / EQL, et un doji de CHoCH validé par une 1re réaction. Sur MT5, seuls les deux premiers existent.
+Trois événements déclenchent une alerte : une zone validée par inducement, un sweep d'EQH / EQL, et un doji de CHoCH validé par une 1re réaction.
 
 ## 6. Analyse critique
 
@@ -149,9 +151,13 @@ Trois événements déclenchent une alerte (TradingView) : une zone validée par
 4. **Tout dépend du réglage « Force des swings ».** Avec 3, beaucoup de BOS/CHoCH ; avec 10, peu. Ce n'est pas « la » structure du marché, c'est une structure à une échelle choisie.
 5. **Les points rouges sont rares, et c'est voulu.** Seuls les sweeps d'EQH / EQL sont marqués. Sur les données simulées, cela donne environ un point toutes les 250 bougies, contre un toutes les 25 quand tous les niveaux comptaient. Une détection EQH / EQL limitée aux gros swings n'en aurait donné qu'un toutes les 900 bougies environ, d'où la force dédiée. Pour en voir davantage : tolérance 0,2 ATR (environ 1 toutes les 130 bougies) ou force EQH / EQL de 2.
 6. **TradingView et MT5 ne donneront pas exactement les mêmes zones.** Les flux de prix et les fuseaux horaires des bougies diffèrent d'un courtier à l'autre, et les cas d'égalité entre sommets peuvent être traités différemment. La logique est la même ; les données ne le sont pas.
-7. **MT5 n'a pas de vraie transparence pour les rectangles.** Le remplissage est donc mélangé avec la couleur de fond du graphique pour la simuler. Premium / Discount y est dessiné en contour seulement : trait plein pour la moitié mise en avant, pointillé pour l'autre.
-8. **Le biais n'est qu'une échelle de structure de plus.** Il dépend du timeframe choisi et de la force des swings. Un biais H4 haussier peut cohabiter avec une tendance journalière baissière. Il oriente la lecture, il ne prédit rien.
-9. **La condition « le prix a déjà réagi » filtre peu.** Une zone de doji est petite, et le prix y revient puis en ressort facilement. Sur les données simulées, **60 %** des doji candidats ont été validés (328 sur 546). Si tu veux un filtre plus strict, il faut le définir : par exemple une réaction d'au moins x × ATR, ou un rejet sur une seule bougie (mèche dans la zone et clôture hors de la zone).
+7. **MT5 n'a pas de vraie transparence pour les rectangles.** Le remplissage est donc mélangé avec la couleur de fond du graphique pour la simuler. Les doji violets suivent la même règle.
+8. **Particularités de la version MT5.**
+   - **Biais** : calculé sur les 20 000 dernières bougies du timeframe du biais. Si ces données ne sont pas encore chargées, le panneau affiche « INDÉFINI » jusqu'au tick suivant.
+   - **Taille du point de sweep** : réglage `Taille du point`, de 1 (minuscule, par défaut) à 3 (ancienne taille).
+   - **Accents** : le fichier est enregistré en UTF-8 avec BOM, pour que MetaEditor affiche correctement les accents des textes. Si des caractères étranges apparaissent dans les alertes, réenregistre le fichier en UTF-8 depuis MetaEditor.
+9. **Le biais n'est qu'une échelle de structure de plus.** Il dépend du timeframe choisi et de la force des swings. Un biais H4 haussier peut cohabiter avec une tendance journalière baissière. Il oriente la lecture, il ne prédit rien.
+10. **La condition « le prix a déjà réagi » filtre peu.** Une zone de doji est petite, et le prix y revient puis en ressort facilement. Sur les données simulées, **60 %** des doji candidats ont été validés (328 sur 546). Si tu veux un filtre plus strict, il faut le définir : par exemple une réaction d'au moins x × ATR, ou un rejet sur une seule bougie (mèche dans la zone et clôture hors de la zone).
 
 ## 7. Vérifications faites
 

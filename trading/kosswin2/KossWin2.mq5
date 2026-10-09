@@ -1,23 +1,24 @@
-//+------------------------------------------------------------------+
+﻿//+------------------------------------------------------------------+
 //|                                                     KossWin2.mq5 |
-//|  Structure BOS / CHoCH, liquidité, sweeps, Premium / Discount,    |
-//|  Order Blocks + FVG et Supply / Demand validés par inducement.    |
+//|  Structure BOS / CHoCH, biais directionnel (TF supérieur),        |
+//|  liquidité, sweeps d'EQH / EQL, Order Blocks + FVG et             |
+//|  Supply / Demand validés par inducement, doji de CHoCH.           |
 //|  Même logique que KossWin2.pine (TradingView).                    |
 //+------------------------------------------------------------------+
 #property copyright   "KossWin2"
-#property version     "1.00"
-#property description "Structure BOS/CHoCH, liquidité, sweeps d'EQH/EQL (point rouge), Premium/Discount, OB+FVG et Supply/Demand affichés seulement après inducement."
+#property version     "2.00"
+#property description "Structure BOS/CHoCH, biais directionnel du TF supérieur, liquidité, sweeps d'EQH/EQL (point rouge), OB+FVG et Supply/Demand affichés après inducement, doji de CHoCH en violet."
 #property indicator_chart_window
 #property indicator_buffers 3
 #property indicator_plots   2
 #property indicator_label1  "Sweep EQH"
 #property indicator_type1   DRAW_ARROW
 #property indicator_color1  clrRed
-#property indicator_width1  3
+#property indicator_width1  1
 #property indicator_label2  "Sweep EQL"
 #property indicator_type2   DRAW_ARROW
 #property indicator_color2  clrRed
-#property indicator_width2  3
+#property indicator_width2  1
 
 //--- Paramètres
 input group "Structure"
@@ -54,13 +55,23 @@ input int    InpEqLen       = 3;              // Force des swings EQH / EQL
 input double InpEqTol       = 0.1;            // Tolérance EQH / EQL (x ATR)
 input color  InpLiqCol      = clrGray;        // Couleur des niveaux
 input bool   InpShowSweep   = true;           // Point rouge sur les sweeps d'EQH / EQL
+input int    InpDotSize     = 1;              // Taille du point (1 = minuscule, 3 = ancienne taille)
 
-input group "Premium / Discount"
-input bool   InpShowPD      = true;           // Afficher Premium / Discount
-input color  InpPremCol     = C'242,54,69';   // Premium
-input color  InpDiscCol     = C'8,153,129';   // Discount
-input bool   InpShowPanel   = true;           // Panneau de tendance
-input bool   InpAlerts      = true;           // Alertes (zone validée, sweep)
+input group "Biais directionnel"
+input bool            InpBiasAuto   = true;      // TF du biais automatique (M1-M5→H1, M15-M30→H4, H1-H4→D1, D1→W1)
+input ENUM_TIMEFRAMES InpBiasTF     = PERIOD_H4; // TF du biais (si non automatique)
+input bool            InpBiasFilter = false;     // Zones seulement dans le sens du biais
+input bool            InpShowPanel  = true;      // Panneau biais / structure
+
+input group "Doji de CHoCH"
+input bool   InpShowDoji    = true;           // Afficher les doji (violet)
+input double InpDojiBodyPct = 10.0;           // Doji : corps maximum (% de l'amplitude)
+input color  InpDojiCol     = C'156,39,176';  // Couleur des doji
+input int    InpDojiExpiry  = 300;            // Attente max de la 1re réaction (bougies)
+input int    InpMaxDoji     = 6;              // Doji affichés max
+
+input group "Alertes"
+input bool   InpAlerts      = true;           // Alertes (zone validée, sweep, doji)
 
 //--- Types
 struct Zone
@@ -76,6 +87,18 @@ struct Zone
    int      idmBar;    // -1 = pas encore d'inducement
    bool     active;    // true = inducement pris, zone affichée
    bool     touched;
+  };
+
+struct Doji
+  {
+   int      id;
+   int      dir;       // 1 = CHoCH haussier (zone sous le prix), -1 = baissier
+   double   top;
+   double   bottom;
+   int      bar;       // index de la bougie doji
+   int      created;   // index de la bougie du CHoCH
+   bool     touched;   // le prix est revenu dans la zone
+   bool     active;    // réaction confirmée → affiché en violet
   };
 
 struct Liq
@@ -94,8 +117,12 @@ double g_atr[];
 
 //--- État
 const string PFX         = "KW2_";
-const int    MAX_PENDING = 40;
+const int    MAX_PENDING      = 40;
+const int    MAX_DOJI_PENDING = 60;
+const int    MAX_BIAS_BARS    = 20000;
 Zone   g_zones[];
+Doji   g_dojis[];
+bool   g_dojiSeen[];
 Liq    g_liqs[];
 int    g_struct[];
 int    g_uid;
@@ -105,12 +132,17 @@ int    g_shBar, g_slBar;
 bool   g_shLive, g_slLive;
 int    g_trend;
 string g_lastTag;
-int    g_rStart;
-double g_rTop, g_rBot;
 double g_eqHiP, g_eqLoP;   // derniers petits sommet / creux candidats à un EQH / EQL
 int    g_eqHiB, g_eqLoB;   // -1 = aucun
 int    g_newZones;
+int    g_newDoji;
 bool   g_sweepNow;
+//--- Biais : structure du TF supérieur, une valeur par bougie de ce TF
+datetime g_hTime[];
+int      g_hTrend[];
+int      g_hTag[];          // 0 = aucun, 1 = BOS, 2 = CHoCH
+datetime g_hLastBuilt;
+int      g_biasTries;
 
 //+------------------------------------------------------------------+
 //| Outils                                                           |
@@ -502,17 +534,195 @@ void DrawStruct(int fromBar, int i, double price, const string tag, int dir, con
   }
 
 //+------------------------------------------------------------------+
+//| Biais directionnel                                               |
+//+------------------------------------------------------------------+
+ENUM_TIMEFRAMES BiasTF()
+  {
+   if(!InpBiasAuto)
+      return InpBiasTF;
+   int s = PeriodSeconds(_Period);
+   if(s <= 300)
+      return PERIOD_H1;
+   if(s <= 1800)
+      return PERIOD_H4;
+   if(s <= 14400)
+      return PERIOD_D1;
+   if(s <= 86400)
+      return PERIOD_W1;
+   return PERIOD_MN1;
+  }
+
+string TfLabel(ENUM_TIMEFRAMES tf)
+  {
+   int s = PeriodSeconds(tf);
+   if(s >= 2592000)
+      return "MN";
+   if(s >= 604800)
+      return "W";
+   if(s >= 86400)
+      return "D";
+   if(s >= 3600)
+      return "H" + IntegerToString(s / 3600);
+   return "M" + IntegerToString(s / 60);
+  }
+
+// Recalcule la structure (swings + BOS / CHoCH) sur le TF du biais,
+// avec exactement les mêmes règles que sur le graphique.
+bool BuildBias()
+  {
+   ENUM_TIMEFRAMES tf = BiasTF();
+   int avail = Bars(_Symbol, tf);
+   if(avail <= 2 * InpSwingLen + 2)
+      return false;
+   int n = MathMin(avail, MAX_BIAS_BARS);
+   datetime tt[];
+   double   hh[], ll[], cc[];
+   if(CopyTime(_Symbol, tf, 0, n, tt) != n || CopyHigh(_Symbol, tf, 0, n, hh) != n ||
+      CopyLow(_Symbol, tf, 0, n, ll) != n || CopyClose(_Symbol, tf, 0, n, cc) != n)
+      return false;
+   ArrayResize(g_hTime, n);
+   ArrayResize(g_hTrend, n);
+   ArrayResize(g_hTag, n);
+   double hP = 0.0, lP = 0.0;
+   bool   hOn = false, lOn = false;
+   int    tr = 0, tg = 0;
+   for(int j = 0; j < n; j++)
+     {
+      if(j >= 2 * InpSwingLen)
+        {
+         int p = j - InpSwingLen;
+         if(IsPivotHigh(hh, p, InpSwingLen))
+           {
+            hP  = hh[p];
+            hOn = true;
+           }
+         if(IsPivotLow(ll, p, InpSwingLen))
+           {
+            lP  = ll[p];
+            lOn = true;
+           }
+        }
+      double up = InpCloseBreak ? cc[j] : hh[j];
+      double dn = InpCloseBreak ? cc[j] : ll[j];
+      if(hOn && up > hP)
+        {
+         hOn = false;
+         tg  = tr == -1 ? 2 : 1;
+         tr  = 1;
+        }
+      else
+         if(lOn && dn < lP)
+           {
+            lOn = false;
+            tg  = tr == 1 ? 2 : 1;
+            tr  = -1;
+           }
+      g_hTime[j]  = tt[j];
+      g_hTrend[j] = tr;
+      g_hTag[j]   = tg;
+     }
+   g_hLastBuilt = tt[n - 1];
+   return true;
+  }
+
+// Biais à l'instant t : structure de la bougie du TF supérieur CLÔTURÉE
+// avant celle qui contient t (aucun repaint).
+int BiasAt(datetime t, int &tag)
+  {
+   tag = 0;
+   int n = ArraySize(g_hTime);
+   if(n == 0 || t < g_hTime[0])
+      return 0;
+   int lo = 0, hi = n - 1;
+   while(lo < hi)
+     {
+      int mid = (lo + hi + 1) / 2;
+      if(g_hTime[mid] <= t)
+         lo = mid;
+      else
+         hi = mid - 1;
+     }
+   int j = lo - 1;
+   if(j < 0)
+      return 0;
+   tag = g_hTag[j];
+   return g_hTrend[j];
+  }
+
+//+------------------------------------------------------------------+
+//| Doji de CHoCH                                                    |
+//+------------------------------------------------------------------+
+bool IsDoji(int k, const double &op[], const double &h[], const double &l[], const double &c[])
+  {
+   double r = h[k] - l[k];
+   return r > 0.0 && MathAbs(c[k] - op[k]) / r * 100.0 <= InpDojiBodyPct;
+  }
+
+void RemoveDoji(int k)
+  {
+   Del(Nm("D", g_dojis[k].id));
+   Del(Nm("DT", g_dojis[k].id));
+   int n = ArraySize(g_dojis);
+   for(int j = k; j < n - 1; j++)
+      g_dojis[j] = g_dojis[j + 1];
+   ArrayResize(g_dojis, n - 1);
+  }
+
+void DrawDoji(const Doji &d, int i, const datetime &t[])
+  {
+   Rect(Nm("D", d.id), t[d.bar], d.top, Future(t, i, InpExtBars), d.bottom, Blend(InpDojiCol, InpFillAlpha), true, STYLE_SOLID);
+   Text(Nm("DT", d.id), t[d.bar], d.top, "Doji", InpDojiCol, ANCHOR_LEFT_LOWER);
+  }
+
+// Doji du mouvement qui mène au CHoCH : de la bougie du swing cassé (début de
+// la dernière jambe) jusqu'à la bougie de cassure incluse.
+void CollectDoji(int dir, int fromBar, int i, const double &op[], const double &h[], const double &l[], const double &c[])
+  {
+   int old = ArraySize(g_dojiSeen);
+   if(old < i + 1)
+     {
+      ArrayResize(g_dojiSeen, i + 1, 1000);
+      for(int x = old; x <= i; x++)
+         g_dojiSeen[x] = false;
+     }
+   for(int b = fromBar; b <= i; b++)
+     {
+      if(g_dojiSeen[b] || !IsDoji(b, op, h, l, c))
+         continue;
+      g_dojiSeen[b] = true;
+      int n = ArraySize(g_dojis);
+      ArrayResize(g_dojis, n + 1);
+      g_dojis[n].id      = ++g_uid;
+      g_dojis[n].dir     = dir;
+      g_dojis[n].top     = h[b];
+      g_dojis[n].bottom  = l[b];
+      g_dojis[n].bar     = b;
+      g_dojis[n].created = i;
+      g_dojis[n].touched = false;
+      g_dojis[n].active  = false;
+     }
+//--- Limite des doji en attente de réaction
+   int pending = 0;
+   for(int k = 0; k < ArraySize(g_dojis); k++)
+      if(!g_dojis[k].active)
+         pending++;
+   while(pending > MAX_DOJI_PENDING)
+     {
+      for(int k = 0; k < ArraySize(g_dojis); k++)
+         if(!g_dojis[k].active)
+           {
+            RemoveDoji(k);
+            break;
+           }
+      pending--;
+     }
+  }
+
+//+------------------------------------------------------------------+
 //| Moteur : une bougie clôturée                                     |
 //+------------------------------------------------------------------+
 void ProcessBar(int i, const datetime &t[], const double &op[], const double &h[], const double &l[], const double &c[])
   {
-//--- A) Range de la dernière jambe
-   if(g_rStart >= 0)
-     {
-      g_rTop = MathMax(g_rTop, h[i]);
-      g_rBot = MathMin(g_rBot, l[i]);
-     }
-
 //--- B) Liquidité : prise, ou sweep d'EQH / EQL (mèche au-delà, clôture en deçà)
    for(int k = ArraySize(g_liqs) - 1; k >= 0; k--)
      {
@@ -556,9 +766,15 @@ void ProcessBar(int i, const datetime &t[], const double &op[], const double &h[
                else
                   if(bull ? l[i] < g_zones[k].idm : h[i] > g_zones[k].idm)
                     {
-                     ActivateZone(k, i, t);
-                     justOn = true;
-                     g_newZones++;
+                     int bTag = 0;
+                     if(InpBiasFilter && BiasAt(t[i], bTag) != g_zones[k].dir)
+                        kill = true;   // inducement pris mais zone contre le biais : écartée
+                     else
+                       {
+                        ActivateZone(k, i, t);
+                        justOn = true;
+                        g_newZones++;
+                       }
                     }
            }
          if(g_zones[k].active && inZone && !g_zones[k].touched)
@@ -575,6 +791,48 @@ void ProcessBar(int i, const datetime &t[], const double &op[], const double &h[
      }
    EnforceCap(1);
    EnforceCap(-1);
+
+//--- C bis) Doji : 1er retour du prix dans la zone, puis clôture de réaction
+//           hors de la zone dans le sens du CHoCH → affiché en violet.
+   for(int k = ArraySize(g_dojis) - 1; k >= 0; k--)
+     {
+      bool bull    = g_dojis[k].dir == 1;
+      bool invalid = bull ? c[i] < g_dojis[k].bottom : c[i] > g_dojis[k].top;
+      bool kill    = invalid;
+      if(!invalid && !g_dojis[k].active)
+        {
+         if(i - g_dojis[k].created > InpDojiExpiry)
+            kill = true;
+         else
+           {
+            if(bull ? l[i] <= g_dojis[k].top : h[i] >= g_dojis[k].bottom)
+               g_dojis[k].touched = true;
+            if(g_dojis[k].touched && (bull ? c[i] > g_dojis[k].top : c[i] < g_dojis[k].bottom))
+              {
+               g_dojis[k].active = true;
+               g_newDoji++;
+               if(InpShowDoji)
+                  DrawDoji(g_dojis[k], i, t);
+              }
+           }
+        }
+      if(kill)
+         RemoveDoji(k);
+     }
+   int nAct = 0;
+   for(int k = 0; k < ArraySize(g_dojis); k++)
+      if(g_dojis[k].active)
+         nAct++;
+   while(nAct > InpMaxDoji)
+     {
+      for(int k = 0; k < ArraySize(g_dojis); k++)
+         if(g_dojis[k].active)
+           {
+            RemoveDoji(k);
+            break;
+           }
+      nAct--;
+     }
 
 //--- D) Inducement : premier repli interne après la cassure
    if(i >= 2 * InpIdmLen)
@@ -667,13 +925,9 @@ void ProcessBar(int i, const datetime &t[], const double &op[], const double &h[
                ext = l[k];
                o   = k;
               }
-         double top = h[o];
-         for(int k = o; k <= i; k++)
-            top = MathMax(top, h[k]);
-         g_rStart = o;
-         g_rBot   = ext;
-         g_rTop   = top;
          CreateZones(1, o, i, op, h, l, c);
+         if(tag == "CHoCH")
+            CollectDoji(1, g_shBar, i, op, h, l, c);
         }
      }
    else
@@ -694,13 +948,9 @@ void ProcessBar(int i, const datetime &t[], const double &op[], const double &h[
                   ext = h[k];
                   o   = k;
                  }
-            double bot = l[o];
-            for(int k = o; k <= i; k++)
-               bot = MathMin(bot, l[k]);
-            g_rStart = o;
-            g_rTop   = ext;
-            g_rBot   = bot;
             CreateZones(-1, o, i, op, h, l, c);
+            if(tag == "CHoCH")
+               CollectDoji(-1, g_slBar, i, op, h, l, c);
            }
         }
   }
@@ -715,30 +965,29 @@ void Refresh(int last, const double &c[], const datetime &t[])
          ObjectSetInteger(0, Nm("Z", g_zones[k].id), OBJPROP_TIME, 1, Future(t, last, InpExtBars));
    for(int k = 0; k < ArraySize(g_liqs); k++)
       DrawLiq(g_liqs[k], last, t);
+   for(int k = 0; k < ArraySize(g_dojis); k++)
+      if(g_dojis[k].active && InpShowDoji)
+         ObjectSetInteger(0, Nm("D", g_dojis[k].id), OBJPROP_TIME, 1, Future(t, last, InpExtBars));
 
-//--- Premium / Discount : la moitié utile selon la tendance est en trait plein
-   if(InpShowPD && g_rStart >= 0)
-     {
-      double   eq = (g_rTop + g_rBot) / 2.0;
-      datetime x1 = t[g_rStart];
-      datetime x2 = Future(t, last, InpExtBars);
-      Rect(PFX + "PD_P", x1, g_rTop, x2, eq, InpPremCol, false, g_trend == -1 ? STYLE_SOLID : STYLE_DOT);
-      Rect(PFX + "PD_D", x1, eq, x2, g_rBot, InpDiscCol, false, g_trend == 1 ? STYLE_SOLID : STYLE_DOT);
-      Line(PFX + "PD_E", x1, eq, x2, eq, InpLiqCol, STYLE_DOT);
-      Text(PFX + "PD_PT", x1, g_rTop, "Premium", InpPremCol, ANCHOR_LEFT_LOWER);
-      Text(PFX + "PD_DT", x1, g_rBot, "Discount", InpDiscCol, ANCHOR_LEFT_UPPER);
-     }
-
-//--- Panneau de tendance
+//--- Panneau : biais du TF supérieur, structure locale, alignement
    if(InpShowPanel)
      {
-      string tTxt  = g_trend == 1 ? "HAUSSIERE" : (g_trend == -1 ? "BAISSIERE" : "INDEFINIE");
+      int    bTag = 0;
+      int    bT    = BiasAt(t[last], bTag);
+      string bTxt  = bT == 1 ? "HAUSSIER" : (bT == -1 ? "BAISSIER" : "INDÉFINI");
+      string bEv   = bTag == 2 ? "CHoCH" : (bTag == 1 ? "BOS" : "-");
+      color  bCol  = bT == 1 ? InpBullCol : (bT == -1 ? InpBearCol : InpLiqCol);
+      string tTxt  = g_trend == 1 ? "HAUSSIÈRE" : (g_trend == -1 ? "BAISSIÈRE" : "INDÉFINIE");
       color  tCol  = g_trend == 1 ? InpBullCol : (g_trend == -1 ? InpBearCol : InpLiqCol);
-      string where = g_rStart < 0 ? "-" : (c[last] > (g_rTop + g_rBot) / 2.0 ? "Premium" : "Discount");
-      string lines[2];
-      lines[0] = "KossWin2 · Tendance " + tTxt + " (" + g_lastTag + ")";
-      lines[1] = "Prix en zone " + where;
-      for(int k = 0; k < 2; k++)
+      string lines[3];
+      color  cols[3];
+      lines[0] = "KossWin2 · Biais " + TfLabel(BiasTF()) + " : " + bTxt + " (" + bEv + ")";
+      lines[1] = "Structure " + TfLabel(_Period) + " : " + tTxt + " (" + g_lastTag + ")";
+      lines[2] = (bT == 0 || g_trend == 0) ? "Alignement : -" : (bT == g_trend ? "Alignement : OUI, structure dans le sens du biais" : "Alignement : NON, structure contre le biais");
+      cols[0]  = bCol;
+      cols[1]  = tCol;
+      cols[2]  = InpLiqCol;
+      for(int k = 0; k < 3; k++)
         {
          string n = PFX + "PANEL" + IntegerToString(k);
          if(ObjectFind(0, n) < 0)
@@ -750,7 +999,7 @@ void Refresh(int last, const double &c[], const datetime &t[])
          ObjectSetString(0, n, OBJPROP_TEXT, lines[k]);
          ObjectSetString(0, n, OBJPROP_FONT, "Arial");
          ObjectSetInteger(0, n, OBJPROP_FONTSIZE, 9);
-         ObjectSetInteger(0, n, OBJPROP_COLOR, k == 0 ? tCol : InpLiqCol);
+         ObjectSetInteger(0, n, OBJPROP_COLOR, cols[k]);
          ObjectSetInteger(0, n, OBJPROP_SELECTABLE, false);
          ObjectSetInteger(0, n, OBJPROP_HIDDEN, true);
         }
@@ -764,6 +1013,8 @@ void ResetAll()
    ArrayResize(g_zones, 0);
    ArrayResize(g_liqs, 0);
    ArrayResize(g_struct, 0);
+   ArrayResize(g_dojis, 0);
+   ArrayResize(g_dojiSeen, 0);
    g_uid     = 0;
    g_last    = -1;
    g_shPrice = 0.0;
@@ -774,9 +1025,6 @@ void ResetAll()
    g_slLive  = false;
    g_trend   = 0;
    g_lastTag = "-";
-   g_rStart  = -1;
-   g_rTop    = 0.0;
-   g_rBot    = 0.0;
    g_eqHiP   = 0.0;
    g_eqLoP   = 0.0;
    g_eqHiB   = -1;
@@ -813,8 +1061,12 @@ int OnInit()
    ArraySetAsSeries(g_atr, false);
    PlotIndexSetInteger(0, PLOT_ARROW, 159);
    PlotIndexSetInteger(1, PLOT_ARROW, 159);
-   PlotIndexSetInteger(0, PLOT_ARROW_SHIFT, -12);
-   PlotIndexSetInteger(1, PLOT_ARROW_SHIFT, 12);
+   PlotIndexSetInteger(0, PLOT_LINE_WIDTH, MathMax(1, MathMin(3, InpDotSize)));
+   PlotIndexSetInteger(1, PLOT_LINE_WIDTH, MathMax(1, MathMin(3, InpDotSize)));
+   PlotIndexSetInteger(0, PLOT_ARROW_SHIFT, -8);
+   PlotIndexSetInteger(1, PLOT_ARROW_SHIFT, 8);
+   g_hLastBuilt = 0;
+   g_biasTries  = 0;
    PlotIndexSetDouble(0, PLOT_EMPTY_VALUE, EMPTY_VALUE);
    PlotIndexSetDouble(1, PLOT_EMPTY_VALUE, EMPTY_VALUE);
    IndicatorSetString(INDICATOR_SHORTNAME, "KossWin2");
@@ -847,6 +1099,20 @@ int OnCalculate(const int rates_total,
    if(rates_total < 2 * InpSwingLen + 20)
       return 0;
 
+//--- Biais : (re)calcul à chaque nouvelle bougie du TF supérieur
+   datetime htfNow = iTime(_Symbol, BiasTF(), 0);
+   if(prev_calculated == 0 || htfNow != g_hLastBuilt)
+     {
+      bool ok = BuildBias();
+      // Données du TF du biais pas encore chargées : on attend (au plus 50
+      // tentatives) si le filtre de biais en dépend, sinon on continue.
+      if(!ok && prev_calculated == 0 && InpBiasFilter && g_biasTries < 50)
+        {
+         g_biasTries++;
+         return 0;
+        }
+     }
+
    if(prev_calculated == 0)
      {
       ResetAll();
@@ -857,6 +1123,7 @@ int OnCalculate(const int rates_total,
 //--- Uniquement les bougies clôturées : aucun repaint
    int lastClosed = rates_total - 2;
    g_newZones = 0;
+   g_newDoji  = 0;
    g_sweepNow = false;
    for(int i = g_last + 1; i <= lastClosed; i++)
      {
@@ -876,6 +1143,8 @@ int OnCalculate(const int rates_total,
          Alert("KossWin2 : ", g_newZones, " zone(s) validée(s) par inducement — ", _Symbol, " ", EnumToString(_Period));
       if(g_sweepNow)
          Alert("KossWin2 : sweep d'EQH / EQL — ", _Symbol, " ", EnumToString(_Period));
+      if(g_newDoji > 0)
+         Alert("KossWin2 : ", g_newDoji, " doji de CHoCH validé(s) par une 1re réaction — ", _Symbol, " ", EnumToString(_Period));
      }
 
    Refresh(rates_total - 1, close, time);
