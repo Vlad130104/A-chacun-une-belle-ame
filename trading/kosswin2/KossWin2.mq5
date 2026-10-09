@@ -67,7 +67,9 @@ input group "Doji de CHoCH"
 input bool   InpShowDoji    = true;           // Afficher les doji (violet)
 input double InpDojiBodyPct = 10.0;           // Doji : corps maximum (% de l'amplitude)
 input color  InpDojiCol     = C'156,39,176';  // Couleur des doji
-input int    InpDojiExpiry  = 300;            // Attente max de la 1re réaction (bougies)
+input int    InpDojiExpiry  = 300;            // Attente max du 1er contact (bougies)
+input int    InpReactBars   = 3;              // Réaction : bougies max après le 1er contact (1 = rejet seul)
+input double InpReactAtr    = 0.25;           // Réaction : distance min hors de la zone (x ATR, 0 = aucune)
 input int    InpMaxDoji     = 6;              // Doji affichés max
 
 input group "Alertes"
@@ -97,7 +99,7 @@ struct Doji
    double   bottom;
    int      bar;       // index de la bougie doji
    int      created;   // index de la bougie du CHoCH
-   bool     touched;   // le prix est revenu dans la zone
+   int      touchBar;  // bougie du 1er contact avec la zone (-1 = pas encore)
    bool     active;    // réaction confirmée → affiché en violet
   };
 
@@ -698,7 +700,7 @@ void CollectDoji(int dir, int fromBar, int i, const double &op[], const double &
       g_dojis[n].bottom  = l[b];
       g_dojis[n].bar     = b;
       g_dojis[n].created = i;
-      g_dojis[n].touched = false;
+      g_dojis[n].touchBar = -1;
       g_dojis[n].active  = false;
      }
 //--- Limite des doji en attente de réaction
@@ -792,8 +794,10 @@ void ProcessBar(int i, const datetime &t[], const double &op[], const double &h[
    EnforceCap(1);
    EnforceCap(-1);
 
-//--- C bis) Doji : 1er retour du prix dans la zone, puis clôture de réaction
-//           hors de la zone dans le sens du CHoCH → affiché en violet.
+//--- C bis) Doji : le 1er contact du prix avec la zone doit produire un rejet
+//           (bougie de contact) ou un retournement (<= InpReactBars bougies) :
+//           clôture hors de la zone, côté réaction, d'au moins InpReactAtr x ATR.
+//           Sinon le doji est écarté. Réaction confirmée → affiché en violet.
    for(int k = ArraySize(g_dojis) - 1; k >= 0; k--)
      {
       bool bull    = g_dojis[k].dir == 1;
@@ -801,13 +805,18 @@ void ProcessBar(int i, const datetime &t[], const double &op[], const double &h[
       bool kill    = invalid;
       if(!invalid && !g_dojis[k].active)
         {
-         if(i - g_dojis[k].created > InpDojiExpiry)
-            kill = true;
+         bool inZ = bull ? l[i] <= g_dojis[k].top : h[i] >= g_dojis[k].bottom;
+         if(g_dojis[k].touchBar < 0 && inZ)
+            g_dojis[k].touchBar = i;
+         if(g_dojis[k].touchBar < 0)
+            kill = i - g_dojis[k].created > InpDojiExpiry;
          else
            {
-            if(bull ? l[i] <= g_dojis[k].top : h[i] >= g_dojis[k].bottom)
-               g_dojis[k].touched = true;
-            if(g_dojis[k].touched && (bull ? c[i] > g_dojis[k].top : c[i] < g_dojis[k].bottom))
+            double dist    = InpReactAtr * g_atr[i];
+            bool   reacted = bull ? c[i] > g_dojis[k].top + dist : c[i] < g_dojis[k].bottom - dist;
+            if(!reacted)
+               kill = i - g_dojis[k].touchBar >= MathMax(1, InpReactBars) - 1;   // pas de réaction au 1er contact
+            else
               {
                g_dojis[k].active = true;
                g_newDoji++;

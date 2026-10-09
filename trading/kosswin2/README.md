@@ -34,7 +34,7 @@ Les deux versions sont au même niveau : biais directionnel, doji de CHoCH, poin
 | OB + FVG achat / vente | Rectangle plein `OB+FVG`                                                | Vert / rouge                       |
 | Demand / Supply        | Rectangle plein `Demand` / `Supply`                                     | Bleu / orange                      |
 | Inducement pris        | Ligne pointillée `IDM`                                                  | Gris                               |
-| Doji de CHoCH          | Rectangle `Doji`, après une 1re réaction du prix                        | Violet                             |
+| Doji de CHoCH          | Rectangle `Doji`, si le 1er contact a donné un rejet ou un retournement | Violet                             |
 | Panneau                | Biais du TF supérieur + structure locale + alignement                   | Coin haut droit                    |
 
 ## 3. Définitions exactes utilisées
@@ -118,8 +118,12 @@ Zone d'achat :
 - **Doji** : bougie dont le corps fait au plus **10 %** de son amplitude (réglable).
 - **Où on les cherche** : seulement autour des **CHoCH**, pas des BOS. La recherche couvre tout le mouvement qui mène au CHoCH : de la bougie du swing cassé (début de la dernière jambe) jusqu'à la **bougie de cassure incluse**. On couvre ainsi « avant le CHoCH » et « au niveau du CHoCH ».
 - **Zone du doji** : du plus haut au plus bas de la bougie.
-- **Condition d'affichage, la 1re réaction** : après le CHoCH, le prix doit **revenir dans la zone**, puis une bougie doit **clôturer hors de la zone dans le sens du CHoCH** : au-dessus pour un CHoCH haussier, en dessous pour un baissier. La mèche et la clôture peuvent se produire sur la même bougie. Le doji s'affiche alors en violet.
-- **Effacement** : quand une clôture traverse la zone, quand la réaction n'arrive pas dans les 300 bougies, ou quand on dépasse 6 doji affichés (les plus anciens partent).
+- **Condition d'affichage : le premier contact doit produire une réaction.** Une réaction, c'est un **rejet** ou un **retournement** du prix au moment où il touche la zone :
+  - **Rejet** : la bougie qui touche la zone clôture **hors de la zone, côté réaction**, c'est-à-dire au-dessus pour un CHoCH haussier, en dessous pour un baissier ;
+  - **Retournement** : cette clôture de réaction arrive dans les **3 bougies** suivant le premier contact, bougie de contact comprise (réglable ; 1 = rejet seul) ;
+  - **Amplitude minimale** : la clôture de réaction doit s'éloigner de la zone d'au moins **0,25 × ATR** (réglable ; 0 = n'importe quelle clôture hors de la zone).
+- **Si le premier contact ne réagit pas dans ce délai, le doji est écarté.** Un contact ultérieur ne le rattrape pas.
+- **Effacement** : quand une clôture traverse la zone, quand le prix ne revient pas dans la zone dans les 300 bougies qui suivent le CHoCH, ou quand on dépasse 6 doji affichés (les plus anciens partent).
 
 ## 4. Garder le graphique propre
 
@@ -157,13 +161,23 @@ Trois événements déclenchent une alerte : une zone validée par inducement, u
    - **Taille du point de sweep** : réglage `Taille du point`, de 1 (minuscule, par défaut) à 3 (ancienne taille).
    - **Accents** : le fichier est enregistré en UTF-8 avec BOM, pour que MetaEditor affiche correctement les accents des textes. Si des caractères étranges apparaissent dans les alertes, réenregistre le fichier en UTF-8 depuis MetaEditor.
 9. **Le biais n'est qu'une échelle de structure de plus.** Il dépend du timeframe choisi et de la force des swings. Un biais H4 haussier peut cohabiter avec une tendance journalière baissière. Il oriente la lecture, il ne prédit rien.
-10. **La condition « le prix a déjà réagi » filtre peu.** Une zone de doji est petite, et le prix y revient puis en ressort facilement. Sur les données simulées, **60 %** des doji candidats ont été validés (328 sur 546). Si tu veux un filtre plus strict, il faut le définir : par exemple une réaction d'au moins x × ATR, ou un rejet sur une seule bougie (mèche dans la zone et clôture hors de la zone).
+10. **C'est l'amplitude de la réaction qui fait le tri, pas la forme rejet / retournement.** Une zone de doji est petite, et le prix y revient puis en ressort facilement. Sur 546 doji candidats (données simulées), voici combien sont validés selon la règle :
+
+    | Règle                                                       | Doji validés |
+    | ----------------------------------------------------------- | ------------ |
+    | Ancienne (réaction à n'importe quel moment)                 | 60 %         |
+    | Rejet seul, bougie de contact                               | 45 %         |
+    | Rejet ou retournement ≤ 3 bougies, sans amplitude minimale  | 56 %         |
+    | **Rejet ou retournement ≤ 3 bougies + 0,25 × ATR (défaut)** | **43 %**     |
+    | Rejet ou retournement ≤ 3 bougies + 0,5 × ATR               | 31 %         |
+
+    Le seuil de 0,25 × ATR est un choix de ma part, pas une règle SMC. Le régler à 0 donne ta définition au pied de la lettre.
 
 ## 7. Vérifications faites
 
-- **Doji (version TradingView)** : sur 5 × 6 000 bougies simulées, on obtient 512 CHoCH, 546 doji candidats et 328 doji validés (environ 1 doji violet toutes les 91 bougies). Invariants vérifiés sur chaque doji violet :
-  - le prix est revenu dans la zone **après** le CHoCH ;
-  - la bougie d'affichage clôture hors de la zone, dans le sens du CHoCH ;
+- **Doji** : sur 5 × 6 000 bougies simulées, on obtient 512 CHoCH et 546 doji candidats, dont 233 validés avec la règle par défaut (environ 1 doji violet toutes les 130 bougies). Invariants vérifiés sur chaque doji violet :
+  - le contact retenu est bien le **premier** contact après le CHoCH ;
+  - la clôture de réaction arrive au plus 3 bougies après ce contact ;
   - aucune clôture n'a traversé la zone avant l'affichage.
 - Le biais n'a pas été simulé. Il réutilise exactement les règles de structure déjà vérifiées, appliquées au timeframe supérieur.
 - La logique a été reproduite en Python et exécutée sur 5 × 6 000 bougies simulées. Sur ces données : 1 321 cassures (dont 512 CHoCH), 1 079 zones créées, dont 572 (53 %) validées par inducement.

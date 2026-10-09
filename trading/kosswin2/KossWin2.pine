@@ -13,8 +13,9 @@
 //    la structure. Une zone n'est AFFICHÉE qu'après la prise de son inducement
 //    (premier repli interne formé après la cassure).
 //  • Doji de CHoCH : doji formés dans le mouvement qui mène au CHoCH (jambe
-//    avant la cassure + bougie de cassure), affichés en violet seulement après
-//    une première réaction du prix sur leur zone.
+//    avant la cassure + bougie de cassure), affichés en violet seulement si le
+//    PREMIER contact du prix avec leur zone a produit un rejet ou un
+//    retournement.
 //
 //  La logique est identique dans KossWin2.mq5 (MetaTrader 5).
 // ════════════════════════════════════════════════════════════════════════════
@@ -67,7 +68,9 @@ const string G_DOJI = "Doji de CHoCH"
 bool  showDoji    = input.bool(true, "Afficher les doji (violet)", group = G_DOJI)
 float dojiBodyPct = input.float(10.0, "Doji : corps maximum (% de l'amplitude)", minval = 1.0, maxval = 50.0, step = 1.0, group = G_DOJI)
 color dojiCol     = input.color(color.new(#9C27B0, 70), "Couleur des doji", group = G_DOJI)
-int   dojiExpiry  = input.int(300, "Attente max de la 1re réaction (bougies)", minval = 10, maxval = 2000, group = G_DOJI)
+int   dojiExpiry  = input.int(300, "Attente max du 1er contact (bougies)", minval = 10, maxval = 2000, group = G_DOJI)
+int   reactBars   = input.int(3, "Réaction : bougies max après le 1er contact", minval = 1, maxval = 10, group = G_DOJI, tooltip = "1 = rejet seul : la bougie qui touche la zone doit clôturer hors de la zone, côté réaction.\n3 = rejet ou retournement : la clôture de réaction peut arriver jusqu'à la 3e bougie après le contact (bougie de contact comprise).\nSans réaction dans ce délai, le doji est écarté.")
+float reactAtr    = input.float(0.25, "Réaction : distance min hors de la zone (× ATR)", minval = 0.0, step = 0.05, group = G_DOJI, tooltip = "La clôture de réaction doit s'éloigner de la zone d'au moins cette distance. 0 = n'importe quelle clôture hors de la zone.")
 int   maxDoji     = input.int(6, "Doji affichés max", minval = 1, maxval = 30, group = G_DOJI)
 
 // ─── Types et état ──────────────────────────────────────────────────────────
@@ -92,7 +95,7 @@ type Doji
     float bottom
     int   bar                // bougie du doji
     int   created            // bougie du CHoCH
-    bool  touched = false    // le prix est revenu dans la zone
+    int   touchBar = na      // bougie du 1er contact avec la zone
     bool  active  = false    // réaction confirmée → affiché en violet
     box   bx
 
@@ -445,8 +448,10 @@ if barstate.isconfirmed
         enforceCap(1)
         enforceCap(-1)
 
-    // C bis) Doji : 1er retour du prix dans la zone, puis clôture de réaction
-    //        hors de la zone dans le sens du CHoCH → affiché en violet.
+    // C bis) Doji : le 1er contact du prix avec la zone doit produire un rejet
+    //        (bougie de contact) ou un retournement (≤ reactBars bougies) :
+    //        clôture hors de la zone, côté réaction, d'au moins reactAtr × ATR.
+    //        Sinon le doji est écarté. Réaction confirmée → affiché en violet.
     if dojis.size() > 0
         for i = dojis.size() - 1 to 0
             Doji d       = dojis.get(i)
@@ -454,12 +459,17 @@ if barstate.isconfirmed
             bool invalid = bull ? close < d.bottom : close > d.top
             bool kill    = invalid
             if not invalid and not d.active
-                if bar_index - d.created > dojiExpiry
-                    kill := true
+                bool inZ = bull ? low <= d.top : high >= d.bottom
+                if na(d.touchBar) and inZ
+                    d.touchBar := bar_index
+                if na(d.touchBar)
+                    kill := bar_index - d.created > dojiExpiry
                 else
-                    if bull ? low <= d.top : high >= d.bottom
-                        d.touched := true
-                    if d.touched and (bull ? close > d.top : close < d.bottom)
+                    bool reacted = bull ? close > d.top + reactAtr * atr : close < d.bottom - reactAtr * atr
+                    if not reacted
+                        // Pas de réaction au 1er contact dans le délai : écarté.
+                        kill := bar_index - d.touchBar >= reactBars - 1
+                    else
                         d.active := true
                         newDoji  += 1
                         if showDoji
