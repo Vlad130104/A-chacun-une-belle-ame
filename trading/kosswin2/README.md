@@ -1,11 +1,11 @@
 # KossWin2 : guide de l'indicateur
 
-Deux fichiers, une seule logique :
+| Plateforme   | Fichier                          | Version                                                                 |
+| ------------ | -------------------------------- | ----------------------------------------------------------------------- |
+| TradingView  | `KossWin2.pine` (Pine Script v6) | **À jour** : biais directionnel, doji de CHoCH, sans Premium / Discount |
+| MetaTrader 5 | `KossWin2.mq5` (MQL5)            | **Ancienne version** : Premium / Discount, sans biais ni doji           |
 
-| Plateforme   | Fichier                          |
-| ------------ | -------------------------------- |
-| TradingView  | `KossWin2.pine` (Pine Script v6) |
-| MetaTrader 5 | `KossWin2.mq5` (MQL5)            |
+> Les deux fichiers ne sont plus identiques. Les dernières modifications n'ont été faites que dans la version TradingView. Le fichier MT5 peut être mis à niveau sur demande.
 
 ## 1. Installation
 
@@ -24,16 +24,16 @@ Deux fichiers, une seule logique :
 
 ## 2. Ce que l'indicateur affiche
 
-| Élément                | Aspect                                               | Couleur par défaut                 |
-| ---------------------- | ---------------------------------------------------- | ---------------------------------- |
-| BOS / CHoCH            | Ligne pointillée + texte                             | Vert (haussier) / rouge (baissier) |
-| Liquidité              | Ligne en tirets + `BSL` `SSL` `EQH` `EQL`            | Gris                               |
-| Sweep d'EQH / EQL      | **Point rouge** au-dessus ou en dessous de la bougie | Rouge                              |
-| OB + FVG achat / vente | Rectangle plein `OB+FVG`                             | Vert / rouge                       |
-| Demand / Supply        | Rectangle plein `Demand` / `Supply`                  | Bleu / orange                      |
-| Inducement pris        | Ligne pointillée `IDM`                               | Gris                               |
-| Premium / Discount     | Deux grands rectangles + ligne d'équilibre 50 %      | Rouge / vert, très clairs          |
-| Panneau                | Tendance + dernier événement + position du prix      | Coin haut droit                    |
+| Élément                | Aspect                                                                  | Couleur par défaut                 |
+| ---------------------- | ----------------------------------------------------------------------- | ---------------------------------- |
+| BOS / CHoCH            | Ligne pointillée + texte                                                | Vert (haussier) / rouge (baissier) |
+| Liquidité              | Ligne en tirets + `BSL` `SSL` `EQH` `EQL`                               | Gris                               |
+| Sweep d'EQH / EQL      | **Petit point rouge** (puce « • ») au-dessus ou en dessous de la bougie | Rouge                              |
+| OB + FVG achat / vente | Rectangle plein `OB+FVG`                                                | Vert / rouge                       |
+| Demand / Supply        | Rectangle plein `Demand` / `Supply`                                     | Bleu / orange                      |
+| Inducement pris        | Ligne pointillée `IDM`                                                  | Gris                               |
+| Doji de CHoCH          | Rectangle `Doji`, après une 1re réaction du prix                        | Violet                             |
+| Panneau                | Biais du TF supérieur + structure locale + alignement                   | Coin haut droit                    |
 
 ## 3. Définitions exactes utilisées
 
@@ -54,11 +54,28 @@ Ces notions n'ont pas de définition unique en SMC. Voici celles que le code app
 - Les BSL / SSL simples restent affichés comme niveaux de liquidité, mais leur prise **ne donne pas** de point rouge.
 - Si la bougie **clôture** au-delà du niveau, c'est une prise de liquidité par cassure : le niveau est retiré sans point rouge.
 
-### 3.3 Premium / Discount
+### 3.3 Biais directionnel
 
-- **Range** : la dernière jambe qui a cassé la structure, de son origine (creux ou sommet extrême) jusqu'au plus haut ou plus bas atteint depuis.
-- **Équilibre** = 50 % du range. **Premium** = moitié haute, **Discount** = moitié basse.
-- **Selon la tendance** : en tendance haussière, le **Discount** est mis en avant (c'est là qu'on cherche les achats) ; en tendance baissière, c'est le **Premium** (ventes).
+Premium / Discount a été retiré de la version TradingView.
+
+- **Biais** : le sens de la dernière cassure de structure (BOS ou CHoCH) sur un **timeframe supérieur**, calculé avec exactement les mêmes règles que la structure du graphique. Un BOS ou un CHoCH haussier donne un biais **haussier** ; baissier, un biais **baissier**.
+- **Timeframe du biais** (automatique par défaut, réglable) :
+
+  | Graphique | Biais |
+  | --------- | ----- |
+  | M1 à M5   | H1    |
+  | M15 à M30 | H4    |
+  | H1 à H4   | D     |
+  | D         | W     |
+  | Au-delà   | M     |
+
+- **Le panneau affiche trois lignes** :
+  - le biais : timeframe, sens et dernier événement ;
+  - la structure du graphique : sens et dernier événement ;
+  - l'**alignement** : ✔ si la structure locale va dans le sens du biais, ✘ sinon.
+- **Utilisation** : on cherche des achats quand le biais est haussier **et** que la structure locale s'aligne, des ventes dans le cas inverse. Quand les deux divergent, la structure locale peut être en train de faire un repli dans la tendance du biais.
+- **Option « Zones seulement dans le sens du biais »** (désactivée par défaut, pour ne rien changer au reste) : une fois activée, seules les zones dans le sens du biais sont affichées, par exemple uniquement les zones d'achat quand le biais est haussier.
+- **Aucun repaint** : le biais utilise la dernière bougie **clôturée** du timeframe supérieur.
 
 ### 3.4 Zones
 
@@ -94,6 +111,14 @@ Zone d'achat :
    └────────────────────┘
 ```
 
+### 3.6 Doji de CHoCH (violet)
+
+- **Doji** : bougie dont le corps fait au plus **10 %** de son amplitude (réglable).
+- **Où on les cherche** : seulement autour des **CHoCH**, pas des BOS. La recherche couvre tout le mouvement qui mène au CHoCH : de la bougie du swing cassé (début de la dernière jambe) jusqu'à la **bougie de cassure incluse**. On couvre ainsi « avant le CHoCH » et « au niveau du CHoCH ».
+- **Zone du doji** : du plus haut au plus bas de la bougie.
+- **Condition d'affichage, la 1re réaction** : après le CHoCH, le prix doit **revenir dans la zone**, puis une bougie doit **clôturer hors de la zone dans le sens du CHoCH** : au-dessus pour un CHoCH haussier, en dessous pour un baissier. La mèche et la clôture peuvent se produire sur la même bougie. Le doji s'affiche alors en violet.
+- **Effacement** : quand une clôture traverse la zone, quand la réaction n'arrive pas dans les 300 bougies, ou quand on dépasse 6 doji affichés (les plus anciens partent).
+
 ## 4. Garder le graphique propre
 
 Réglages par défaut volontairement sobres :
@@ -101,8 +126,9 @@ Réglages par défaut volontairement sobres :
 - 4 BOS / CHoCH affichés ;
 - 3 niveaux de liquidité par côté ;
 - 4 zones par sens ;
+- 6 doji violets au maximum ;
 - les niveaux pris et les zones invalidées sont effacés ;
-- Premium / Discount très transparents.
+- points de sweep réduits (puce « • »).
 
 Tout se règle dans les paramètres, et chaque élément peut être masqué.
 
@@ -113,7 +139,7 @@ Tout se règle dans les paramètres, et chaque élément peut être masqué.
 - **TradingView** : Créer une alerte → condition « KossWin2 » → « Tout appel de fonction alert() ».
 - **MT5** : popup automatique si le paramètre `Alertes` est activé.
 
-Deux événements déclenchent une alerte : une zone validée par inducement, et un sweep d'EQH / EQL.
+Trois événements déclenchent une alerte (TradingView) : une zone validée par inducement, un sweep d'EQH / EQL, et un doji de CHoCH validé par une 1re réaction. Sur MT5, seuls les deux premiers existent.
 
 ## 6. Analyse critique
 
@@ -124,9 +150,16 @@ Deux événements déclenchent une alerte : une zone validée par inducement, et
 5. **Les points rouges sont rares, et c'est voulu.** Seuls les sweeps d'EQH / EQL sont marqués. Sur les données simulées, cela donne environ un point toutes les 250 bougies, contre un toutes les 25 quand tous les niveaux comptaient. Une détection EQH / EQL limitée aux gros swings n'en aurait donné qu'un toutes les 900 bougies environ, d'où la force dédiée. Pour en voir davantage : tolérance 0,2 ATR (environ 1 toutes les 130 bougies) ou force EQH / EQL de 2.
 6. **TradingView et MT5 ne donneront pas exactement les mêmes zones.** Les flux de prix et les fuseaux horaires des bougies diffèrent d'un courtier à l'autre, et les cas d'égalité entre sommets peuvent être traités différemment. La logique est la même ; les données ne le sont pas.
 7. **MT5 n'a pas de vraie transparence pour les rectangles.** Le remplissage est donc mélangé avec la couleur de fond du graphique pour la simuler. Premium / Discount y est dessiné en contour seulement : trait plein pour la moitié mise en avant, pointillé pour l'autre.
+8. **Le biais n'est qu'une échelle de structure de plus.** Il dépend du timeframe choisi et de la force des swings. Un biais H4 haussier peut cohabiter avec une tendance journalière baissière. Il oriente la lecture, il ne prédit rien.
+9. **La condition « le prix a déjà réagi » filtre peu.** Une zone de doji est petite, et le prix y revient puis en ressort facilement. Sur les données simulées, **60 %** des doji candidats ont été validés (328 sur 546). Si tu veux un filtre plus strict, il faut le définir : par exemple une réaction d'au moins x × ATR, ou un rejet sur une seule bougie (mèche dans la zone et clôture hors de la zone).
 
 ## 7. Vérifications faites
 
+- **Doji (version TradingView)** : sur 5 × 6 000 bougies simulées, on obtient 512 CHoCH, 546 doji candidats et 328 doji validés (environ 1 doji violet toutes les 91 bougies). Invariants vérifiés sur chaque doji violet :
+  - le prix est revenu dans la zone **après** le CHoCH ;
+  - la bougie d'affichage clôture hors de la zone, dans le sens du CHoCH ;
+  - aucune clôture n'a traversé la zone avant l'affichage.
+- Le biais n'a pas été simulé. Il réutilise exactement les règles de structure déjà vérifiées, appliquées au timeframe supérieur.
 - La logique a été reproduite en Python et exécutée sur 5 × 6 000 bougies simulées. Sur ces données : 1 321 cassures (dont 512 CHoCH), 1 079 zones créées, dont 572 (53 %) validées par inducement.
 - Invariants vérifiés sur chaque zone affichée :
   - l'IDM est formé après la cassure ;

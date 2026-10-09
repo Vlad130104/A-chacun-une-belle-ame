@@ -7,12 +7,17 @@
 //  • Liquidité : BSL / SSL (sommets et creux non pris) et EQH / EQL (égaux).
 //  • Sweep d'EQH / EQL : la mèche dépasse le niveau égal mais la bougie
 //    clôture de l'autre côté → point rouge (les BSL / SSL simples n'en ont pas).
-//  • Premium / Discount : moitié haute / basse de la dernière jambe de structure.
+//  • Biais directionnel : sens de la structure (BOS / CHoCH) sur un timeframe
+//    supérieur, comparé à la structure locale (panneau).
 //  • Zones : Order Block + FVG et Supply / Demand, nés de la jambe qui a cassé
 //    la structure. Une zone n'est AFFICHÉE qu'après la prise de son inducement
 //    (premier repli interne formé après la cassure).
+//  • Doji de CHoCH : doji formés dans le mouvement qui mène au CHoCH (jambe
+//    avant la cassure + bougie de cassure), affichés en violet seulement après
+//    une première réaction du prix sur leur zone.
 //
-//  La logique est identique dans KossWin2.mq5 (MetaTrader 5).
+//  Version TradingView. KossWin2.mq5 (MetaTrader 5) n'intègre pas encore le
+//  biais directionnel ni les doji, et affiche toujours Premium / Discount.
 // ════════════════════════════════════════════════════════════════════════════
 indicator("KossWin2", overlay = true, max_boxes_count = 500, max_lines_count = 500, max_labels_count = 500, max_bars_back = 1500)
 
@@ -49,14 +54,22 @@ int   maxLiq    = input.int(3, "Niveaux affichés par côté", minval = 1, maxva
 int   eqLen     = input.int(3, "Force des swings EQH / EQL", minval = 1, maxval = 20, group = G_LIQ, tooltip = "Les sommets / creux égaux se forment surtout sur de petits swings : cette force est indépendante de celle de la structure.")
 float eqTol     = input.float(0.1, "Tolérance EQH / EQL (× ATR)", minval = 0.0, maxval = 1.0, step = 0.05, group = G_LIQ, tooltip = "Écart maximal entre deux sommets (ou creux) pour les considérer comme égaux, dans un sens comme dans l'autre.")
 color liqCol    = input.color(#787B86, "Couleur des niveaux", group = G_LIQ)
-bool  showSweep = input.bool(true, "Point rouge sur les sweeps d'EQH / EQL", group = G_LIQ)
-color sweepCol  = input.color(color.red, "Couleur du point", group = G_LIQ)
+bool   showSweep = input.bool(true, "Point rouge sur les sweeps d'EQH / EQL", group = G_LIQ)
+string dotSize   = input.string("Minuscule", "Taille du point", options = ["Minuscule", "Très petit", "Petit"], group = G_LIQ, tooltip = "Minuscule = puce « • » (le plus discret). Très petit / Petit = cercle de TradingView.")
+color  sweepCol  = input.color(color.red, "Couleur du point", group = G_LIQ)
 
-const string G_PD = "Premium / Discount"
-bool  showPD    = input.bool(true, "Afficher Premium / Discount", group = G_PD)
-color premCol   = input.color(#F23645, "Premium", inline = "pd", group = G_PD)
-color discCol   = input.color(#089981, "Discount", inline = "pd", group = G_PD)
-bool  showPanel = input.bool(true, "Panneau de tendance", group = G_PD)
+const string G_BIAS = "Biais directionnel"
+bool   biasAuto   = input.bool(true, "Timeframe du biais automatique", group = G_BIAS, tooltip = "M1–M5 → H1 · M15–M30 → H4 · H1–H4 → D · D → W · au-delà → M.")
+string biasTFIn   = input.timeframe("240", "Timeframe du biais (si non automatique)", group = G_BIAS)
+bool   biasFilter = input.bool(false, "Zones seulement dans le sens du biais", group = G_BIAS, tooltip = "Désactivé = comportement inchangé : toutes les zones validées par inducement sont affichées.\nActivé = une zone d'achat n'est affichée qu'en biais haussier, une zone de vente qu'en biais baissier.")
+bool   showPanel  = input.bool(true, "Panneau biais / structure", group = G_BIAS)
+
+const string G_DOJI = "Doji de CHoCH"
+bool  showDoji    = input.bool(true, "Afficher les doji (violet)", group = G_DOJI)
+float dojiBodyPct = input.float(10.0, "Doji : corps maximum (% de l'amplitude)", minval = 1.0, maxval = 50.0, step = 1.0, group = G_DOJI)
+color dojiCol     = input.color(color.new(#9C27B0, 70), "Couleur des doji", group = G_DOJI)
+int   dojiExpiry  = input.int(300, "Attente max de la 1re réaction (bougies)", minval = 10, maxval = 2000, group = G_DOJI)
+int   maxDoji     = input.int(6, "Doji affichés max", minval = 1, maxval = 30, group = G_DOJI)
 
 // ─── Types et état ──────────────────────────────────────────────────────────
 type Zone
@@ -74,6 +87,16 @@ type Zone
     line  idmLn
     label idmLb
 
+type Doji
+    int   dir                // 1 = CHoCH haussier (zone sous le prix), -1 = baissier
+    float top
+    float bottom
+    int   bar                // bougie du doji
+    int   created            // bougie du CHoCH
+    bool  touched = false    // le prix est revenu dans la zone
+    bool  active  = false    // réaction confirmée → affiché en violet
+    box   bx
+
 type Liq
     float price
     int   bar
@@ -86,6 +109,8 @@ var array<Zone>  zones    = array.new<Zone>()
 var array<Liq>   liqs     = array.new<Liq>()
 var array<line>  stLines  = array.new<line>()
 var array<label> stLabels = array.new<label>()
+var array<Doji>  dojis    = array.new<Doji>()
+var map<int, bool> dojiSeen = map.new<int, bool>()
 
 var float  shPrice = na
 var int    shBar   = na
@@ -95,15 +120,13 @@ var int    slBar   = na
 var bool   slLive  = false
 var int    trend   = 0
 var string lastTag = "—"
-var int    rStart  = na
-var float  rTop    = na
-var float  rBot    = na
 var float  eqHiP   = na      // dernier petit sommet candidat à un EQH
 var int    eqHiB   = na
 var float  eqLoP   = na      // dernier petit creux candidat à un EQL
 var int    eqLoB   = na
 
-const int MAX_PENDING = 40
+const int MAX_PENDING      = 40
+const int MAX_DOJI_PENDING = 60
 
 // ─── Séries (calculées à chaque bougie) ─────────────────────────────────────
 float atr        = ta.atr(14)
@@ -291,17 +314,85 @@ drawStruct(int fromBar, float price, string tag, int dir) =>
             stLabels.shift().delete()
     true
 
+// ─── Fonctions : biais directionnel ─────────────────────────────────────────
+// Même structure (swings + BOS / CHoCH) calculée sur le timeframe du biais.
+// Renvoie la bougie précédente clôturée du TF supérieur : aucun repaint.
+htfStructure() =>
+    var float hP  = na
+    var bool  hOn = false
+    var float lP  = na
+    var bool  lOn = false
+    var int   tr  = 0
+    var string tg = "—"
+    float a = ta.pivothigh(high, swingLen, swingLen)
+    float b = ta.pivotlow(low, swingLen, swingLen)
+    if not na(a)
+        hP  := a
+        hOn := true
+    if not na(b)
+        lP  := b
+        lOn := true
+    float up = closeBreak ? close : high
+    float dn = closeBreak ? close : low
+    if hOn and up > hP
+        hOn := false
+        tg  := tr == -1 ? "CHoCH" : "BOS"
+        tr  := 1
+    else if lOn and dn < lP
+        lOn := false
+        tg  := tr == 1 ? "CHoCH" : "BOS"
+        tr  := -1
+    [tr[1], tg[1]]
+
+tfLabel(string tf) =>
+    int sec = timeframe.in_seconds(tf)
+    sec >= 2592000 ? "MN" : sec >= 604800 ? "W" : sec >= 86400 ? "D" : sec >= 3600 ? "H" + str.tostring(math.round(sec / 3600)) : "M" + str.tostring(math.round(sec / 60))
+
+int    chartSec = timeframe.in_seconds()
+string biasTF   = biasAuto ? (chartSec <= 300 ? "60" : chartSec <= 1800 ? "240" : chartSec <= 14400 ? "D" : chartSec <= 86400 ? "W" : "M") : biasTFIn
+[biasTrend, biasTag] = request.security(syminfo.tickerid, biasTF, htfStructure(), lookahead = barmerge.lookahead_on)
+
+// ─── Fonctions : doji ───────────────────────────────────────────────────────
+isDoji(int off) =>
+    float rng = high[off] - low[off]
+    rng > 0 and math.abs(close[off] - open[off]) / rng * 100 <= dojiBodyPct
+
+deleteDoji(Doji d) =>
+    if not na(d.bx)
+        d.bx.delete()
+    true
+
+// Doji du mouvement qui mène au CHoCH : de la bougie du swing cassé (début de
+// la dernière jambe) jusqu'à la bougie de cassure incluse.
+collectDoji(int dir, int fromBar) =>
+    int len = bar_index - fromBar
+    for k = len to 0
+        int b = bar_index - k
+        if isDoji(k) and not dojiSeen.contains(b)
+            dojiSeen.put(b, true)
+            dojis.push(Doji.new(dir, high[k], low[k], b, bar_index))
+    // Limite des doji en attente de réaction
+    int n = 0
+    for d in dojis
+        if not d.active
+            n += 1
+    while n > MAX_DOJI_PENDING
+        int idx = -1
+        for i = 0 to dojis.size() - 1
+            if not dojis.get(i).active
+                idx := i
+                break
+        dojis.remove(idx)
+        n -= 1
+    n
+
 // ─── Moteur (uniquement sur bougie clôturée : aucun repaint) ────────────────
 bool sweepHi  = false
 bool sweepLo  = false
 int  newZones = 0
+int  newDoji  = 0
 
 if barstate.isconfirmed
-    // A) Range de la dernière jambe (Premium / Discount)
-    if not na(rStart)
-        rTop := math.max(rTop, high)
-        rBot := math.min(rBot, low)
-
     // B) Liquidité : prise (clôture au-delà) ou sweep d'EQH / EQL
     //    (mèche au-delà, clôture en deçà)
     if liqs.size() > 0
@@ -335,9 +426,13 @@ if barstate.isconfirmed
                         // Le prix revient dans la zone sans inducement : zone rejetée.
                         kill := inZone
                     else if bull ? low < z.idm : high > z.idm
-                        activateZone(z)
-                        justOn   := true
-                        newZones += 1
+                        if biasFilter and nz(biasTrend) != z.dir
+                            // Inducement pris mais zone contre le biais : écartée.
+                            kill := true
+                        else
+                            activateZone(z)
+                            justOn   := true
+                            newZones += 1
                 if z.active and inZone and not z.touched
                     z.touched := true
                     if delTouched and not justOn
@@ -350,6 +445,42 @@ if barstate.isconfirmed
                 zones.remove(i)
         enforceCap(1)
         enforceCap(-1)
+
+    // C bis) Doji : 1er retour du prix dans la zone, puis clôture de réaction
+    //        hors de la zone dans le sens du CHoCH → affiché en violet.
+    if dojis.size() > 0
+        for i = dojis.size() - 1 to 0
+            Doji d       = dojis.get(i)
+            bool bull    = d.dir == 1
+            bool invalid = bull ? close < d.bottom : close > d.top
+            bool kill    = invalid
+            if not invalid and not d.active
+                if bar_index - d.created > dojiExpiry
+                    kill := true
+                else
+                    if bull ? low <= d.top : high >= d.bottom
+                        d.touched := true
+                    if d.touched and (bull ? close > d.top : close < d.bottom)
+                        d.active := true
+                        newDoji  += 1
+                        if showDoji
+                            d.bx := box.new(d.bar, d.top, bar_index + extBars, d.bottom, border_color = color.new(dojiCol, 0), border_width = 1, bgcolor = dojiCol, text = "Doji", text_size = size.tiny, text_color = color.new(dojiCol, 0), text_halign = text.align_right, text_valign = text.align_center)
+            if kill
+                deleteDoji(d)
+                dojis.remove(i)
+        int nAct = 0
+        for d in dojis
+            if d.active
+                nAct += 1
+        while nAct > maxDoji
+            int idx = -1
+            for i = 0 to dojis.size() - 1
+                if dojis.get(i).active
+                    idx := i
+                    break
+            deleteDoji(dojis.get(idx))
+            dojis.remove(idx)
+            nAct -= 1
 
     // D) Inducement : premier repli interne formé après la cassure, devant la zone
     if not na(ipl) or not na(iph)
@@ -409,13 +540,9 @@ if barstate.isconfirmed
                 if low[k] <= ext
                     ext := low[k]
                     o   := bar_index - k
-            float top = high[bar_index - o]
-            for k = bar_index - o to 0
-                top := math.max(top, high[k])
-            rStart := o
-            rBot   := ext
-            rTop   := top
             createZones(1, o)
+            if tag == "CHoCH"
+                collectDoji(1, shBar)
     else if slLive and dnSrc < slPrice
         slLive := false
         string tag = trend == 1 ? "CHoCH" : "BOS"
@@ -430,28 +557,27 @@ if barstate.isconfirmed
                 if high[k] >= ext
                     ext := high[k]
                     o   := bar_index - k
-            float bot = low[bar_index - o]
-            for k = bar_index - o to 0
-                bot := math.min(bot, low[k])
-            rStart := o
-            rTop   := ext
-            rBot   := bot
             createZones(-1, o)
+            if tag == "CHoCH"
+                collectDoji(-1, slBar)
 
     if newZones > 0
         alert("KossWin2 : " + str.tostring(newZones) + " zone(s) validée(s) par inducement — " + syminfo.ticker + " " + timeframe.period, alert.freq_once_per_bar_close)
+    if newDoji > 0
+        alert("KossWin2 : " + str.tostring(newDoji) + " doji de CHoCH validé(s) par une 1re réaction — " + syminfo.ticker + " " + timeframe.period, alert.freq_once_per_bar_close)
     if sweepHi or sweepLo
         alert("KossWin2 : sweep " + (sweepHi ? "d'EQH" : "d'EQL") + " — " + syminfo.ticker + " " + timeframe.period, alert.freq_once_per_bar_close)
 
 // ─── Sweeps d'EQH / EQL : point rouge ───────────────────────────────────────────────────
-plotshape(showSweep and sweepHi, "Sweep EQH", shape.circle, location.abovebar, sweepCol, size = size.small)
-plotshape(showSweep and sweepLo, "Sweep EQL", shape.circle, location.belowbar, sweepCol, size = size.small)
+plotchar(showSweep and dotSize == "Minuscule" and sweepHi, "Sweep EQH", "•", location.abovebar, sweepCol, size = size.tiny)
+plotchar(showSweep and dotSize == "Minuscule" and sweepLo, "Sweep EQL", "•", location.belowbar, sweepCol, size = size.tiny)
+plotshape(showSweep and dotSize == "Très petit" and sweepHi, "Sweep EQH (très petit)", shape.circle, location.abovebar, sweepCol, size = size.tiny)
+plotshape(showSweep and dotSize == "Très petit" and sweepLo, "Sweep EQL (très petit)", shape.circle, location.belowbar, sweepCol, size = size.tiny)
+plotshape(showSweep and dotSize == "Petit" and sweepHi, "Sweep EQH (petit)", shape.circle, location.abovebar, sweepCol, size = size.small)
+plotshape(showSweep and dotSize == "Petit" and sweepLo, "Sweep EQL (petit)", shape.circle, location.belowbar, sweepCol, size = size.small)
 
 // ─── Mise à jour visuelle sur la dernière bougie ────────────────────────────
-var box   pdPrem = na
-var box   pdDisc = na
-var line  pdEq   = na
-var table panel  = table.new(position.top_right, 1, 2, bgcolor = color.new(color.gray, 88), border_width = 0)
+var table panel = table.new(position.top_right, 1, 3, bgcolor = color.new(color.gray, 88), border_width = 0)
 
 if barstate.islast
     for z in zones
@@ -463,25 +589,17 @@ if barstate.islast
             q.ln.set_xy2(bar_index + 5, q.price)
             q.lb.set_xy(bar_index + 5, q.price)
             q.lb.set_text(liqText(q))
-
-    if not na(pdPrem)
-        pdPrem.delete()
-        pdDisc.delete()
-        pdEq.delete()
-    if showPD and not na(rStart)
-        float eq = (rTop + rBot) / 2
-        int   x2 = bar_index + extBars
-        // La moitié utile selon la tendance est mise en avant :
-        // tendance haussière → Discount (achats), baissière → Premium (ventes).
-        color pc = color.new(premCol, trend == -1 ? 84 : 95)
-        color dc = color.new(discCol, trend == 1 ? 84 : 95)
-        pdPrem := box.new(rStart, rTop, x2, eq, border_color = color.new(premCol, 100), bgcolor = pc, text = "Premium", text_size = size.tiny, text_color = premCol, text_halign = text.align_left, text_valign = text.align_top)
-        pdDisc := box.new(rStart, eq, x2, rBot, border_color = color.new(discCol, 100), bgcolor = dc, text = "Discount", text_size = size.tiny, text_color = discCol, text_halign = text.align_left, text_valign = text.align_bottom)
-        pdEq   := line.new(rStart, eq, x2, eq, color = color.new(liqCol, 20), style = line.style_dotted, width = 1)
+    for d in dojis
+        if d.active and not na(d.bx)
+            d.bx.set_right(bar_index + extBars)
 
     if showPanel
-        string tTxt = trend == 1 ? "HAUSSIÈRE ▲" : trend == -1 ? "BAISSIÈRE ▼" : "INDÉFINIE"
-        color  tCol = trend == 1 ? bullCol : trend == -1 ? bearCol : liqCol
-        string where = na(rStart) ? "—" : close > (rTop + rBot) / 2 ? "Premium" : "Discount"
-        table.cell(panel, 0, 0, "KossWin2 · Tendance " + tTxt + " (" + lastTag + ")", text_color = tCol, text_size = size.small, text_halign = text.align_right)
-        table.cell(panel, 0, 1, "Prix en zone " + where, text_color = liqCol, text_size = size.small, text_halign = text.align_right)
+        int    bT    = nz(biasTrend)
+        string bTxt  = bT == 1 ? "HAUSSIER ▲" : bT == -1 ? "BAISSIER ▼" : "INDÉFINI"
+        color  bCol  = bT == 1 ? bullCol : bT == -1 ? bearCol : liqCol
+        string tTxt  = trend == 1 ? "HAUSSIÈRE ▲" : trend == -1 ? "BAISSIÈRE ▼" : "INDÉFINIE"
+        color  tCol  = trend == 1 ? bullCol : trend == -1 ? bearCol : liqCol
+        string align = bT == 0 or trend == 0 ? "Alignement : —" : bT == trend ? "Alignement : ✔ structure dans le sens du biais" : "Alignement : ✘ structure contre le biais"
+        table.cell(panel, 0, 0, "KossWin2 · Biais " + tfLabel(biasTF) + " : " + bTxt + " (" + (na(biasTag) ? "—" : biasTag) + ")", text_color = bCol, text_size = size.small, text_halign = text.align_right)
+        table.cell(panel, 0, 1, "Structure " + tfLabel(timeframe.period) + " : " + tTxt + " (" + lastTag + ")", text_color = tCol, text_size = size.small, text_halign = text.align_right)
+        table.cell(panel, 0, 2, align, text_color = liqCol, text_size = size.small, text_halign = text.align_right)
