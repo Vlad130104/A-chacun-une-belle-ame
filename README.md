@@ -1,8 +1,20 @@
 # Bachir IA
 
-Studio de vidéos de sensibilisation HSE : tu colles ton script, le site le découpe en scènes
-(pictogrammes ISO 7010, sous-titres, photos de chantier, voix off) et exporte une vidéo MP4
-pour WhatsApp (9:16) ou pour l'écran du briefing (16:9).
+Studio vidéo pour YouTube et TikTok : tu colles ton script, le site le découpe en scènes et exporte
+un **Short vertical 9:16** (TikTok, YouTube Shorts, Reels) ou une **vidéo longue 16:9** pour YouTube,
+de quelques secondes à plusieurs heures.
+
+## Fonctions
+
+- **Script vers scènes** : une scène par paragraphe ; repères `# Titre`, `## Chapitre`, `> Citation — Auteur`, `- liste`.
+  Aucune limite de longueur ; la mise en forme par Claude (facultative) traite jusqu'à 12 000 caractères.
+- **Voix off** d'un seul fichier, de n'importe quelle durée, avec les scènes calées dessus.
+- **Sous-titres animés** mot par mot, incrustés, et export `.srt` pour YouTube.
+- **Export sans limite de durée** : encodage WebCodecs (H.264 + AAC en MP4, ou VP9 + Opus en WebM si le navigateur
+  n'a pas de H.264) via [Mediabunny](https://mediabunny.dev) (MPL-2.0, dans `public/vendor`). Le fichier s'écrit
+  directement sur le disque (Chrome, Edge), plus vite que le temps réel, sans garder la vidéo en mémoire.
+- **Shorts tirés d'une vidéo longue** : export d'une plage de scènes en 9:16.
+- **Chapitres YouTube** générés et vérifiés (3 minimum, premier à 00:00, 10 s minimum), **miniature** 1920×1080.
 
 ## Sécurité
 

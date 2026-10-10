@@ -12,10 +12,10 @@
 <body>
 <div class="wrap">
   <header class="top">
-    <div class="brand"><h1>Bachir <span>IA</span></h1><small>Studio vidéo HSE</small></div>
+    <div class="brand"><h1>Bachir <span>IA</span></h1><small>Studio vidéo YouTube &amp; TikTok</small></div>
     <div class="side">
-    <form method="post" action="/api/logout"><button class="btn small" type="submit">Se déconnecter</button></form>
-    <p>Du script à la vidéo MP4 : colle ton texte, ajoute tes photos de chantier et la voix de ton chef d'équipe, puis exporte pour WhatsApp ou l'écran du briefing.</p>
+      <form method="post" action="/api/logout"><button class="btn small" type="submit">Se déconnecter</button></form>
+      <p>Du script à la vidéo : un Short vertical pour TikTok et YouTube, ou une vidéo longue de plusieurs heures pour YouTube.</p>
     </div>
   </header>
 
@@ -23,18 +23,11 @@
     <div class="col">
       <section class="panel" aria-labelledby="h-script">
         <h2 id="h-script"><span class="step">1</span> Ton script</h2>
-        <label class="f"><span>Type de vidéo (bandeau affiché)</span>
-          <select id="b-format">
-            <option value="minute">Minute sécurité</option>
-            <option value="rex">Retour d'expérience (REX) après incident</option>
-            <option value="induction">Accueil sécurité nouvel arrivant</option>
-            <option value="flash">Alerte flash</option>
-          </select>
+        <label class="f"><span>Colle ton script · ligne vide = nouvelle scène</span>
+          <textarea id="s-script" rows="12"></textarea>
         </label>
-        <label class="f mt12"><span>Colle ton script ici · laisse une ligne vide entre deux scènes · une liste commence par « - »</span>
-          <textarea id="s-script" rows="10"></textarea>
-        </label>
-        <label class="check mt10"><input type="checkbox" id="s-ai" checked> Laisser Claude choisir les titres et les pictogrammes (tes mots ne changent pas)</label>
+        <p class="note mt6">Repères facultatifs : <code># Titre</code> · <code>## Chapitre</code> (devient un chapitre YouTube) · <code>&gt; Citation — Auteur</code> · <code>- point de liste</code>. Un paragraphe qui commence par un chiffre devient un « chiffre clé ». Aucune limite de longueur.</p>
+        <label class="check mt10"><input type="checkbox" id="s-ai" checked> Laisser Claude choisir titres et mises en page (jusqu'à 12 000 caractères ; tes mots ne changent pas)</label>
         <div class="row mt12">
           <button class="btn primary" id="btn-script" type="button">Créer la vidéo à partir de mon script</button>
         </div>
@@ -42,48 +35,59 @@
 
         <details class="alt">
           <summary>Pas encore de script ? Claude peut l'écrire</summary>
-        <div class="grid2 mt12">
-          <label class="f"><span>Public</span>
-            <select id="b-public">
-              <option value="foreurs">Foreurs et aides-foreurs</option>
-              <option value="engins">Chauffeurs et opérateurs d'engins</option>
-              <option value="atelier">Mécaniciens atelier</option>
-              <option value="tous">Tout le personnel du site</option>
-              <option value="encadrement">Chefs d'équipe et encadrement</option>
-            </select>
+          <div class="grid2 mt12">
+            <label class="f"><span>Format</span>
+              <select id="b-format">
+                <option value="short">Short vertical (TikTok, Shorts, Reels)</option>
+                <option value="long">Vidéo YouTube longue</option>
+              </select>
+            </label>
+            <label class="f"><span>Ton</span>
+              <select id="b-ton">
+                <option value="educatif">Éducatif et clair</option>
+                <option value="motivation">Motivant et direct</option>
+                <option value="histoire">Storytelling</option>
+                <option value="humour">Léger, avec humour</option>
+                <option value="actu">Analyse d'actualité</option>
+              </select>
+            </label>
+            <label class="f"><span>Durée</span>
+              <select id="b-duree">
+                <option value="30">30 secondes</option>
+                <option value="60">60 secondes</option>
+                <option value="180">3 minutes</option>
+                <option value="600">10 minutes</option>
+              </select>
+            </label>
+          </div>
+          <label class="f mt12"><span>Sujet, angle, idées à faire passer</span>
+            <textarea id="b-sujet" rows="3"></textarea>
           </label>
-          <label class="f"><span>Durée cible</span>
-            <select id="b-duree">
-              <option value="30">30 secondes</option>
-              <option value="60">60 secondes</option>
-              <option value="90">90 secondes</option>
-              <option value="120">2 minutes</option>
-            </select>
-          </label>
-        </div>
-        <label class="f mt12"><span>Sujet, faits, règle à faire passer</span>
-          <textarea id="b-sujet" rows="3"></textarea>
-        </label>
-        <div class="row mt12">
-          <button class="btn" id="btn-gen" type="button">Écrire le script avec Claude</button>
-        </div>
-        <p class="status" id="gen-status" role="status"></p>
+          <div class="row mt12">
+            <button class="btn" id="btn-gen" type="button">Écrire le script avec Claude</button>
+          </div>
+          <p class="status" id="gen-status" role="status"></p>
         </details>
       </section>
 
       <section class="panel" aria-labelledby="h-scenes">
-        <h2 id="h-scenes"><span class="step">2</span> Scènes <span class="badge" id="ex-badge" hidden>Script d'exemple</span><span class="aside" id="sc-total"></span></h2>
+        <h2 id="h-scenes"><span class="step">2</span> Scènes <span class="badge" id="ex-badge" hidden>Exemple</span><span class="aside" id="sc-total"></span></h2>
         <div class="scenes" id="scenes"></div>
+        <div class="row between mt12" id="pager" hidden>
+          <button class="btn small" id="pg-prev" type="button">← Précédentes</button>
+          <span class="pg-info" id="pg-info"></span>
+          <button class="btn small" id="pg-next" type="button">Suivantes →</button>
+        </div>
         <div class="row mt12">
           <button class="btn small" id="btn-add" type="button">+ Ajouter une scène</button>
         </div>
-        <p class="note">Couleurs des scènes selon ISO 7010 : jaune danger, rouge interdiction, bleu obligation, vert consigne. Ajoute une photo de ton propre chantier : elle porte bien plus qu'une image générique.</p>
+        <p class="note">Ajoute tes propres images (captures, photos, B-roll) en fond de scène : une vidéo faite uniquement de texte retient mal l'attention.</p>
       </section>
 
       <section class="panel" aria-labelledby="h-voix">
         <h2 id="h-voix"><span class="step">3</span> Voix off et sous-titres</h2>
-        <label class="check mb10"><input type="checkbox" id="subs" checked> Afficher le script en sous-titres (la vidéo se comprend même sans le son)</label>
-        <p class="note mt0">Fais lire ce texte par le chef d'équipe sur son téléphone, en français ou dans la langue de l'équipe, puis importe l'enregistrement.</p>
+        <label class="check mb10"><input type="checkbox" id="subs" checked> Sous-titres animés, mot par mot (la vidéo se comprend sans le son)</label>
+        <p class="note mt0">Enregistre ce texte avec ta voix (téléphone, micro) ou une voix de synthèse, en un seul fichier, quelle que soit sa durée, puis importe-le.</p>
         <div class="prompter" id="prompter" tabindex="0" aria-label="Texte de la voix off"></div>
         <div class="row mt10">
           <button class="btn small" id="btn-copy" type="button">Copier le texte</button>
@@ -96,10 +100,11 @@
       </section>
 
       <details class="panel" id="brand-panel">
-        <summary>Marque</summary>
+        <summary>Ma chaîne</summary>
         <div class="grid2">
-          <label class="f"><span>Nom affiché</span><input type="text" id="br-nom"></label>
-          <label class="f"><span>Message de fin</span><input type="text" id="br-fin"></label>
+          <label class="f"><span>Nom de la chaîne</span><input type="text" id="br-nom"></label>
+          <label class="f"><span>Bandeau du titre</span><input type="text" id="br-serie"></label>
+          <label class="f"><span>Phrase d'abonnement</span><input type="text" id="br-cta"></label>
           <label class="f"><span>Couleur principale</span><input type="color" id="br-primary"></label>
           <label class="f"><span>Fond</span><input type="color" id="br-dark"></label>
         </div>
@@ -108,22 +113,41 @@
           <input type="file" id="br-logo" accept="image/*">
           <img id="br-logo-prev" alt="Logo" hidden>
         </div>
-        <p class="note">Les photos, le logo, l'audio et les vidéos restent sur ton ordinateur : ils ne sont jamais envoyés au serveur. Ils ne sont pas conservés si tu recharges la page.</p>
+        <p class="note">Tes images, ton logo, ta voix et tes vidéos restent sur ton ordinateur : ils ne sont jamais envoyés au serveur. Ils ne sont pas conservés si tu recharges la page.</p>
       </details>
     </div>
 
     <aside class="monitor panel" aria-label="Aperçu et export">
       <div class="row between">
-        <div class="seg" role="group" aria-label="Format d'image">
-          <button type="button" id="ar-portrait" aria-pressed="true">9:16 WhatsApp</button>
-          <button type="button" id="ar-land" aria-pressed="false">16:9 Écran</button>
+        <div class="seg" role="group" aria-label="Format">
+          <button type="button" id="ar-portrait" aria-pressed="true">Short 9:16</button>
+          <button type="button" id="ar-land" aria-pressed="false">Long 16:9</button>
         </div>
         <button class="btn small" id="btn-play" type="button">▶ Lire</button>
       </div>
       <div class="stage-wrap"><div class="stage" id="stage"><canvas id="cv" width="1080" height="1920" aria-label="Aperçu de la vidéo"></canvas></div></div>
-      <div class="timebar"><span id="t-cur">0:00</span><input type="range" id="scrub" min="0" max="1000" value="80" aria-label="Position dans la vidéo"><span id="t-tot">0:00</span></div>
+      <div class="timebar"><span id="t-cur">0:00</span><input type="range" id="scrub" min="0" max="10000" value="80" aria-label="Position dans la vidéo"><span id="t-tot">0:00</span></div>
+
+      <div class="export">
+        <label class="check"><input type="checkbox" id="rg-all" checked> Exporter toute la vidéo</label>
+        <div class="grid2" id="rg-pick" hidden>
+          <label class="f"><span>De la scène</span><select id="rg-from"></select></label>
+          <label class="f"><span>À la scène</span><select id="rg-to"></select></label>
+        </div>
+        <p class="note mt0" id="rg-info"></p>
+        <div class="grid2">
+          <label class="f"><span>Images / seconde</span>
+            <select id="ex-fps"><option value="24">24 (plus rapide)</option><option value="30">30</option></select>
+          </label>
+          <label class="f"><span>Qualité</span>
+            <select id="ex-quality"><option value="standard">Standard (fichier léger)</option><option value="high">Haute</option></select>
+          </label>
+        </div>
+      </div>
+
       <div class="row">
         <button class="btn primary flex1" id="btn-export" type="button">Exporter la vidéo</button>
+        <button class="btn" id="btn-cancel" type="button" hidden>Annuler</button>
       </div>
       <div class="meter" id="meter" hidden><i id="meter-fill"></i></div>
       <p class="status" id="exp-status" role="status"></p>
@@ -133,6 +157,19 @@
           <button class="btn primary flex1" id="btn-save" type="button">Enregistrer le fichier</button>
         </div>
       </div>
+
+      <details class="alt" open>
+        <summary>Publication YouTube</summary>
+        <label class="f mt10"><span>Chapitres pour la description</span>
+          <textarea id="chapters" rows="5" readonly></textarea>
+        </label>
+        <p class="note mt6" id="chapters-note"></p>
+        <div class="row mt10">
+          <button class="btn small" id="btn-chapters" type="button">Copier les chapitres</button>
+          <button class="btn small" id="btn-srt" type="button">Sous-titres .srt</button>
+          <button class="btn small" id="btn-thumb" type="button">Miniature JPG</button>
+        </div>
+      </details>
     </aside>
   </div>
 </div>

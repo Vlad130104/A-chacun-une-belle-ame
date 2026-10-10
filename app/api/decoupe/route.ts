@@ -3,7 +3,7 @@ import { decouperScript, erreurIa } from "../../../lib/claude";
 import { guardApi, jsonError } from "../../../lib/guard";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
   const g = await guardApi(req, 40_000);
