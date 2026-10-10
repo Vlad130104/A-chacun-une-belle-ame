@@ -25,33 +25,18 @@
         <button class="btn small" id="btn-model" type="button">Utiliser ce modèle</button>
       </div>
       <textarea id="s-script" rows="12" aria-label="Script de la vidéo"></textarea>
-      <p class="hint">Ligne vide = nouvelle scène · <code># Titre</code> · <code>## Chapitre</code> · <code>&gt; Citation — Auteur</code> · <code>- point de liste</code>. Aucune limite de longueur.</p>
+      <p class="hint">Tout le texte est lu par la voix et illustré par des vidéos réelles. <code>## Partie</code> crée un chapitre YouTube. Aucune limite de longueur.</p>
       <div class="opts">
         <div class="seg" role="group" aria-label="Format">
           <button type="button" id="ar-portrait" aria-pressed="true">Short 9:16</button>
           <button type="button" id="ar-land" aria-pressed="false">Long 16:9</button>
         </div>
-        <label class="check"><input type="checkbox" id="s-auto-broll" checked> Images et vidéos automatiques</label>
-        <label class="f inline"><span>Source</span>
-          <select id="s-source">
-            <option value="auto">Automatique : archives si le sujet est historique</option>
-            <option value="video">Vidéos modernes : gens, objets, interviews (Pexels)</option>
-            <option value="photo">Photos modernes (Pexels)</option>
-            <option value="archive">Archives photos : guerres, histoire (Wikimedia)</option>
-            <option value="film">Archives films : actualités d'époque (Wikimedia)</option>
-          </select>
-        </label>
-        <label class="check"><input type="checkbox" id="s-ai"> Mise en page par Claude</label>
-      </div>
-      <div class="tpl-block">
-        <span class="lbl">Style de la vidéo</span>
-        <div class="tpls" id="tpls" role="radiogroup" aria-label="Style de la vidéo"></div>
       </div>
       <button class="btn primary big" id="btn-generate" type="button">Générer ma vidéo</button>
       <ol class="steps" id="gen-steps" hidden>
-        <li id="st-scenes">Découpage en scènes</li>
+        <li id="st-scenes">Texte</li>
         <li id="st-voice">Voix off</li>
-        <li id="st-broll">Images et vidéos</li>
+        <li id="st-broll">Vidéos réalistes</li>
       </ol>
       <p class="status" id="script-status" role="status"></p>
 
@@ -79,12 +64,20 @@
 
     <section class="panel" aria-labelledby="h-voix">
       <div class="phead"><span class="num">2</span><h2 id="h-voix">Voix</h2></div>
+      <p class="hint" id="el-note">Voix ElevenLabs : ajoute <code>ELEVENLABS_API_KEY</code> dans Vercel pour les activer.</p>
       <div class="voices" id="voices" role="radiogroup" aria-label="Choix de la voix"></div>
       <div class="opts">
+        <label class="f inline" id="el-opts" hidden><span>Modèle</span>
+          <select id="el-model"><option value="qualite">Qualité maximale (Multilingual v2)</option><option value="rapide">Rapide, 2× moins cher (Flash v2.5)</option></select>
+        </label>
         <label class="f inline"><span>Vitesse</span>
-          <select id="v-speed"><option value="0.9">Posée</option><option value="1">Normale</option><option value="1.1">Rapide</option><option value="1.25">Très rapide</option></select>
+          <select id="v-speed"><option value="0.9">Posée</option><option value="1">Normale</option><option value="1.1">Rapide</option><option value="1.2">Très rapide</option></select>
         </label>
         <label class="check"><input type="checkbox" id="subs" checked> Sous-titres animés</label>
+      </div>
+      <div class="tpl-block">
+        <span class="lbl">Style des sous-titres</span>
+        <div class="tpls" id="tpls" role="radiogroup" aria-label="Style des sous-titres"></div>
       </div>
       <div class="own" id="own-voice" hidden>
         <p class="hint">Enregistre le texte ci-dessous avec ta voix (téléphone ou micro), en un seul fichier, puis importe-le.</p>
@@ -102,33 +95,54 @@
       <p class="status" id="voice-status" role="status"></p>
     </section>
 
-    <section class="panel" aria-labelledby="h-scenes">
-      <div class="phead"><span class="num">3</span><h2 id="h-scenes">Scènes</h2><span class="badge" id="ex-badge" hidden>Exemple</span><span class="aside" id="sc-total"></span></div>
+    <section class="panel" aria-labelledby="h-video">
+      <div class="phead"><span class="num">3</span><h2 id="h-video">Vidéos réalistes</h2><span class="aside" id="v-total"></span></div>
+      <div class="opts">
+        <label class="f inline"><span>Source</span>
+          <select id="s-source">
+            <option value="auto">Automatique : archives si le sujet est historique</option>
+            <option value="video">Vidéos réalistes : gens, objets, interviews (Pexels)</option>
+            <option value="film">Films d'archives : guerres, histoire (Wikimedia)</option>
+          </select>
+        </label>
+        <label class="f inline"><span>Rythme</span>
+          <select id="s-pace">
+            <option value="rapide">Rapide : nouveau plan toutes les 3 à 4 s</option>
+            <option value="normal">Normal : toutes les 6 à 8 s</option>
+            <option value="lent">Lent : toutes les 12 à 15 s</option>
+            <option value="unique">Un seul plan du début à la fin</option>
+          </select>
+        </label>
+      </div>
+      <p class="hint" id="broll-note"></p>
       <div class="row">
-        <button class="btn small" id="btn-broll-all" type="button">Trouver les médias manquants</button>
-        <span class="hint" id="broll-note"></span>
+        <button class="btn small" id="btn-broll-all" type="button">Changer toutes les vidéos</button>
+        <button class="btn small" id="btn-broll-more" type="button">Plus de variété</button>
       </div>
-      <div class="scenes" id="scenes"></div>
-      <div class="row between" id="pager" hidden>
-        <button class="btn small" id="pg-prev" type="button">← Précédentes</button>
-        <span class="pg-info" id="pg-info"></span>
-        <button class="btn small" id="pg-next" type="button">Suivantes →</button>
+      <div class="moment" id="moment" hidden>
+        <div class="thumb" id="cur-thumb"></div>
+        <div class="mbody">
+          <p class="mtitle">Vidéo à <span id="cur-time">0:00</span> <small>(déplace la tête de lecture pour en choisir une autre)</small></p>
+          <p class="hint" id="cur-text"></p>
+          <div class="media">
+            <input type="text" id="cur-kw" aria-label="Mots-clés de recherche">
+            <button class="btn small" id="cur-search" type="button">Chercher</button>
+            <label class="btn small ghost" for="cur-file">Importer ma vidéo</label>
+            <input id="cur-file" type="file" accept="video/*" hidden>
+          </div>
+          <div class="results" id="cur-results" hidden></div>
+        </div>
       </div>
-      <button class="btn ghost small" id="btn-add" type="button">+ Ajouter une scène</button>
     </section>
 
     <details class="panel" id="brand-panel">
       <summary>Ma chaîne</summary>
       <div class="grid3">
-        <label class="f"><span>Nom de la chaîne</span><input type="text" id="br-nom"></label>
-        <label class="f"><span>Bandeau du titre</span><input type="text" id="br-serie"></label>
-        <label class="f"><span>Phrase d'abonnement</span><input type="text" id="br-cta"></label>
-        <label class="f"><span>Couleur principale</span><input type="color" id="br-primary"></label>
-        <label class="f"><span>Fond</span><input type="color" id="br-dark"></label>
-        <label class="f"><span>Logo</span><input type="file" id="br-logo" accept="image/*"></label>
+        <label class="f"><span>Couleur des sous-titres</span><input type="color" id="br-primary"></label>
+        <label class="f"><span>Logo (filigrane)</span><input type="file" id="br-logo" accept="image/*"></label>
       </div>
       <img id="br-logo-prev" class="logo-prev" alt="Logo" hidden>
-      <p class="hint">Tes images, vidéos, voix et exports restent sur ton ordinateur : rien n'est envoyé au serveur. Ils ne sont pas conservés si tu recharges la page.</p>
+      <p class="hint">Tes vidéos, voix et exports restent sur ton ordinateur : rien n'est stocké sur le serveur. Ils ne sont pas conservés si tu recharges la page.</p>
     </details>
   </div>
 
@@ -142,8 +156,8 @@
     <div class="export">
       <label class="check"><input type="checkbox" id="rg-all" checked> Toute la vidéo</label>
       <div class="grid2" id="rg-pick" hidden>
-        <label class="f"><span>De la scène</span><select id="rg-from"></select></label>
-        <label class="f"><span>À la scène</span><select id="rg-to"></select></label>
+        <label class="f"><span>Début</span><select id="rg-from"></select></label>
+        <label class="f"><span>Fin</span><select id="rg-to"></select></label>
       </div>
       <p class="hint" id="rg-info"></p>
       <div class="grid2">
@@ -174,7 +188,7 @@
         <button class="btn small" id="btn-thumb" type="button">Miniature JPG</button>
       </div>
     </details>
-    <p class="credits">Voix : Piper (siwis CC BY 4.0, gilles CC0, mls CC BY 4.0) · Médias : <a href="https://www.pexels.com" target="_blank" rel="noopener">Pexels</a> · archives <a href="https://commons.wikimedia.org" target="_blank" rel="noopener">Wikimedia Commons</a></p>
+    <p class="credits">Voix : ElevenLabs · Piper (siwis CC BY 4.0, gilles CC0, mls CC BY 4.0) · Vidéos : <a href="https://www.pexels.com" target="_blank" rel="noopener">Pexels</a> · archives <a href="https://commons.wikimedia.org" target="_blank" rel="noopener">Wikimedia Commons</a></p>
   </aside>
 </main>
 <script src="/studio/studio.js" defer></script>

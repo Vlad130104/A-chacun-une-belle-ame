@@ -6,30 +6,25 @@ de quelques secondes à plusieurs heures.
 
 ## Fonctions
 
-- **Un seul script, un clic** : « Générer ma vidéo » découpe le script, génère la voix et ajoute les B-rolls.
-- **Choix de la voix** : 3 voix françaises Piper (Siwis, Gilles, Mathis) exécutées dans le navigateur
-  (ONNX Runtime Web + phonémiseur espeak-ng en WebAssembly), sans coût par minute ; ou ta propre voix.
-  Chaque scène est lue séparément : sa durée devient exactement celle de sa phrase.
-- **Modèles** : 6 styles visuels (Impact, Minimal clair, Néon, Documentaire, Food & Promo, Business : couleurs,
-  police, alignement, style de sous-titres) et 6 structures de script (Top 5, Storytelling, Tutoriel, Promo restaurant,
-  Motivation, Actualité) à compléter entre crochets.
-- **Médiathèque** : par scène, import de tes images et vidéos, ou recherche dans 4 sources :
-  - vidéos et photos modernes (gens, objets, interviews) de Pexels, si `PEXELS_API_KEY` est défini ;
-  - archives photos et films d'époque (guerres, histoire, actualités anciennes) de Wikimedia Commons, sans clé,
-    interrogé directement par le navigateur, domaine public proposé en premier.
-  Le mode automatique choisit les archives quand le script parle d'histoire (alternance film et photo),
-  traduit les mots-clés en anglais pour Commons, et démarre les films longs après leur générique.
-  Les crédits (auteur, licence, lien) sont générés pour la description YouTube : obligatoires pour les licences CC BY et CC BY-SA.
-
-- **Script vers scènes** : une scène par paragraphe ; repères `# Titre`, `## Chapitre`, `> Citation — Auteur`, `- liste`.
-  Aucune limite de longueur ; la mise en forme par Claude (facultative) traite jusqu'à 12 000 caractères.
-- **Voix off** d'un seul fichier, de n'importe quelle durée, avec les scènes calées dessus.
-- **Sous-titres animés** mot par mot, incrustés, et export `.srt` pour YouTube.
+- **Un seul script, un clic** : « Générer ma vidéo » prépare le texte, génère la voix et monte des vidéos réelles dessus.
+- **Uniquement des vidéos réalistes** plein écran, avec sous-titres animés : aucun carton ni titre graphique.
+  La vidéo est un seul bloc continu ; le studio change de plan au rythme choisi (rapide, normal, lent) ou garde
+  **un seul plan du début à la fin**. Les plans sans vidéo prolongent le plan précédent : jamais d'écran vide.
+- **Sources** :
+  - vidéos modernes de Pexels (gens, objets, interviews), si `PEXELS_API_KEY` est défini ;
+  - films d'archives de Wikimedia Commons (guerres, histoire, actualités d'époque), sans clé, domaine public en premier.
+  Le mode automatique choisit les archives quand le script parle d'histoire et traduit les mots-clés en anglais.
+  La vidéo affichée à la tête de lecture se remplace par une recherche ou par ta propre vidéo.
+- **Voix** :
+  - ElevenLabs (voix ultra-réalistes et voix clonées du compte), si `ELEVENLABS_API_KEY` est défini. La clé reste sur
+    le serveur ; chaque passage est lu avec ses phrases voisines pour une intonation continue. Modèles Multilingual v2
+    (qualité) ou Flash v2.5 (deux fois moins de crédits) ;
+  - 3 voix françaises Piper gratuites, calculées dans le navigateur ; ou ta propre voix enregistrée.
+- **Crédits** auteur, licence et lien générés pour la description YouTube (obligatoires pour CC BY et CC BY-SA).
 - **Export sans limite de durée** : encodage WebCodecs (H.264 + AAC en MP4, ou VP9 + Opus en WebM si le navigateur
   n'a pas de H.264) via [Mediabunny](https://mediabunny.dev) (MPL-2.0, dans `public/vendor`). Le fichier s'écrit
-  directement sur le disque (Chrome, Edge), plus vite que le temps réel, sans garder la vidéo en mémoire.
-- **Shorts tirés d'une vidéo longue** : export d'une plage de scènes en 9:16.
-- **Chapitres YouTube** générés et vérifiés (3 minimum, premier à 00:00, 10 s minimum), **miniature** 1920×1080.
+  directement sur le disque (Chrome, Edge), plus vite que le temps réel.
+- **Extrait en Short** d'une vidéo longue, **sous-titres .srt**, **chapitres YouTube** (`## Partie`), **miniature** 1920×1080.
 
 ## Sécurité
 
@@ -44,8 +39,8 @@ de quelques secondes à plusieurs heures.
   `nosniff`, référent jamais transmis aux autres sites, caméra/micro/géolocalisation désactivés, `noindex`.
 - **Aucune ressource externe** : polices hébergées sur le site, pas de Google Fonts, pas de traceur.
 - **Données locales** : photos, audio et vidéos sont traités dans le navigateur et ne sont jamais envoyés au serveur.
-  Seul le texte du script part vers l'API Claude, et seulement si l'IA est activée.
-- **Clé API côté serveur uniquement**, limitée à 30 appels par heure et par session, entrées validées et bornées.
+  Seul le texte du script part vers le serveur : vers Claude pour écrire un script, vers ElevenLabs pour la voix.
+- **Clés API côté serveur uniquement** (Claude, Pexels, ElevenLabs), débit limité par session, entrées validées et bornées.
 - **Dépendances figées** sur des versions publiées depuis au moins deux semaines.
 
 Limite connue : le compteur anti force brute est en mémoire, par instance de serveur. Il freine une attaque,
@@ -58,7 +53,8 @@ il ne remplace pas le pare-feu Vercel.
 | `ACCESS_PASSWORD_HASH` | `npm run hash-password -- "mot de passe long"` |
 | `SESSION_SECRET` | `npm run new-secret` |
 | `ANTHROPIC_API_KEY` | Facultatif : active la mise en forme et l'écriture des scripts par Claude |
-| `PEXELS_API_KEY` | Facultatif (gratuit sur pexels.com/api) : active les vidéos et photos modernes (les archives Wikimedia marchent sans) |
+| `PEXELS_API_KEY` | Facultatif (gratuit sur pexels.com/api) : active les vidéos modernes (les archives Wikimedia marchent sans) |
+| `ELEVENLABS_API_KEY` | Facultatif (payant au caractère) : active les voix ElevenLabs |
 
 ## Licences des composants embarqués
 

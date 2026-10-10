@@ -1,8 +1,7 @@
 "use strict";
 (() => {
   const $ = (id) => document.getElementById(id);
-  const KEY = "bachir-ia-v3";
-  const PAGE = 20; // scènes affichées par page dans l'éditeur
+  const KEY = "bachir-ia-v4";
 
   const TYPES = {
     titre: { label: "Titre" },
@@ -164,32 +163,35 @@ Ton rythme de publication :
 
 Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et abonne-toi pour la suite.`;
 
+  // Rythme de montage : nombre de mots lus par plan vidéo (environ 2,6 mots par seconde).
+  const PACES = { rapide: { label: "Rapide", words: 9 }, normal: { label: "Normal", words: 17 }, lent: { label: "Lent", words: 32 }, unique: { label: "Un seul plan", words: 17 } };
+
   const DEFAULT_STATE = {
     brief: { format: "short", ton: "educatif", duree: "60", sujet: "Pourquoi la plupart des petites chaînes YouTube abandonnent avant 100 abonnés, et comment tenir." },
     script: EXAMPLE_SCRIPT,
-    useAi: false,
-    autoBroll: true,
     mediaSource: "auto",
+    pace: "normal",
     aspect: "9:16",
-    voice: { mode: "ia", id: "fr_FR-siwis-medium", speed: "1" },
+    voice: { mode: "ia", id: "fr_FR-siwis-medium", elId: "", elName: "", model: "qualite", speed: "1" },
     template: "impact",
-    brand: { nom: "Bachir IA", serie: "BACHIR IA", cta: "Abonne-toi pour ne rien rater", primary: "#F5B700", dark: "#0B0C0F", fit: true, subs: true },
+    brand: { primary: "#F5B700", fit: true, subs: true },
     exp: { fps: "30", quality: "high" },
-    example: true,
     scenes: [],
   };
 
   let state;
   try {
-    const raw = localStorage.getItem(KEY) || localStorage.getItem("bachir-ia-v2");
+    const raw = localStorage.getItem(KEY) || localStorage.getItem("bachir-ia-v3");
     state = raw ? JSON.parse(raw) : null;
   } catch (e) { state = null; }
   if (!state || !Array.isArray(state.scenes)) state = structuredClone(DEFAULT_STATE);
   for (const k of ["brief", "brand", "exp", "voice"]) state[k] = { ...DEFAULT_STATE[k], ...state[k] };
   if (typeof state.script !== "string") state.script = DEFAULT_STATE.script;
-  if (typeof state.useAi !== "boolean") state.useAi = false;
-  if (typeof state.autoBroll !== "boolean") state.autoBroll = true;
-  if (!["auto", "video", "photo", "archive", "film"].includes(state.mediaSource)) state.mediaSource = "auto";
+  if (!["auto", "video", "film"].includes(state.mediaSource)) state.mediaSource = "auto";
+  if (!Object.hasOwn(PACES, state.pace)) state.pace = "normal";
+  if (!["ia", "eleven", "fichier"].includes(state.voice.mode)) state.voice.mode = "ia";
+  if (!["0.9", "1", "1.1", "1.2"].includes(String(state.voice.speed))) state.voice.speed = "1";
+  if (state.v !== 4) { state.scenes = []; state.v = 4; } // ancien format à scènes graphiques : re-découpé au démarrage
   if (!TEMPLATES[state.template]) state.template = "impact";
   state.scenes.forEach((s) => {
     s.id = s.id || uid();
@@ -218,13 +220,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
 
   /* ---------------- Utilitaires ---------------- */
   const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
-  const easeOut = (x) => 1 - Math.pow(1 - clamp(x), 3);
   const tick = () => new Promise((r) => setTimeout(r, 0));
-  function hexToRgba(hex, a) {
-    const m = /^#?([0-9a-f]{6})$/i.exec(hex || "");
-    const n = m ? parseInt(m[1], 16) : 0xffffff;
-    return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
-  }
   function wordsOf(s) { return String(s || "").toLowerCase().replace(/[’`]/g, "'").split(/[^\p{L}\p{N}']+/u).filter(Boolean); }
   function fmt(s) {
     s = Math.max(0, Math.floor(s));
@@ -299,78 +295,6 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     ctx.arcTo(x, y, x + w, y, r);
     ctx.closePath();
   }
-  function wrapLines(text, maxW) {
-    const words = String(text || "").split(/\s+/).filter(Boolean);
-    const lines = [];
-    let line = "";
-    for (const w of words) {
-      const test = line ? line + " " + w : w;
-      if (ctx.measureText(test).width > maxW && line) { lines.push(line); line = w; } else line = test;
-    }
-    if (line) lines.push(line);
-    return lines;
-  }
-  const fitCache = new Map();
-  function fit(text, weight, family, size, min, maxW, maxLines) {
-    const key = `${weight}|${family}|${size}|${min}|${maxW}|${maxLines}|${text}`;
-    const hit = fitCache.get(key);
-    if (hit) return hit;
-    let s = size, lines;
-    for (;;) {
-      ctx.font = `${weight} ${s}px ${family}`;
-      lines = wrapLines(text, maxW);
-      const widest = Math.max(0, ...lines.map((l) => ctx.measureText(l).width));
-      if ((lines.length <= maxLines && widest <= maxW) || s <= min) break;
-      s -= 4;
-    }
-    if (lines.length > maxLines) { lines = lines.slice(0, maxLines); lines[maxLines - 1] += "…"; }
-    const out = { lines, size: s };
-    if (fitCache.size > 4000) fitCache.clear();
-    fitCache.set(key, out);
-    return out;
-  }
-  function setSpacing(px) { if ("letterSpacing" in ctx) ctx.letterSpacing = px + "px"; }
-  function pill(text, x, y, bg, ink, k, centered = false) {
-    ctx.save();
-    ctx.font = `600 ${26 * k}px ${F.mono}`; setSpacing(3 * k);
-    const w = ctx.measureText(text).width + 32 * k, h = 46 * k;
-    if (centered) x = (cv.width - w) / 2;
-    rr(x, y, w, h, 23 * k); ctx.fillStyle = bg; ctx.fill();
-    ctx.fillStyle = ink; ctx.textBaseline = "middle"; ctx.textAlign = "left";
-    ctx.fillText(text, x + 16 * k, y + h / 2 + 1);
-    ctx.restore();
-    return h;
-  }
-  function warnIcon(cx, cy, r, col, ink) {
-    ctx.save();
-    ctx.lineJoin = "round";
-    ctx.beginPath();
-    ctx.moveTo(cx, cy - r); ctx.lineTo(cx + r * 1.12, cy + r * 0.85); ctx.lineTo(cx - r * 1.12, cy + r * 0.85); ctx.closePath();
-    ctx.fillStyle = col; ctx.fill();
-    ctx.fillStyle = ink; ctx.font = `800 ${r * 1.1}px ${F.disp}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillText("!", cx, cy + r * 0.2);
-    ctx.restore();
-  }
-  function subscribeButton(x, y, k, centered = false) {
-    ctx.save();
-    ctx.font = `700 ${40 * k}px ${F.body}`;
-    const label = "S'ABONNER";
-    const w = ctx.measureText(label).width + 140 * k, h = 92 * k;
-    if (centered) x -= w / 2;
-    rr(x, y, w, h, 46 * k); ctx.fillStyle = "#E62117"; ctx.fill();
-    const bx = x + 56 * k, by = y + h / 2;
-    ctx.fillStyle = "#FFFFFF";
-    ctx.beginPath();
-    ctx.moveTo(bx - 18 * k, by + 12 * k);
-    ctx.quadraticCurveTo(bx - 18 * k, by - 22 * k, bx, by - 22 * k);
-    ctx.quadraticCurveTo(bx + 18 * k, by - 22 * k, bx + 18 * k, by + 12 * k);
-    ctx.closePath(); ctx.fill();
-    ctx.fillRect(bx - 22 * k, by + 10 * k, 44 * k, 5 * k);
-    ctx.beginPath(); ctx.arc(bx, by + 21 * k, 5 * k, 0, Math.PI * 2); ctx.fill();
-    ctx.textAlign = "left"; ctx.textBaseline = "middle";
-    ctx.fillText(label, x + 96 * k, y + h / 2 + 2 * k);
-    ctx.restore();
-  }
   function drawCover(src, sw, sh, zoom) {
     const W = cv.width, H = cv.height;
     if (!sw || !sh) return;
@@ -379,11 +303,10 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     ctx.drawImage(src, (W - w) / 2, (H - h) / 2, w, h);
   }
 
-  // Fond de scène : image (léger zoom lent) ou vidéo B-roll (bouclée si plus courte que la scène).
+  // Vidéo de fond, bouclée si elle est plus courte que le passage.
   let activeVideo = null;
   function bgSource(bg, lt, opts) {
     if (!bg) return null;
-    if (bg.kind === "image") return { el: bg.img, w: bg.img.naturalWidth, h: bg.img.naturalHeight, still: true };
     if (opts.bgCanvas) return { el: opts.bgCanvas, w: opts.bgCanvas.width, h: opts.bgCanvas.height };
     if (exporting) return null;
     const v = bg.el;
@@ -480,200 +403,55 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     });
   }
 
+  // Vidéo de la scène, ou celle de la scène la plus proche tant que la sienne n'est pas chargée.
+  function bgFor(i) {
+    const n = state.scenes.length;
+    for (let d = 0; d < n; d++) {
+      const a = state.scenes[i - d] && media.bg.get(state.scenes[i - d].id);
+      if (a) return a;
+      const b = d && state.scenes[i + d] && media.bg.get(state.scenes[i + d].id);
+      if (b) return b;
+    }
+    return null;
+  }
+
+  // Une image : vidéo réelle plein écran, sous-titres et logo. Aucun carton ni titre graphique.
   function drawFrame(t, opts = {}) {
     const W = cv.width, H = cv.height, land = W > H;
     const k = Math.min(W, H) / 1080;
     const brand = state.brand;
     const TLc = timeline();
     const tpl = TEMPLATES[state.template] || TEMPLATES.impact;
-    const PRIMARY = brand.primary || tpl.accent, DARK = brand.dark || tpl.bg, INK = tpl.ink;
+    const PRIMARY = brand.primary || tpl.accent;
 
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.globalAlpha = 1; setSpacing(0);
-    ctx.fillStyle = DARK; ctx.fillRect(0, 0, W, H);
-    if (!state.scenes.length) {
-      ctx.fillStyle = (TEMPLATES[state.template] || TEMPLATES.impact).fg; ctx.font = `700 ${64 * k}px ${F.disp}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText("Colle ton script pour commencer", W / 2, H / 2);
-      ctx.restore(); return;
-    }
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H);
+    const note = (txt) => {
+      ctx.fillStyle = "rgba(255,255,255,0.75)"; ctx.font = `600 ${44 * k}px ${F.body}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(txt, W / 2, H / 2);
+    };
+    if (!state.scenes.length) { note("Colle ton script, puis « Générer ma vidéo »"); ctx.restore(); return; }
 
     const i = sceneAt(t);
     const lt = Math.max(0, t - TLc.starts[i]), dur = TLc.durs[i], sc = state.scenes[i];
-    const T = TYPES[sc.type] || TYPES.texte;
+    const src = bgSource(bgFor(i), lt, opts);
+    if (src) drawCover(src.el, src.w, src.h, 1);
+    else if (!media.bg.size) note("Les vidéos arrivent à l'étape 3");
 
-    // Fond : B-roll plein écran, assombri vers le bas pour la lisibilité ; sinon aplat uni.
-    const src = bgSource(media.bg.get(sc.id), lt, opts);
-    const hasBg = Boolean(src);
-    // Sur une image, le texte reste blanc pour être lisible, quel que soit le modèle.
-    const FG = hasBg ? "#FFFFFF" : tpl.fg;
-    const center = tpl.align === "center";
-    if (!src && tpl.gradient && DARK === tpl.bg) {
-      const g = ctx.createLinearGradient(0, 0, W * 0.3, H);
-      g.addColorStop(0, tpl.gradient[0]); g.addColorStop(1, tpl.gradient[1]);
-      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    if (!opts.clean && brand.subs && sc.voix && sc.voix.trim()) {
+      // Voile discret sous les sous-titres, pour les lire sur n'importe quelle vidéo
+      const g = ctx.createLinearGradient(0, H * 0.55, 0, H);
+      g.addColorStop(0, "rgba(0,0,0,0)"); g.addColorStop(1, "rgba(0,0,0,0.6)");
+      ctx.fillStyle = g; ctx.fillRect(0, H * 0.55, W, H * 0.45);
+      const pad = (land ? 110 : 72) * k;
+      drawCaptions(sc, lt, dur, W, pad, W - pad * 2, k, land, PRIMARY, tpl.ink, land ? H - 120 * k : H * 0.74, tpl, "#FFFFFF", true);
     }
-    if (src) {
-      drawCover(src.el, src.w, src.h, src.still ? 1.04 + 0.08 * clamp(lt / dur) : 1);
-      const g = ctx.createLinearGradient(0, 0, 0, H);
-      g.addColorStop(0, "rgba(0,0,0,0.45)"); g.addColorStop(0.22, "rgba(0,0,0,0.05)");
-      g.addColorStop(0.5, "rgba(0,0,0,0.25)"); g.addColorStop(1, "rgba(0,0,0,0.88)");
-      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-    }
-
-    const pad = (land ? 110 : 72) * k;
-    const cw = W - pad * 2;
-
-    // Signature discrète : logo ou nom de la chaîne, chapitre en cours
-    const headY = (land ? 48 : 90) * k;
-    ctx.globalAlpha = 0.9;
     if (media.logo) {
-      const lh = 64 * k, lw = (media.logo.naturalWidth / media.logo.naturalHeight) * lh;
-      ctx.drawImage(media.logo, pad, headY - 8 * k, Math.min(lw, cw * 0.4), lh);
-    } else if (brand.nom) {
-      ctx.fillStyle = FG; ctx.font = `700 ${30 * k}px ${F.disp}`; setSpacing(3 * k);
-      ctx.textBaseline = "top"; ctx.textAlign = "left";
-      ctx.fillText(String(brand.nom).toUpperCase(), pad, headY);
-    }
-    if (TLc.chap[i] > 0 && sc.type !== "chapitre") {
-      ctx.fillStyle = PRIMARY; ctx.font = `600 ${24 * k}px ${F.mono}`; setSpacing(3 * k); ctx.textAlign = "right"; ctx.textBaseline = "top";
-      ctx.fillText(`CHAPITRE ${String(TLc.chap[i]).padStart(2, "0")}`, W - pad, headY + 4 * k);
-    }
-    ctx.globalAlpha = 1; setSpacing(0);
-
-    const enter = (delay) => {
-      const a = easeOut((lt - delay) / 0.45);
-      ctx.globalAlpha = a;
-      return (1 - a) * 40 * k;
-    };
-    const sz = hasBg ? 0.8 : 1;
-    const TF = tpl.title === "serif" ? F.serif : tpl.title === "body" ? F.body : F.disp;
-    const TW = tpl.title === "body" ? 700 : 800;
-    const TS = tpl.title === "disp" ? 1 : 0.78; // les polices larges s'affichent plus petites
-    const tx = center ? W / 2 : pad;
-    const titleLines = (txt, size, min, max) => fit(tpl.upper ? String(txt || "").toUpperCase() : String(txt || ""), TW, TF, size * sz * TS * k, min * TS * k, cw, max);
-    const drawTitle = (tt, y, dy, color = FG, lhK = 0.98) => {
-      ctx.fillStyle = color; ctx.font = `${TW} ${tt.size}px ${TF}`; ctx.textAlign = center ? "center" : "left"; ctx.textBaseline = "alphabetic";
-      if (hasBg) { ctx.shadowColor = "rgba(0,0,0,0.6)"; ctx.shadowBlur = 24 * k; }
-      else if (tpl.glow) { ctx.shadowColor = PRIMARY; ctx.shadowBlur = 30 * k; }
-      const lh = tt.size * (tpl.title === "disp" ? lhK : 1.12);
-      tt.lines.forEach((l, j) => ctx.fillText(l, tx, y + dy + tt.size * 0.8 + j * lh));
-      ctx.shadowBlur = 0;
-      return tt.lines.length * lh;
-    };
-    const drawBody = (txt, y, dy, size, maxLines, alpha = 0.9, weight = 500) => {
-      if (!txt) return 0;
-      const st = fit(txt, weight, F.body, size * sz * k, 30 * k, cw, maxLines);
-      ctx.fillStyle = hexToRgba(FG, alpha); ctx.font = `${weight} ${st.size}px ${F.body}`; ctx.textAlign = center ? "center" : "left"; ctx.textBaseline = "alphabetic";
-      st.lines.forEach((l, j) => ctx.fillText(l, tx, y + dy + st.size + j * st.size * 1.3));
-      return st.lines.length * st.size * 1.3;
-    };
-
-    const subs = !opts.clean && brand.subs && sc.voix && sc.voix.trim();
-    // Avec un B-roll, le texte descend dans le tiers inférieur ; sans, il occupe le haut de l'écran.
-    let y = hasBg ? H * 0.5 : (land ? H * 0.2 : H * 0.22);
-    const bodyMax = hasBg ? 2 : land ? (subs ? 2 : 4) : (subs ? 3 : 6);
-    const showBody = !(hasBg && subs);
-
-    if (sc.type === "titre") {
-      const dy = enter(0);
-      if (brand.serie) { pill(String(brand.serie).toUpperCase(), pad, y + dy, PRIMARY, INK, k, center); y += 76 * k; }
-      y += drawTitle(titleLines(sc.titre, land ? 150 : 170, 70, land ? 3 : 4), y, enter(0.12)) + 30 * k;
-      ctx.globalAlpha = 1;
-      const bar = 150 * k * easeOut((lt - 0.3) / 0.5);
-      ctx.fillStyle = PRIMARY; ctx.fillRect(center ? W / 2 - bar / 2 : pad, y, bar, 10 * k);
-      y += 40 * k;
-      if (showBody) drawBody(sc.texte, y, enter(0.45), 54, bodyMax);
-    } else if (sc.type === "chapitre") {
-      const dy = enter(0);
-      ctx.fillStyle = PRIMARY; ctx.font = `800 ${(land ? 200 : 240) * sz * k}px ${F.disp}`; ctx.textAlign = center ? "center" : "left"; ctx.textBaseline = "alphabetic";
-      if (tpl.glow) { ctx.shadowColor = PRIMARY; ctx.shadowBlur = 40 * k; }
-      ctx.fillText(String(TLc.chap[i]).padStart(2, "0"), center ? W / 2 : pad - 6 * k, y + dy + (land ? 165 : 195) * sz * k);
-      ctx.shadowBlur = 0;
-      y += (land ? 210 : 250) * sz * k;
-      y += drawTitle(titleLines(sc.titre, land ? 116 : 126, 60, 3), y, enter(0.15)) + 24 * k;
-      if (showBody) drawBody(sc.texte, y, enter(0.35), 50, bodyMax);
-    } else if (sc.type === "citation") {
-      let dy = enter(0);
-      ctx.fillStyle = PRIMARY; ctx.font = `800 ${(land ? 240 : 280) * sz * k}px ${tpl.title === "serif" ? F.serif : F.disp}`; ctx.textAlign = center ? "center" : "left"; ctx.textBaseline = "alphabetic";
-      ctx.fillText("“", center ? W / 2 : pad - 10 * k, y + dy + 190 * sz * k);
-      y += 160 * sz * k;
-      const q = fit(sc.titre, 600, F.body, (land ? 70 : 78) * sz * k, 38 * k, cw, land ? 4 : 6);
-      dy = enter(0.15);
-      ctx.fillStyle = FG; ctx.font = `600 ${q.size}px ${F.body}`; ctx.textAlign = center ? "center" : "left";
-      q.lines.forEach((l, j) => ctx.fillText(l, tx, y + dy + q.size + j * q.size * 1.25));
-      y += q.lines.length * q.size * 1.25 + 36 * k;
-      if (sc.texte) {
-        dy = enter(0.35);
-        ctx.fillStyle = PRIMARY; ctx.font = `600 ${32 * k}px ${F.mono}`;
-        ctx.fillText("— " + sc.texte, tx, y + dy + 32 * k);
-      }
-    } else if (sc.type === "chiffre") {
-      const dy = enter(0);
-      const nt = fit(sc.titre, 800, F.disp, (land ? 320 : 400) * sz * k, 110 * k, cw, 1);
-      ctx.fillStyle = PRIMARY; ctx.font = `800 ${nt.size}px ${F.disp}`; ctx.textAlign = center ? "center" : "left"; ctx.textBaseline = "alphabetic";
-      if (tpl.glow) { ctx.shadowColor = PRIMARY; ctx.shadowBlur = 40 * k; }
-      y += nt.size * 0.85;
-      ctx.fillText(nt.lines[0] || "", center ? W / 2 : pad - 8 * k, y + dy);
-      ctx.shadowBlur = 0;
-      y += 40 * k;
-      if (showBody) drawBody(sc.texte, y, enter(0.3), 66, bodyMax, 1, 600);
-    } else if (sc.type === "liste") {
-      const dy = enter(0);
-      pill(T.tag, pad, y + dy, PRIMARY, INK, k, center);
-      y += 72 * k;
-      y += drawTitle(titleLines(sc.titre, 96, 54, 2), y, enter(0.12), FG, 1) + 34 * k;
-      const items = (sc.items || []).filter(Boolean).slice(0, 5);
-      const stepDelay = Math.min(0.9, (dur * 0.55) / Math.max(1, items.length));
-      const box = 70 * k;
-      items.forEach((it, j) => {
-        const d = enter(0.45 + j * stepDelay);
-        const lines = fit(it, 600, F.body, 48 * sz * k, 32 * k, cw - box - 28 * k, 2);
-        const rowH = Math.max(box, lines.lines.length * lines.size * 1.2) + 20 * k;
-        ctx.save(); ctx.translate(-d, 0);
-        rr(pad, y, box, box, box / 2); ctx.fillStyle = PRIMARY; ctx.fill();
-        ctx.fillStyle = INK; ctx.font = `800 ${46 * k}px ${F.disp}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-        ctx.fillText(String(j + 1), pad + box / 2, y + box / 2 + 2 * k);
-        ctx.textAlign = "left"; ctx.textBaseline = "alphabetic"; ctx.fillStyle = FG; ctx.font = `600 ${lines.size}px ${F.body}`;
-        const ty = y + box / 2 - ((lines.lines.length - 1) * lines.size * 1.2) / 2 + lines.size * 0.35;
-        lines.lines.forEach((l, m) => ctx.fillText(l, pad + box + 28 * k, ty + m * lines.size * 1.2));
-        ctx.restore();
-        y += rowH;
-      });
-    } else if (sc.type === "alerte") {
-      const r = (land ? 70 : 84) * sz * k;
-      warnIcon(center ? W / 2 : pad + r * 1.12, y + r + enter(0), r, PRIMARY, INK);
-      y += r * 2 + 36 * k;
-      pill(T.tag, pad, y + enter(0.1), PRIMARY, INK, k, center);
-      y += 72 * k;
-      y += drawTitle(titleLines(sc.titre, land ? 104 : 114, 58, 3), y, enter(0.22), FG, 1) + 26 * k;
-      if (showBody) drawBody(sc.texte, y, enter(0.4), 52, bodyMax);
-    } else if (sc.type === "cta") {
-      y += drawTitle(titleLines(sc.titre, land ? 116 : 126, 58, 3), y, enter(0), FG, 1) + 26 * k;
-      if (showBody) y += drawBody(sc.texte, y, enter(0.2), 52, 2) + 30 * k;
-      ctx.globalAlpha = easeOut((lt - 0.5) / 0.45);
-      const pulse = 1 + 0.04 * Math.sin(lt * 5);
-      ctx.save(); ctx.translate(center ? W / 2 : pad, y + 10 * k); ctx.scale(pulse, pulse);
-      subscribeButton(0, 0, k, center);
-      ctx.restore();
-      y += 130 * k;
-      if (brand.cta && !hasBg) drawBody(brand.cta, y, 0, 42, 2, 0.8, 600);
-    } else {
-      y += drawTitle(titleLines(sc.titre, land ? 104 : 116, 54, 3), y, enter(0), FG, 1) + 26 * k;
-      if (showBody) drawBody(sc.texte, y, enter(0.25), 52, bodyMax);
-    }
-
-    ctx.globalAlpha = 1; setSpacing(0);
-    if (subs) {
-      const centerY = land ? H - 110 * k : (hasBg ? H * 0.82 : H * 0.78);
-      drawCaptions(sc, lt, dur, W, pad, cw, k, land, PRIMARY, INK, centerY, tpl, FG, hasBg);
-    }
-
-    // Fondu d'entrée de scène et fine barre de progression
-    if (i > 0 && lt < 0.22) { ctx.fillStyle = DARK; ctx.globalAlpha = 0.55 * (1 - lt / 0.22); ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
-    if (!opts.clean) {
-      ctx.fillStyle = hexToRgba(FG, 0.15); ctx.fillRect(0, H - 6 * k, W, 6 * k);
-      ctx.fillStyle = PRIMARY; ctx.fillRect(0, H - 6 * k, W * clamp(t / TLc.total), 6 * k);
+      const pad = (land ? 60 : 56) * k, lh = 72 * k, lw = (media.logo.naturalWidth / media.logo.naturalHeight) * lh;
+      ctx.globalAlpha = 0.85;
+      ctx.drawImage(media.logo, pad, pad, Math.min(lw, W * 0.3), lh);
     }
     ctx.restore();
   }
@@ -684,7 +462,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     const { total } = timeline();
     $("t-cur").textContent = fmt(Math.min(t, total));
     $("t-tot").textContent = fmt(total);
-    $("sc-total").textContent = `${state.scenes.length} scènes · ${fmt(total)}`;
+    $("v-total").textContent = state.scenes.length ? fmt(total) : "";
   }
   function seek(t) {
     const { total } = timeline();
@@ -692,6 +470,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     $("scrub").value = String(Math.round((t / total) * 10000));
     drawFrame(t);
     updateTimes(t);
+    momentLater();
   }
   function scrubTime() { return (Number($("scrub").value) / 10000) * timeline().total; }
   function play() {
@@ -723,47 +502,54 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     voiceEl.pause();
     if (activeVideo) { activeVideo.pause(); activeVideo = null; }
     $("btn-play").textContent = "▶";
+    momentLater();
   }
 
-  /* ---------------- Fonds de scène (images et B-rolls) ---------------- */
+  /* ---------------- Vidéos de fond ---------------- */
   async function setBackground(sc, blob, meta = {}) {
+    if (!String(blob.type).startsWith("video/")) throw new Error("Seules les vidéos sont acceptées.");
     const url = URL.createObjectURL(blob);
-    let entry;
-    if (String(blob.type).startsWith("image/")) {
-      const img = new Image();
-      await new Promise((ok, ko) => { img.onload = ok; img.onerror = () => ko(new Error("image illisible")); img.src = url; });
-      entry = { kind: "image", img, url, blob, ...meta };
-    } else {
-      const v = document.createElement("video");
-      v.muted = true; v.playsInline = true; v.loop = true; v.preload = "auto";
-      v.src = url;
-      await new Promise((ok, ko) => { v.onloadeddata = ok; v.onerror = () => ko(new Error("vidéo illisible dans ce navigateur")); });
-      v.addEventListener("seeked", () => { if (!playing && !exporting) drawFrame(scrubTime()); });
-      const dur = Number.isFinite(v.duration) && v.duration > 0 ? v.duration : 1;
-      // Clip long (film d'archives) : départ au hasard après le générique, pour varier les plans.
-      entry = { kind: "video", el: v, url, blob, dur, offset: dur > 30 ? Math.floor(dur * (0.15 + Math.random() * 0.4)) : 0, ...meta };
-    }
+    const v = document.createElement("video");
+    v.muted = true; v.playsInline = true; v.loop = true; v.preload = "auto";
+    v.src = url;
+    await new Promise((ok, ko) => { v.onloadeddata = ok; v.onerror = () => { URL.revokeObjectURL(url); ko(new Error("vidéo illisible dans ce navigateur")); }; });
+    v.addEventListener("seeked", () => { if (!playing && !exporting) drawFrame(scrubTime()); });
+    const dur = Number.isFinite(v.duration) && v.duration > 0 ? v.duration : 1;
+    // Clip long (film d'archives) : départ au hasard après le générique, pour varier les plans.
+    const entry = { kind: "video", el: v, url, blob, dur, offset: dur > 30 ? Math.floor(dur * (0.15 + Math.random() * 0.4)) : 0, ...meta };
     clearBackground(sc);
     media.bg.set(sc.id, entry);
+    return entry;
+  }
+  // Réutilise la vidéo d'un autre passage, en continuant le plan là où il s'était arrêté.
+  function shareBackground(sc, from, offset) {
+    clearBackground(sc);
+    media.bg.set(sc.id, { ...from, offset: from.dur ? offset % from.dur : 0, reused: true });
   }
   function clearBackground(sc) {
     const old = media.bg.get(sc.id);
-    if (old) { URL.revokeObjectURL(old.url); if (old.el) old.el.pause(); }
     media.bg.delete(sc.id);
+    if (!old || [...media.bg.values()].some((b) => b.url === old.url)) return;
+    URL.revokeObjectURL(old.url);
+    old.el.pause();
+    old.el.removeAttribute("src"); old.el.load();
   }
 
   const STOP = new Set(("le la les un une des de du d l et ou mais donc car ni que qui quoi dont où à au aux en dans par pour sur sous avec sans chez ce cet cette ces " +
     "son sa ses mon ma mes ton ta tes notre nos votre vos leur leurs je tu il elle on nous vous ils elles me te se y ne pas plus moins très tout tous toute " +
     "toutes est sont été être avoir ai as avons avez ont fait faire comme si alors aussi bien encore déjà là ici voici voilà cela ça qu n j m t s c " +
     "première premier deuxième troisième dis dit vais va vas veux peux quand comment pourquoi chaque").split(" "));
+  const kwOf = (text) => [...new Set(wordsOf(text).map((w) => w.replace(/^(?:l|d|qu|j|n|s|c|m|t)'/, "")).filter((w) => w.length > 3 && !STOP.has(w) && !/^\d+$/.test(w)))];
+  // Mots-clés de recherche : ceux du passage, complétés par ceux du paragraphe s'il est trop court.
   function keywords(sc) {
     if (sc.broll && sc.broll.trim()) return sc.broll.trim();
-    const words = wordsOf(`${sc.titre} ${sc.voix}`).filter((w) => w.length > 3 && !STOP.has(w) && !/^\d+$/.test(w));
-    return [...new Set(words)].slice(0, 3).join(" ");
+    let words = kwOf(sc.voix);
+    if (words.length < 2) words = [...new Set([...words, ...kwOf(sc.ctx || sc.titre)])];
+    return words.slice(0, 3).join(" ");
   }
 
   /* ---------------- Serveur Bachir IA ---------------- */
-  let iaOn = false, brollOn = false;
+  let iaOn = false, brollOn = false, elevenOn = false;
   const API_MSG = {
     ia_non_configuree: "L'IA n'est pas encore activée sur le serveur (clé API absente).",
     ia_saturee: "L'IA est saturée. Réessaie dans une minute.",
@@ -776,6 +562,12 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     broll_non_configure: "B-rolls automatiques non activés : ajoute la clé Pexels (gratuite) sur le serveur.",
     broll_sature: "Pexels limite les recherches : réessaie dans quelques minutes.",
     broll_erreur: "Pexels n'a pas répondu. Réessaie.",
+    voix_non_configuree: "Voix ElevenLabs non activées : ajoute ELEVENLABS_API_KEY sur le serveur.",
+    voix_cle_invalide: "La clé ElevenLabs configurée sur le serveur est refusée.",
+    voix_quota: "Crédits ElevenLabs épuisés : recharge ton abonnement ou choisis une voix gratuite.",
+    voix_saturee: "ElevenLabs limite les requêtes simultanées. Réessaie dans une minute.",
+    voix_introuvable: "Cette voix n'existe plus sur ton compte ElevenLabs. Choisis-en une autre.",
+    voix_erreur: "ElevenLabs n'a pas répondu. Réessaie.",
   };
   async function api(path, payload) {
     let res;
@@ -791,13 +583,11 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     return data;
   }
 
-  /* ---------------- Médiathèque : Pexels (vidéos, photos) et archives Wikimedia Commons ---------------- */
+  /* ---------------- Vidéos réalistes : Pexels et films d'archives Wikimedia Commons ---------------- */
   const SOURCES = {
     auto: { label: "Automatique" },
-    video: { label: "Vidéos (Pexels)", pexels: true },
-    photo: { label: "Photos (Pexels)", pexels: true },
-    archive: { label: "Archives photos" },
-    film: { label: "Archives films" },
+    video: { label: "Vidéos réalistes (Pexels)", pexels: true },
+    film: { label: "Films d'archives (Wikimedia)" },
   };
   // Sujet historique : le mode automatique passe alors sur les archives (photos et films d'époque).
   const HISTORIC = /\b(guerres?|mondiale|poilus?|tranchées?|nazis?|hitler|staline|churchill|de gaulle|napol[ée]on|débarquement|résistance|occupation|armistice|colonial[es]?|colonisation|colonies|indépendances?|empires?|empereurs?|pharaons?|antiquité|médiéval|moyen[- ]âge|révolution|monarchie|rois?|reines?|siècles?|archives?|historiques?|histoire|1[5-9]\d\d|20[0-1]\d|années (?:folles|vingt|trente|quarante|cinquante|soixante))\b/iu;
@@ -845,10 +635,10 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   const plainText = (html) => (new DOMParser().parseFromString(String(html || ""), "text/html").body.textContent || "").replace(/\s+/g, " ").trim();
   const isFree = (lic) => /public domain|domaine public|^pd|cc0/i.test(lic || "");
 
-  async function commonsQuery(q, film) {
+  async function commonsQuery(q) {
     const p = new URLSearchParams({
       action: "query", format: "json", formatversion: "2", origin: "*", generator: "search",
-      gsrsearch: `${q} filetype:${film ? "video" : "bitmap"}`, gsrnamespace: "6", gsrlimit: film ? "15" : "20",
+      gsrsearch: `${q} filetype:video`, gsrnamespace: "6", gsrlimit: "15",
       prop: "videoinfo", viprop: "url|size|mime|extmetadata|derivatives", viurlwidth: "1280",
       viextmetadatafilter: "Artist|Credit|LicenseShortName|ObjectName|DateTimeOriginal",
     });
@@ -871,46 +661,40 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
         page: info.descriptionurl || "",
       };
       const preview = info.thumburl ? info.thumburl.replace(/\/\d+px-([^/]+)$/, "/330px-$1") : "";
-      if (film) {
-        const webm = (info.derivatives || []).filter((d) => /^video\/webm/.test(d.type || "") && d.height >= 240 && /^https:\/\/upload\.wikimedia\.org\//.test(d.src || ""));
-        if (!webm.length) continue;
-        webm.sort((a, b) => a.height - b.height);
-        const d = webm.find((x) => x.height >= 480) || webm[webm.length - 1];
-        const dur = Number(info.duration) || 0;
-        const mb = d.bandwidth && dur ? (d.bandwidth * dur) / 8e6 : 0;
-        out.push({ key: "wm:" + pg.title, kind: "video", link: d.src, image: preview, fallback: info.thumburl, dur, mb, credit });
-      } else {
-        const link = info.thumburl || (/^image\/(jpeg|png|webp)$/.test(info.mime) ? info.url : "");
-        if (!link || !/^https:\/\/upload\.wikimedia\.org\//.test(link) || (info.width && info.width < 400)) continue;
-        out.push({ key: "wm:" + pg.title, kind: "image", link, image: preview || link, fallback: link, credit });
-      }
+      // Seules les versions WebM se décodent partout (l'original est souvent en Ogg Theora).
+      const webm = (info.derivatives || []).filter((d) => /^video\/webm/.test(d.type || "") && d.height >= 240 && /^https:\/\/upload\.wikimedia\.org\//.test(d.src || ""));
+      if (!webm.length) continue;
+      webm.sort((a, b) => a.height - b.height);
+      const d = webm.find((x) => x.height >= 480) || webm[webm.length - 1];
+      const dur = Number(info.duration) || 0;
+      const mb = d.bandwidth && dur ? (d.bandwidth * dur) / 8e6 : 0;
+      out.push({ key: "wm:" + pg.title, kind: "video", link: d.src, image: preview, fallback: info.thumburl, dur, mb, credit });
     }
-    // Domaine public en premier : aucune obligation de crédit ni de partage à l'identique.
+  // Domaine public en premier : aucune obligation de crédit ni de partage à l'identique.
     return out.sort((a, b) => isFree(b.credit.license) - isFree(a.credit.license));
   }
   // Archives : requête traduite, puis élargie (moins de mots) si elle ne donne rien.
-  async function commonsSearch(q, film) {
+  async function commonsSearch(q) {
     const { known, mixed } = toEnglish(q);
     const tries = [...new Set([known, mixed, q, (known || mixed).split(" ")[0]])].filter(Boolean);
     for (const t of tries) {
-      const res = await commonsQuery(t, film);
+      const res = await commonsQuery(t);
       if (res.length) return res;
     }
     return [];
   }
 
   let pexelsBlocked = false;
-  async function mediaSearch(q, src) {
-    if (src === "archive" || src === "film") return commonsSearch(q, src === "film");
-    const orientation = state.aspect === "16:9" ? "landscape" : "portrait";
-    if (src === "photo") {
-      const d = await api("/api/broll/recherche", { q, orientation, kind: "photo" });
-      return (d.photos || []).map((p) => ({ key: "px:p" + p.id, kind: "image", id: p.id, link: p.link, image: p.image,
-        credit: { src: "pexels", kind: "Photo", author: p.author, license: "Licence Pexels", page: p.page } }));
-    }
-    const d = await api("/api/broll/recherche", { q, orientation });
+  async function pexelsSearch(q) {
+    const d = await api("/api/broll/recherche", { q, orientation: state.aspect === "16:9" ? "landscape" : "portrait" });
     return (d.videos || []).map((v) => ({ key: "px:v" + v.id, kind: "video", id: v.id, fileId: v.fileId, link: v.link, image: v.image, dur: v.duration,
       credit: { src: "pexels", kind: "Vidéo", author: v.author, license: "Licence Pexels", page: v.page } }));
+  }
+  async function mediaSearch(q, src) {
+    if (src === "film") return commonsSearch(q);
+    const res = await pexelsSearch(q);
+    const first = q.split(" ")[0];
+    return res.length || first === q ? res : pexelsSearch(first);
   }
   async function mediaDownload(m) {
     const direct = async () => {
@@ -919,38 +703,41 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
       return r.blob();
     };
     if (m.credit.src === "wikimedia") {
-      let b;
-      try { b = await direct(); } catch (e) { throw new Error("téléchargement impossible depuis Wikimedia Commons"); }
-      return m.kind === "video" ? new Blob([b], { type: "video/webm" }) : b;
+      try { return new Blob([await direct()], { type: "video/webm" }); }
+      catch (e) { throw new Error("téléchargement impossible depuis Wikimedia Commons"); }
     }
-    const relay = m.kind === "video" ? `/api/broll/fichier?id=${encodeURIComponent(m.id)}&f=${encodeURIComponent(m.fileId)}`
-      : `/api/broll/photo?id=${encodeURIComponent(m.id)}&o=${state.aspect === "16:9" ? "landscape" : "portrait"}`;
     let b = null;
     try { b = await direct(); } catch (e) { /* téléchargement direct refusé : passage par le relais */ }
     if (!b) {
-      const r = await fetch(relay, { credentials: "same-origin" });
-      if (!r.ok) throw new Error("téléchargement du média impossible");
+      const r = await fetch(`/api/broll/fichier?id=${encodeURIComponent(m.id)}&f=${encodeURIComponent(m.fileId)}`, { credentials: "same-origin" });
+      if (!r.ok) throw new Error("téléchargement de la vidéo impossible");
       b = await r.blob();
     }
-    if (m.kind === "video") return new Blob([b], { type: "video/mp4" });
-    return /^image\//.test(b.type) ? b : new Blob([b], { type: "image/jpeg" });
+    return new Blob([b], { type: "video/mp4" });
   }
   const metaOf = (m) => ({ key: m.key, credit: m.credit });
 
-  // Sources à essayer pour une scène, dans l'ordre. `historic` : le script entier parle d'histoire.
-  function sourcePlan(sc, i, historic) {
-    const choice = SOURCES[sc.src] ? sc.src : state.mediaSource;
+  const historicScript = () => isHistoric(state.scenes.map((s) => s.voix).join(" ").slice(0, 20000));
+  // Sources à essayer, dans l'ordre. Sujet historique : films d'archives d'abord.
+  function sourcePlan(sc, historic) {
     const pex = brollOn && !pexelsBlocked;
-    const fallback = { video: ["video", "photo"], photo: ["photo", "video"], archive: ["archive"], film: ["film", "archive"] };
-    if (choice !== "auto") return SOURCES[choice].pexels && !pex ? ["archive"] : fallback[choice];
-    if (historic || isHistoric(`${sc.titre} ${sc.voix} ${sc.broll || ""}`)) return i % 2 ? ["archive", "film"] : ["film", "archive"];
-    return pex ? ["video", "photo", "archive"] : ["archive"];
+    if (state.mediaSource === "film" || !pex) return ["film"];
+    if (state.mediaSource === "video") return ["video"];
+    return historic || isHistoric(sc.voix) ? ["film", "video"] : ["video", "film"];
   }
-  // Ajoute un média aux scènes sans fond (au plus `limit` par passage), sans réutiliser deux fois le même.
-  async function autoBroll(limit, report) {
+  const MAX_CLIPS = 120; // vidéos différentes gardées en mémoire au plus
+  // Télécharge une vidéo pour les passages qui n'en ont pas (ou qui en réutilisent une), sans doublon.
+  // `limit` : nombre de téléchargements par passage. Les passages restants reprennent la vidéo voisine.
+  async function autoBroll(limit, report, { fresh = false } = {}) {
+    const avoid = new Set(fresh ? [...media.bg.values()].map((b) => b.key) : []);
+    if (fresh) for (const s of state.scenes) clearBackground(s);
     const used = new Set([...media.bg.values()].map((b) => b.key).filter(Boolean));
-    const historic = isHistoric(state.scenes.map((s) => `${s.titre} ${s.voix}`).join(" ").slice(0, 20000));
-    const todo = state.scenes.map((s, i) => ({ s, i })).filter(({ s }) => !media.bg.has(s.id) && keywords(s)).slice(0, limit);
+    const historic = historicScript();
+    const single = state.pace === "unique";
+    const room = Math.max(0, MAX_CLIPS - used.size);
+    const todo = state.scenes.map((s, i) => ({ s, i }))
+      .filter(({ s }) => { const b = media.bg.get(s.id); return (!b || b.reused) && keywords(s); })
+      .slice(0, single ? (used.size ? 0 : 1) : Math.min(limit, room));
     const searches = new Map();
     const find = (q, src) => {
       const k = src + "|" + q;
@@ -960,15 +747,15 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     let done = 0, fail = 0, lastErr = "";
     const worker = async () => {
       while (todo.length) {
-        const { s: sc, i } = todo.shift();
-        const q = keywords(sc);
+        const { s: sc } = todo.shift();
+        const q = single ? keywords({ voix: state.scenes.map((x) => x.voix).join(" ").slice(0, 400) }) : keywords(sc);
         let ok = false;
-        for (const src of sourcePlan(sc, i, historic)) {
-          if (SOURCES[src].pexels && pexelsBlocked) continue;
+        for (const src of sourcePlan(sc, historic)) {
+          if (src === "video" && pexelsBlocked) continue;
           try {
             // Films d'archives au-delà de 60 Mo laissés au choix manuel : trop lourds pour un ajout automatique.
             const items = (await find(q, src)).filter((m) => !(m.mb > 60));
-            const pick = items.find((m) => !used.has(m.key));
+            const pick = items.find((m) => !used.has(m.key) && !avoid.has(m.key)) || items.find((m) => !used.has(m.key));
             if (!pick) continue;
             used.add(pick.key);
             await setBackground(sc, await mediaDownload(pick), metaOf(pick));
@@ -980,12 +767,35 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
           }
         }
         if (ok) done++; else fail++;
-        report(`Images et vidéos : ${done} ajoutées${fail ? `, ${fail} sans résultat` : ""}…`);
+        report(`Vidéos réalistes : ${done} téléchargée(s)${fail ? `, ${fail} sans résultat` : ""}…`);
       }
     };
-    await Promise.all([worker(), worker(), worker()]);
+    await Promise.all(single ? [worker()] : [worker(), worker(), worker()]);
+    fillGaps();
     renderScenes();
-    return { done, fail, lastErr, left: state.scenes.filter((s) => !media.bg.has(s.id)).length };
+    const own = state.scenes.filter((s) => { const b = media.bg.get(s.id); return b && !b.reused; }).length;
+    return { done, fail, lastErr, reused: state.scenes.filter((s) => { const b = media.bg.get(s.id); return b && b.reused; }).length, own, empty: !media.bg.size };
+  }
+  // Chaque passage sans vidéo prolonge le plan du passage précédent : jamais d'écran vide.
+  function fillGaps() {
+    const { durs } = timeline();
+    let prev = null, prevEnd = 0;
+    state.scenes.forEach((s, i) => {
+      const b = media.bg.get(s.id);
+      if (b && !b.reused) { prev = b; prevEnd = (b.offset || 0) + durs[i]; return; }
+      if (!prev) return;
+      shareBackground(s, prev, prevEnd);
+      prevEnd += durs[i];
+    });
+    // Début de vidéo sans plan : on reprend le premier disponible.
+    const first = state.scenes.find((s) => media.bg.get(s.id));
+    if (!first) return;
+    let off = 0;
+    for (const s of state.scenes) {
+      if (media.bg.get(s.id)) break;
+      shareBackground(s, media.bg.get(first.id), off);
+      off += durs[state.scenes.indexOf(s)];
+    }
   }
 
   // Texte de crédits à coller dans la description : obligatoire pour les licences CC BY et CC BY-SA.
@@ -1046,34 +856,71 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     $("voice-file").value = ""; $("btn-voice-clear").hidden = true;
     persist(); renderScenes(); seek(0.3);
   }
-  // Une lecture par scène : la durée de chaque scène devient celle de sa phrase, plus une courte pause.
-  async function generateVoice(report) {
-    const V = await loadVoiceMod();
-    const id = state.voice.id, speed = Number(state.voice.speed) || 1;
-    const meta = V.VOICES.find((v) => v.id === id) || V.VOICES[0];
-    report(`Chargement de la voix ${meta.name}…`);
-    await V.loadVoice(meta.id, (p) => report(`Téléchargement de la voix ${meta.name} : ${Math.round(p * 100)} % (une seule fois, ${meta.mb} Mo)`));
-    const pause = state.aspect === "9:16" ? 0.25 : 0.45;
-    const parts = [];
-    let sr = 0;
-    const began = performance.now();
-    for (let i = 0; i < state.scenes.length; i++) {
-      const s = state.scenes[i];
-      let pcm = null;
-      if (s.voix && s.voix.trim()) {
-        const a = await V.speak(s.voix, meta.id, speed);
-        sr = a.sampleRate; pcm = toInt16(a.pcm);
-      }
-      parts.push(pcm);
-      const elapsed = (performance.now() - began) / 1000, p = (i + 1) / state.scenes.length;
-      report(`Voix : scène ${i + 1} sur ${state.scenes.length}` + (i > 2 ? ` · reste environ ${fmt(elapsed / p - elapsed)}` : ""));
-      await tick();
+  // ElevenLabs : MP3 décodé par le navigateur en échantillons mono.
+  const EL_RATE = 24000; // suffisant pour la parole, et deux fois moins de mémoire pour une vidéo de 2 h
+  async function elevenSpeak(text, ctxText = {}) {
+    let res;
+    try {
+      res = await fetch("/api/voix/elevenlabs", {
+        method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin",
+        body: JSON.stringify({ texte: text, voix: state.voice.elId, modele: state.voice.model, vitesse: Math.min(1.2, Number(state.voice.speed) || 1), ...ctxText }),
+      });
+    } catch (e) { throw { message: "Pas de connexion au serveur." }; }
+    if (res.status === 401) { location.href = "/connexion.html?e=expire"; throw { message: "Session expirée." }; }
+    if (!res.ok) {
+      let code = "voix_erreur";
+      try { code = (await res.json()).error || code; } catch (e) { /* corps vide */ }
+      throw { code, message: API_MSG[code] || "ElevenLabs n'a pas répondu (" + res.status + ")." };
     }
-    if (!sr) throw new Error("Aucune scène n'a de texte à lire.");
+    const ac = new OfflineAudioContext(1, 1, EL_RATE);
+    const buf = await ac.decodeAudioData(await res.arrayBuffer());
+    return { pcm: buf.getChannelData(0), sampleRate: buf.sampleRate };
+  }
+
+  // Une lecture par passage : la durée de chaque plan vidéo devient celle de sa phrase, plus une courte pause.
+  async function generateVoice(report) {
+    const eleven = state.voice.mode === "eleven";
+    let speakOne, name;
+    if (eleven) {
+      if (!elevenOn) throw new Error(API_MSG.voix_non_configuree);
+      if (!state.voice.elId) throw new Error("Choisis d'abord une voix ElevenLabs.");
+      name = `ElevenLabs ${state.voice.elName || ""}`.trim();
+      const list = state.scenes;
+      speakOne = (i) => elevenSpeak(list[i].voix, { avant: (list[i - 1] && list[i - 1].voix || "").slice(-300), apres: (list[i + 1] && list[i + 1].voix || "").slice(0, 300) });
+    } else {
+      const V = await loadVoiceMod();
+      const meta = V.VOICES.find((v) => v.id === state.voice.id) || V.VOICES[0];
+      report(`Chargement de la voix ${meta.name}…`);
+      await V.loadVoice(meta.id, (p) => report(`Téléchargement de la voix ${meta.name} : ${Math.round(p * 100)} % (une seule fois, ${meta.mb} Mo)`));
+      name = meta.name;
+      const speed = Number(state.voice.speed) || 1;
+      speakOne = (i) => V.speak(state.scenes[i].voix, meta.id, speed);
+    }
+    const pause = state.aspect === "9:16" ? 0.2 : 0.35;
+    const n = state.scenes.length;
+    const parts = new Array(n).fill(null);
+    let sr = 0, doneN = 0, next = 0;
+    const began = performance.now();
+    // Piper tourne dans cet onglet : un passage à la fois. ElevenLabs : deux requêtes en parallèle.
+    const worker = async () => {
+      while (next < n) {
+        const i = next++;
+        if (state.scenes[i].voix && state.scenes[i].voix.trim()) {
+          const a = await speakOne(i);
+          sr = a.sampleRate; parts[i] = toInt16(a.pcm);
+        }
+        doneN++;
+        const elapsed = (performance.now() - began) / 1000, p = doneN / n;
+        report(`Voix ${name} : ${Math.round(p * 100)} %` + (doneN > 2 ? ` · reste environ ${fmt(elapsed / p - elapsed)}` : ""));
+        await tick();
+      }
+    };
+    await Promise.all(eleven ? [worker(), worker()] : [worker()]);
+    if (!sr) throw new Error("Le script n'a pas de texte à lire.");
     const out = [];
     state.scenes.forEach((s, i) => {
       const pcm = parts[i];
-      const silence = Math.round(sr * (pcm ? pause : 2));
+      const silence = Math.round(sr * (pcm ? pause : 1));
       if (pcm) out.push(pcm);
       out.push(new Int16Array(silence));
       s.speech = pcm ? pcm.length / sr : 0;
@@ -1081,199 +928,127 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     });
     persist();
     await setVoiceFile(new File([wavBlob(out, sr)], "voix-bachir.wav", { type: "audio/wav" }), true);
-    return { seconds: timeline().total, voice: meta.name };
+    return { seconds: timeline().total, voice: name };
   }
 
   async function renderVoices() {
-    let V;
-    try { V = await loadVoiceMod(); } catch (e) {
-      $("voices").textContent = "Le moteur de voix ne se charge pas dans ce navigateur. Utilise Chrome ou Edge à jour, ou importe ta propre voix.";
-      state.voice.mode = "fichier"; $("own-voice").hidden = false; $("btn-voice").hidden = true; return;
-    }
     const box = $("voices");
     box.replaceChildren();
     const select = (mode, id) => {
-      state.voice.mode = mode; if (id) state.voice.id = id;
+      state.voice.mode = mode;
+      if (id && mode === "ia") state.voice.id = id;
       persist();
-      [...box.children].forEach((c) => c.setAttribute("aria-checked", String(c.dataset.mode === mode && (mode === "fichier" || c.dataset.id === state.voice.id))));
+      [...box.querySelectorAll(".voice")].forEach((c) => c.setAttribute("aria-checked", String(c.dataset.mode === mode && (mode === "fichier" || c.dataset.id === (mode === "eleven" ? state.voice.elId : state.voice.id)))));
       $("own-voice").hidden = mode !== "fichier";
       $("btn-voice").hidden = mode === "fichier";
+      $("el-opts").hidden = mode !== "eleven";
     };
-    for (const v of V.VOICES) {
-      const cached = await V.isCached(v.id);
-      const listen = el("button", { type: "button", class: "btn small listen", text: "▶ Écouter" });
-      const info = el("small", { text: cached ? "Prête sur cet ordinateur" : `${v.mb} Mo à télécharger une fois` });
-      const card = el("div", { class: "voice", role: "radio", tabindex: "0" },
-        el("b", { text: v.name }), el("small", { text: `${v.genre} · ${v.detail}` }), info, listen);
-      card.dataset.mode = "ia"; card.dataset.id = v.id;
-      card.addEventListener("click", (e) => { if (e.target !== listen) select("ia", v.id); });
-      card.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select("ia", v.id); } });
-      listen.addEventListener("click", async () => {
-        select("ia", v.id);
-        listen.disabled = true;
-        try {
-          await V.loadVoice(v.id, (p) => status("voice-status", `Téléchargement de ${v.name} : ${Math.round(p * 100)} %`));
-          status("voice-status", `Lecture de ${v.name}…`);
-          const a = await V.speak(V.SAMPLE_TEXT, v.id, Number(state.voice.speed) || 1);
-          new Audio(URL.createObjectURL(V.toWav([a.pcm], a.sampleRate))).play().catch(() => {});
-          info.textContent = "Prête sur cet ordinateur";
-          status("voice-status", "");
-        } catch (e) {
-          status("voice-status", "Impossible de charger cette voix : " + ((e && e.message) || "erreur") + ".", "warn");
-        } finally { listen.disabled = false; }
-      });
-      box.append(card);
+    const card = (mode, id, title, sub, info, onListen) => {
+      const kids = [el("b", { text: title }), el("small", { text: sub })];
+      if (info) kids.push(info);
+      let listen = null;
+      if (onListen) { listen = el("button", { type: "button", class: "btn small listen", text: "▶ Écouter" }); kids.push(listen); }
+      const c = el("div", { class: "voice" + (mode === "eleven" ? " el" : ""), role: "radio", tabindex: "0" }, ...kids);
+      c.dataset.mode = mode; if (id) c.dataset.id = id;
+      const pick = () => { if (mode === "eleven") { state.voice.elId = id; state.voice.elName = title; } select(mode, id); };
+      c.addEventListener("click", (e) => { if (e.target !== listen) pick(); });
+      c.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
+      if (listen) listen.addEventListener("click", async () => { pick(); listen.disabled = true; try { await onListen(); } finally { listen.disabled = false; } });
+      return c;
+    };
+    const play = (a) => new Audio(URL.createObjectURL(wavBlob([toInt16(a.pcm)], a.sampleRate))).play().catch(() => {});
+
+    // ElevenLabs en premier quand la clé est configurée : les voix les plus naturelles.
+    if (elevenOn) {
+      box.append(el("p", { class: "vgroup", text: "ElevenLabs · voix ultra-réalistes" }));
+      const wrap = el("div", { class: "voices-el" }, el("small", { class: "hint", text: "Chargement des voix ElevenLabs…" }));
+      box.append(wrap);
+      fetch("/api/voix/elevenlabs", { credentials: "same-origin" })
+        .then(async (r) => { const d = await r.json().catch(() => ({})); if (!r.ok) throw { message: API_MSG[d.error] || "Liste des voix ElevenLabs indisponible." }; return d.voices || []; })
+        .then((list) => {
+          wrap.replaceChildren(...list.map((v) => card("eleven", v.id, v.name, v.detail || (v.perso ? "Ta voix clonée" : "Voix ElevenLabs"), null, async () => {
+            status("voice-status", `Lecture de ${v.name}…`);
+            try { play(await elevenSpeak(V_SAMPLE)); status("voice-status", ""); }
+            catch (e) { status("voice-status", (e && e.message) || "Lecture impossible.", "warn"); }
+          })));
+          if (!list.length) wrap.textContent = "Aucune voix sur ton compte ElevenLabs : ajoute-en depuis la Voice Library.";
+          if (!state.voice.elId && list[0] && state.voice.mode === "eleven") { state.voice.elId = list[0].id; state.voice.elName = list[0].name; }
+          select(state.voice.mode, state.voice.mode === "ia" ? state.voice.id : null);
+        })
+        .catch((e) => { wrap.textContent = (e && e.message) || "Liste des voix ElevenLabs indisponible."; });
     }
-    const own = el("div", { class: "voice", role: "radio", tabindex: "0" }, el("b", { text: "Ma voix" }), el("small", { text: "Ton enregistrement : la voix la plus crédible" }));
-    own.dataset.mode = "fichier";
-    own.addEventListener("click", () => select("fichier"));
-    own.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select("fichier"); } });
-    box.append(own);
-    select(state.voice.mode, state.voice.id);
-  }
 
-  /* ---------------- Éditeur de scènes ---------------- */
-  let page = 0;
-  function focusScene(idx) {
-    if (playing || exporting) return;
-    const { starts, durs } = timeline();
-    if (idx >= starts.length) return;
-    seek(starts[idx] + Math.min(durs[idx] * 0.6, 2.5));
+    box.append(el("p", { class: "vgroup", text: "Voix gratuites · calculées sur ton ordinateur" }));
+    let V = null;
+    try { V = await loadVoiceMod(); } catch (e) {
+      box.append(el("small", { class: "hint", text: "Le moteur de voix gratuit ne se charge pas dans ce navigateur (Chrome ou Edge à jour requis)." }));
+    }
+    if (V) {
+      for (const v of V.VOICES) {
+        const cached = await V.isCached(v.id);
+        const info = el("small", { text: cached ? "Prête sur cet ordinateur" : `${v.mb} Mo à télécharger une fois` });
+        box.append(card("ia", v.id, v.name, `${v.genre} · ${v.detail}`, info, async () => {
+          try {
+            await V.loadVoice(v.id, (p) => status("voice-status", `Téléchargement de ${v.name} : ${Math.round(p * 100)} %`));
+            status("voice-status", `Lecture de ${v.name}…`);
+            play(await V.speak(V_SAMPLE, v.id, Number(state.voice.speed) || 1));
+            info.textContent = "Prête sur cet ordinateur";
+            status("voice-status", "");
+          } catch (e) {
+            status("voice-status", "Impossible de charger cette voix : " + ((e && e.message) || "erreur") + ".", "warn");
+          }
+        }));
+      }
+    }
+    box.append(card("fichier", null, "Ma voix", "Ton enregistrement : la voix la plus crédible"));
+    if (state.voice.mode === "eleven" && !elevenOn) state.voice.mode = V ? "ia" : "fichier";
+    if (state.voice.mode === "ia" && !V) state.voice.mode = "fichier";
+    select(state.voice.mode, state.voice.mode === "ia" ? state.voice.id : null);
   }
-  function changed(idx) {
-    state.example = false;
-    $("ex-badge").hidden = true;
-    persist();
-    refreshDerived();
-    if (idx != null) focusScene(idx); else seek(scrubTime());
-  }
-  const titleLabel = (type) => (type === "chiffre" ? "Chiffre ou valeur" : type === "citation" ? "Citation" : "Titre à l'écran");
-  const texteLabel = (type) => (type === "citation" ? "Auteur" : "Texte à l'écran");
+  const V_SAMPLE = "Salut ! Voici la voix que tu as choisie pour ta prochaine vidéo.";
 
+  /* ---------------- Panneau Vidéos : état global et vidéo du moment ---------------- */
   function renderScenes() {
-    const list = $("scenes");
-    list.replaceChildren();
-    list.classList.toggle("land", state.aspect === "16:9");
-    const pages = Math.max(1, Math.ceil(state.scenes.length / PAGE));
-    page = clamp(page, 0, pages - 1);
-    const from = page * PAGE, to = Math.min(state.scenes.length, from + PAGE);
-    const { durs } = timeline();
-    for (let i = from; i < to; i++) {
-      const s = state.scenes[i];
-      const id = (f) => `sc-${s.id}-${f}`;
-      const bg = media.bg.get(s.id);
-
-      const thumb = el("div", { class: "thumb" });
-      const arch = bg && bg.credit && bg.credit.src === "wikimedia";
-      if (bg && bg.kind === "image") thumb.append(el("img", { src: bg.url, alt: "" }), el("span", { class: "tag", text: arch ? "Archive" : "Image" }));
-      else if (bg) thumb.append(el("video", { src: bg.url, muted: true, playsInline: true, preload: "metadata" }), el("span", { class: "tag", text: arch ? "Film d'archives" : "Vidéo" }));
-      if (bg && bg.credit) thumb.title = bg.credit.src === "pexels" ? `${bg.credit.kind} de ${bg.credit.author} sur Pexels` : `${bg.credit.title} · ${bg.credit.author} · ${bg.credit.license}`;
-      else thumb.append(el("span", { text: "Pas de fond" }));
-
-      const typeSel = el("select", { id: id("type"), "aria-label": `Type de la scène ${i + 1}` },
-        Object.entries(TYPES).map(([v, t]) => el("option", { value: v, text: t.label, selected: v === s.type })));
-      const durLab = el("span", { class: "dur", text: `${(durs[i] || 0).toFixed(1)} s` });
-      const up = el("button", { type: "button", class: "icon-btn", text: "↑", "aria-label": "Monter la scène", disabled: i === 0 });
-      const down = el("button", { type: "button", class: "icon-btn", text: "↓", "aria-label": "Descendre la scène", disabled: i === state.scenes.length - 1 });
-      const del = el("button", { type: "button", class: "icon-btn", text: "×", "aria-label": "Supprimer la scène" });
-
-      const titre = el("input", { type: "text", id: id("titre"), value: s.titre || "" });
-      const titreLab = el("label", { class: "f" }, el("span", { text: titleLabel(s.type) }), titre);
-      const texte = el("input", { type: "text", id: id("texte"), value: s.texte || "" });
-      const texteLab = el("label", { class: "f" }, el("span", { text: texteLabel(s.type) }), texte);
-      const items = el("textarea", { id: id("items"), rows: 3 });
-      items.value = (s.items || []).join("\n");
-      const itemsLab = el("label", { class: "f" }, el("span", { text: "Points (un par ligne, 5 max)" }), items);
-      itemsLab.hidden = s.type !== "liste";
-      const voix = el("textarea", { id: id("voix"), rows: 2 });
-      voix.value = s.voix || "";
-      const voixLab = el("label", { class: "f" }, el("span", { text: "Voix off et sous-titres" }), voix);
-
-      const file = el("input", { type: "file", id: id("bg"), accept: "image/*,video/*", "aria-label": "Image ou vidéo de fond" });
-      const kw = el("input", { type: "text", id: id("kw"), value: s.broll || "", placeholder: keywords({ ...s, broll: "" }) || "mots-clés (ex. WW2 artillery)", "aria-label": "Mots-clés de recherche" });
-      const srcSel = el("select", { id: id("src"), "aria-label": `Source des médias de la scène ${i + 1}` },
-        el("option", { value: "", text: "Source : réglage général", selected: !SOURCES[s.src] }),
-        Object.entries(SOURCES).filter(([v]) => v !== "auto").map(([v, o]) => el("option", { value: v, text: o.pexels && !brollOn ? `${o.label} : clé requise` : o.label, disabled: o.pexels && !brollOn, selected: v === s.src })));
-      const search = el("button", { type: "button", class: "btn small", text: "Chercher" });
-      const rm = el("button", { type: "button", class: "btn small ghost", text: "Retirer le fond", hidden: !bg });
-      const results = el("div", { class: "results", hidden: true });
-      const mediaRow = el("div", { class: "media" }, file, kw, srcSel, search, rm);
-
-      const card = el("article", { class: "scene" }, thumb,
-        el("div", { class: "body" },
-          el("div", { class: "head" }, el("span", { class: "n", text: `Scène ${i + 1}` }), typeSel, durLab, el("div", { class: "tools" }, up, down, del)),
-          titreLab, texteLab, itemsLab, voixLab, mediaRow, results));
-      card.addEventListener("focusin", () => focusScene(i));
-
-      typeSel.addEventListener("change", () => {
-        s.type = typeSel.value;
-        itemsLab.hidden = s.type !== "liste";
-        titreLab.firstChild.textContent = titleLabel(s.type);
-        texteLab.firstChild.textContent = texteLabel(s.type);
-        changed(i);
-      });
-      titre.addEventListener("input", () => { s.titre = titre.value; changed(i); });
-      texte.addEventListener("input", () => { s.texte = texte.value; changed(i); });
-      items.addEventListener("input", () => { s.items = items.value.split("\n").map((x) => x.trim()).filter(Boolean).slice(0, 5); changed(i); });
-      voix.addEventListener("input", () => {
-        s.voix = voix.value;
-        if (media.voiceTts) status("voice-status", "Le texte a changé : clique sur « Générer la voix » pour la mettre à jour.", "warn");
-        changed(null);
-      });
-      kw.addEventListener("input", () => { s.broll = kw.value; persist(); });
-      srcSel.addEventListener("change", () => { if (srcSel.value) s.src = srcSel.value; else delete s.src; persist(); });
-      file.addEventListener("change", async () => {
-        const f = file.files && file.files[0];
-        if (!f) return;
-        try { await setBackground(s, f); renderScenes(); focusScene(i); }
-        catch (e) { status("broll-note", e.message, "warn"); }
-      });
-      rm.addEventListener("click", () => { clearBackground(s); renderScenes(); focusScene(i); });
-      search.addEventListener("click", async () => {
-        const q = keywords(s);
-        if (!q) return;
-        const src = sourcePlan(s, i, isHistoric(state.scenes.map((x) => `${x.titre} ${x.voix}`).join(" ").slice(0, 20000)))[0];
-        search.disabled = true; results.hidden = false; results.textContent = `Recherche : ${SOURCES[src].label}…`;
-        try {
-          const found = await mediaSearch(q, src);
-          results.replaceChildren(...found.map((m) => {
-            const c = m.credit;
-            const tip = c.src === "pexels" ? `${c.kind} de ${c.author} sur Pexels` : `${c.title} · ${c.author} · ${c.license}${m.mb ? ` · environ ${Math.ceil(m.mb)} Mo` : ""}`;
-            const img = el("img", { src: m.image, alt: `${c.title || q}`, loading: "lazy" });
-            if (m.fallback) img.addEventListener("error", () => { if (img.src !== m.fallback) img.src = m.fallback; }, { once: true });
-            const tags = [];
-            if (m.kind === "video") tags.push(el("span", { class: "rtag", text: `▶${m.dur ? " " + fmt(m.dur) : ""}` }));
-            if (c.src === "wikimedia") tags.push(el("span", { class: "rlic" + (isFree(c.license) ? " free" : ""), text: isFree(c.license) ? "Dom. public" : c.license }));
-            const b = el("button", { type: "button", title: tip }, img, ...tags);
-            b.addEventListener("click", async () => {
-              results.textContent = m.mb > 60 ? `Téléchargement du film (environ ${Math.ceil(m.mb)} Mo), patiente…` : "Téléchargement…";
-              try { await setBackground(s, await mediaDownload(m), metaOf(m)); renderScenes(); focusScene(i); }
-              catch (e) { results.textContent = e.message; }
-            });
-            return b;
-          }));
-          if (!found.length) results.textContent = src === "archive" || src === "film"
-            ? "Aucune archive : essaie des mots-clés en anglais (ex. « WW2 artillery », « 1960 Africa independance »)."
-            : "Aucun résultat : essaie d'autres mots-clés (en français ou en anglais).";
-        } catch (e) { results.textContent = (e && e.message) || "Recherche impossible."; }
-        finally { search.disabled = false; }
-      });
-      up.addEventListener("click", () => { [state.scenes[i - 1], state.scenes[i]] = [state.scenes[i], state.scenes[i - 1]]; persist(); renderScenes(); changed(i - 1); });
-      down.addEventListener("click", () => { [state.scenes[i + 1], state.scenes[i]] = [state.scenes[i], state.scenes[i + 1]]; persist(); renderScenes(); changed(i + 1); });
-      del.addEventListener("click", () => { clearBackground(s); state.scenes.splice(i, 1); persist(); renderScenes(); changed(null); });
-
-      list.append(card);
-    }
-    $("pager").hidden = pages < 2;
-    $("pg-info").textContent = `Scènes ${state.scenes.length ? from + 1 : 0} à ${to} sur ${state.scenes.length}`;
-    $("pg-prev").disabled = page === 0;
-    $("pg-next").disabled = page >= pages - 1;
-    $("ex-badge").hidden = !state.example;
+    const n = state.scenes.length;
+    const own = new Set(), reused = state.scenes.filter((s) => { const b = media.bg.get(s.id); if (b && !b.reused) own.add(b.key || b.url); return b && b.reused; }).length;
     const missing = state.scenes.filter((s) => !media.bg.has(s.id)).length;
-    $("broll-note").textContent = `${missing} scène(s) sans fond` + (brollOn ? "" : " · archives Wikimedia actives ; vidéos et photos modernes : clé Pexels à ajouter sur le serveur");
+    let note;
+    if (!n) note = "Les vidéos sont choisies automatiquement quand tu génères ta vidéo.";
+    else if (!media.bg.size) note = "Aucune vidéo pour l'instant : clique sur « Trouver les vidéos ».";
+    else note = `${own.size} vidéo(s) réaliste(s) différente(s)` + (state.pace === "unique" ? ", un seul plan du début à la fin." : reused ? `, certaines prolongées sur ${reused} passage(s) : « Plus de variété » en ajoute.` : ", une par passage.") + (missing ? ` ${missing} passage(s) sans vidéo.` : "");
+    if (!brollOn) note += " Vidéos modernes (gens, objets, interviews) : ajoute la clé Pexels sur le serveur ; en attendant, seuls les films d'archives sont disponibles.";
+    $("broll-note").textContent = note;
+    $("btn-broll-more").hidden = !n || state.pace === "unique";
     refreshDerived();
     updateTimes(scrubTime());
+    renderMoment(true);
   }
+
+  // Vidéo à l'endroit de la tête de lecture : remplaçable par une recherche ou par ta propre vidéo.
+  let momentIdx = -1, momentTimer = null;
+  function renderMoment(force = false) {
+    if (!state.scenes.length) { $("moment").hidden = true; return; }
+    const i = sceneAt(scrubTime());
+    if (i === momentIdx && !force) return;
+    momentIdx = i;
+    $("moment").hidden = false;
+    const s = state.scenes[i], bg = bgFor(i);
+    const { starts } = timeline();
+    $("cur-time").textContent = fmt(starts[i]);
+    $("cur-text").textContent = "« " + String(s.voix || s.titre || "").slice(0, 140) + (String(s.voix || "").length > 140 ? "… »" : " »");
+    const th = $("cur-thumb");
+    th.replaceChildren();
+    if (bg) {
+      th.append(el("video", { src: bg.url, muted: true, playsInline: true, preload: "metadata" }));
+      const c = bg.credit;
+      th.title = c ? (c.src === "pexels" ? `Vidéo de ${c.author} sur Pexels` : `${c.title} · ${c.author} · ${c.license}`) : "Ta vidéo";
+      th.append(el("span", { class: "tag", text: c && c.src === "wikimedia" ? "Archive" : c ? "Pexels" : "Ta vidéo" }));
+    } else th.append(el("span", { text: "Pas de vidéo" }));
+    $("cur-kw").value = s.broll || "";
+    $("cur-kw").placeholder = keywords({ ...s, broll: "" }) || "mots-clés (ex. WW2 artillery)";
+    $("cur-results").hidden = true;
+  }
+  const momentLater = () => { clearTimeout(momentTimer); momentTimer = setTimeout(() => { if (!playing && !exporting) renderMoment(); }, 200); };
 
   /* ---------------- Textes dérivés : prompteur, chapitres, plage d'export ---------------- */
   function hms(s) {
@@ -1310,7 +1085,8 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     for (const id of ["rg-from", "rg-to"]) {
       const sel = $(id);
       const prev = sel.value;
-      sel.replaceChildren(...state.scenes.map((s, i) => el("option", { value: String(i), text: `${i + 1}. ${String(s.titre || TYPES[s.type].label).slice(0, 40)}` })));
+      const { starts } = timeline();
+      sel.replaceChildren(...state.scenes.map((s, i) => el("option", { value: String(i), text: `${fmt(starts[i])} · ${String(s.voix || s.titre).slice(0, 42)}` })));
       if (prev && Number(prev) < n) sel.value = prev;
       else sel.value = id === "rg-from" ? "0" : String(Math.max(0, n - 1));
     }
@@ -1339,34 +1115,28 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     const t = TEMPLATES[id];
     if (!t) return;
     state.template = id;
-    state.brand.primary = t.accent; state.brand.dark = t.bg;
-    $("br-primary").value = t.accent; $("br-dark").value = t.bg;
-    fitCache.clear();
+    state.brand.primary = t.accent;
+    $("br-primary").value = t.accent;
     persist();
     [...$("tpls").children].forEach((c) => c.setAttribute("aria-checked", String(c.dataset.id === id)));
     seek(scrubTime());
   }
+  // Aperçu du style de sous-titres sur un fond façon vidéo.
   function renderTemplates() {
     const box = $("tpls");
     box.replaceChildren();
     for (const [id, t] of Object.entries(TEMPLATES)) {
-      const font = t.title === "serif" ? "'Playfair Display', Georgia, serif" : t.title === "body" ? "Barlow, sans-serif" : "'Barlow Condensed', sans-serif";
       const prev = el("span", { class: "tprev" });
-      prev.style.background = t.gradient ? `linear-gradient(160deg, ${t.gradient[0]}, ${t.gradient[1]})` : t.bg;
-      prev.style.textAlign = t.align;
-      const title = el("span", { class: "ttitle", text: t.upper ? "TON TITRE" : "Ton titre" });
-      title.style.color = t.fg; title.style.fontFamily = font; title.style.fontWeight = t.title === "body" ? "700" : "800";
-      if (t.glow) title.style.textShadow = `0 0 10px ${t.accent}`;
       const cap = el("span", { class: "tcap" });
       const w1 = el("span", { text: t.capUpper ? "LE MOT " : "le mot " });
       const w2 = el("span", { text: t.capUpper ? "SURLIGNÉ" : "surligné" });
-      w1.style.color = t.caption === "classic" ? "#fff" : t.fg;
+      w1.style.color = "#fff";
       if (t.caption === "box") { w2.style.background = t.accent; w2.style.color = t.ink; w2.style.padding = "0 3px"; w2.style.borderRadius = "3px"; }
       else { w2.style.color = t.accent; if (t.caption === "glow") w2.style.textShadow = `0 0 8px ${t.accent}`; }
       if (t.caption === "classic") { cap.style.background = "rgba(0,0,0,.6)"; cap.style.padding = "2px 6px"; cap.style.borderRadius = "4px"; }
       cap.append(w1, w2);
-      prev.append(title, cap);
-      const card = el("button", { type: "button", class: "tpl", role: "radio", title: `Modèle ${t.name}` }, prev, el("span", { class: "tname", text: t.name }));
+      prev.append(cap);
+      const card = el("button", { type: "button", class: "tpl", role: "radio", title: `Sous-titres ${t.name}` }, prev, el("span", { class: "tname", text: t.name }));
       card.dataset.id = id;
       card.setAttribute("aria-checked", String(id === state.template));
       card.addEventListener("click", () => applyTemplate(id));
@@ -1374,7 +1144,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     }
     const sel = $("s-model");
     sel.replaceChildren(el("option", { value: "", text: "Choisir une structure…" }),
-      ...Object.entries(SCRIPT_TEMPLATES).map(([id, m]) => el("option", { value: id, text: `${m.name} · ${TEMPLATES[m.tpl].name} · ${m.aspect === "9:16" ? "Short" : "Long"}` })));
+      ...Object.entries(SCRIPT_TEMPLATES).map(([id, m]) => el("option", { value: id, text: `${m.name} · ${m.aspect === "9:16" ? "Short" : "Long"}` })));
   }
   $("btn-model").addEventListener("click", () => {
     const m = SCRIPT_TEMPLATES[$("s-model").value];
@@ -1385,7 +1155,6 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     $("s-script").value = m.text;
     applyTemplate(m.tpl);
     setAspect(m.aspect);
-    renderScenes();
     persist();
     status("script-status", `Modèle « ${m.name} » chargé. Remplace chaque partie entre [crochets] par ton contenu, puis clique sur « Générer ma vidéo ».`, "ok");
     $("s-script").focus();
@@ -1401,21 +1170,23 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     $("b-sujet").addEventListener("input", (e) => { b.sujet = e.target.value; persist(); });
 
     const br = state.brand;
-    $("br-nom").value = br.nom; $("br-serie").value = br.serie; $("br-cta").value = br.cta;
-    $("br-primary").value = br.primary; $("br-dark").value = br.dark;
+    $("br-primary").value = br.primary;
     $("subs").checked = !!br.subs;
     $("subs").addEventListener("change", (e) => { br.subs = e.target.checked; persist(); seek(scrubTime()); });
     $("s-script").value = state.script;
     $("s-script").addEventListener("input", (e) => { state.script = e.target.value; persist(); });
-    $("s-ai").checked = state.useAi;
-    $("s-ai").addEventListener("change", (e) => { state.useAi = e.target.checked; persist(); });
-    $("s-auto-broll").checked = state.autoBroll;
     $("s-source").value = state.mediaSource;
     $("s-source").addEventListener("change", (e) => { state.mediaSource = e.target.value; persist(); });
-    $("s-auto-broll").addEventListener("change", (e) => { state.autoBroll = e.target.checked; persist(); });
+    $("s-pace").value = state.pace;
+    $("s-pace").addEventListener("change", (e) => {
+      state.pace = e.target.value; persist();
+      status("broll-note", "Rythme changé : clique sur « Générer ma vidéo » pour remonter la vidéo à ce rythme.");
+    });
+    $("el-model").value = state.voice.model;
+    $("el-model").addEventListener("change", (e) => { state.voice.model = e.target.value; persist(); });
     $("v-speed").value = state.voice.speed;
     $("v-speed").addEventListener("change", (e) => { state.voice.speed = e.target.value; persist(); });
-    [["br-nom", "nom"], ["br-serie", "serie"], ["br-cta", "cta"], ["br-primary", "primary"], ["br-dark", "dark"]].forEach(([id, key]) =>
+    [["br-primary", "primary"]].forEach(([id, key]) =>
       $(id).addEventListener("input", (e) => { br[key] = e.target.value; persist(); seek(scrubTime()); }));
     $("br-logo").addEventListener("change", (e) => {
       const f = e.target.files && e.target.files[0];
@@ -1430,8 +1201,6 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     $("rg-all").addEventListener("change", rangeInfo);
     $("rg-from").addEventListener("change", rangeInfo);
     $("rg-to").addEventListener("change", rangeInfo);
-    $("pg-prev").addEventListener("click", () => { page--; renderScenes(); $("h-scenes").scrollIntoView(); });
-    $("pg-next").addEventListener("click", () => { page++; renderScenes(); $("h-scenes").scrollIntoView(); });
   }
   function setAspect(a) {
     state.aspect = a;
@@ -1440,123 +1209,84 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     $("stage").classList.toggle("land", land);
     $("ar-portrait").setAttribute("aria-pressed", String(!land));
     $("ar-land").setAttribute("aria-pressed", String(land));
-    $("scenes").classList.toggle("land", land);
-    fitCache.clear();
+    $("moment").classList.toggle("land", land);
     persist();
     rangeInfo();
     seek(scrubTime());
   }
 
-  /* ---------------- Découpage du script ---------------- */
+  /* ---------------- Découpage du script en passages (un plan vidéo par passage) ---------------- */
   const BULLET = /^([-•*–]|\d+[.)])\s+/;
-  const NUMBER_LEAD = /^(\d[\d\s.,]*\s?(?:%|ans|fois|jours|heures|minutes|millions?|milliards?|k|m|€|fcfa|\$)?)\s+(.+)$/i;
-  function shorten(s, n) {
-    s = String(s || "").trim();
-    if (s.length <= n) return s;
-    const cut = s.slice(0, n), sp = cut.lastIndexOf(" ");
-    return cut.slice(0, sp > n * 0.5 ? sp : n).replace(/[,;:]$/, "") + "…";
-  }
-  function sameWords(a, b) { const x = wordsOf(a), y = wordsOf(b); return x.length === y.length && x.every((w, i) => w === y[i]); }
-  function durFor(voix) { return clamp(Math.round(wordsOf(voix).length / 2.5 + 1), 3, 60); }
-  function firstSentence(s) { return (String(s).match(/^[^.!?…:]+[.!?…:]?/) || [s])[0].replace(/[.:]$/, ""); }
   function normalize(out) {
     const arr = out && Array.isArray(out.scenes) ? out.scenes : [];
     return arr.slice(0, 200).map((s) => ({
-      id: uid(),
       type: TYPES[s && s.type] ? s.type : "texte",
       titre: String((s && s.titre) || "").slice(0, 120),
-      texte: String((s && s.texte) || "").slice(0, 240),
       items: Array.isArray(s && s.items) ? s.items.map((x) => String(x).slice(0, 60)).filter(Boolean).slice(0, 5) : [],
       voix: String((s && s.voix) || "").slice(0, 2000),
-      broll: "",
-      duree: clamp(Math.round(Number(s && s.duree) || 6), 1, 120),
     }));
   }
-
-  // Une scène par paragraphe ; les longs paragraphes sont coupés en scènes d'environ 30 mots.
-  // Repères : « # » titre, « ## » chapitre, « > » citation, « - » liste.
-  function localSplit(text) {
-    const raw = String(text).replace(/\r/g, "").trim();
+  const durFor = (voix) => clamp(Math.round(wordsOf(voix).length / 2.6 + 0.6), 2, 60);
+  // Tout le script est lu. Les repères (#, ##, >, -) sont retirés ; « ## » marque un chapitre YouTube.
+  function segmentScript(text) {
+    const raw = String(text || "").replace(/\r/g, "").trim();
     if (!raw) return [];
+    const target = (PACES[state.pace] || PACES.normal).words;
     const blocks = [];
     let para = [];
-    const flush = () => { if (para.length) { blocks.push(para.join("\n")); para = []; } };
+    const flush = () => { if (para.length) { blocks.push({ text: para.join(" ") }); para = []; } };
     for (const line of raw.split("\n")) {
       const l = line.trim();
       if (!l) { flush(); continue; }
-      if (/^#{1,3}\s+/.test(l)) { flush(); blocks.push(l); continue; }
-      para.push(l);
+      const h = /^(#{1,3})\s+(.*)$/.exec(l);
+      if (h) { flush(); blocks.push({ text: h[2].trim(), chapter: h[1] === "##", heading: true }); continue; }
+      let x = l.replace(/^>\s?/, "");
+      if (BULLET.test(x)) { x = x.replace(BULLET, ""); if (!/[.,;:!?…]$/.test(x)) x += "."; }
+      para.push(x);
     }
     flush();
-    const scenes = [];
-    const push = (s) => scenes.push({ id: uid(), texte: "", items: [], broll: "", ...s });
-    blocks.forEach((b) => {
-      const lines = b.split("\n");
-      const h = /^(#{1,3})\s+(.*)$/.exec(lines[0]);
-      if (h) {
-        push({ type: h[1] === "#" ? "titre" : "chapitre", titre: h[2].trim(), voix: "", duree: 3 });
-        return;
+    const out = [];
+    for (const b of blocks) {
+      let t = b.text.replace(/\s+[—–-]\s+([^—–-]+)$/, ", $1.");
+      if (b.heading && !/[.!?…:]$/.test(t)) t += ".";
+      const sentences = (t.match(/[^.!?…]+[.!?…]+["»”]?|[^.!?…]+$/g) || [t]).map((x) => x.trim()).filter(Boolean);
+      // Phrases regroupées jusqu'au rythme choisi ; une phrase trop longue est coupée aux virgules.
+      const pieces = [];
+      for (const sen of sentences) {
+        if (wordsOf(sen).length <= target * 1.6) { pieces.push(sen); continue; }
+        let cur = "";
+        for (const part of sen.split(/(?<=[,;:])\s+/)) {
+          if (cur && wordsOf(cur + " " + part).length > target) { pieces.push(cur); cur = part; } else cur = cur ? cur + " " + part : part;
+        }
+        if (cur) pieces.push(cur);
       }
-      if (lines.every((l) => l.startsWith(">"))) {
-        const q = lines.map((l) => l.replace(/^>\s?/, "")).join(" ");
-        const m = /^(.*?)\s+[—–-]\s+([^—–-]+)$/.exec(q);
-        push({ type: "citation", titre: m ? m[1] : q, texte: m ? m[2] : "", voix: m ? m[1] : q, duree: durFor(q) });
-        return;
-      }
-      const bullets = lines.filter((l) => BULLET.test(l)).map((l) => l.replace(BULLET, ""));
-      if (bullets.length >= 2) {
-        const head = lines.filter((l) => !BULLET.test(l)).join(" ");
-        const voix = lines.map((l) => { const x = l.replace(BULLET, ""); return BULLET.test(l) && !/[.,;:!?…]$/.test(x) ? x + "." : x; }).join(" ");
-        push({ type: "liste", titre: shorten(head.replace(/:$/, "") || "À retenir", 60), items: bullets.slice(0, 5).map((x) => shorten(x, 50)), voix, duree: durFor(voix) });
-        return;
-      }
-      const text = lines.join(" ");
-      const sentences = (text.match(/[^.!?…]+[.!?…]+["»”]?|[^.!?…]+$/g) || [text]).map((x) => x.trim()).filter(Boolean);
-      const parts = [];
       let cur = "";
-      for (const s of sentences) {
-        if (cur && wordsOf(cur + " " + s).length > 30) { parts.push(cur); cur = s; } else cur = cur ? cur + " " + s : s;
+      const first = out.length;
+      for (const pc of pieces) {
+        if (cur && wordsOf(cur + " " + pc).length > target) { out.push(cur); cur = pc; } else cur = cur ? cur + " " + pc : pc;
       }
-      if (cur) parts.push(cur);
-      parts.forEach((p) => {
-        const num = wordsOf(p).length <= 30 ? NUMBER_LEAD.exec(p) : null;
-        if (num) push({ type: "chiffre", titre: num[1].trim(), texte: shorten(num[2], 110), voix: p, duree: durFor(p) });
-        else push({ type: "texte", titre: shorten(firstSentence(p), 70), voix: p, duree: durFor(p) });
-      });
-    });
-    if (scenes.length && scenes[0].type === "texte") scenes[0].type = "titre";
-    const last = scenes[scenes.length - 1];
-    if (last && last.type === "texte" && /(\?|abonne|commentaire|partage)/i.test(last.voix)) last.type = "cta";
-    if (scenes.length > 1 && scenes[0].type === "titre" && !scenes[0].voix && scenes[1].type === "texte") {
-      scenes[0].texte = shorten(scenes[1].voix, 110);
-      scenes[0].voix = scenes[1].voix;
-      scenes[0].duree = scenes[1].duree;
-      scenes.splice(1, 1);
+      if (cur) out.push(cur);
+      for (let j = first; j < out.length; j++) {
+        out[j] = { id: uid(), type: b.chapter && j === first ? "chapitre" : "texte", titre: b.heading ? b.text : "", voix: out[j], ctx: b.text.slice(0, 300), broll: "", duree: durFor(out[j]) };
+      }
     }
-    return scenes.slice(0, 3000);
+    return out.slice(0, 4000);
   }
 
-  async function buildScenes() {
+  function buildScenes() {
     const text = String(state.script || "").trim();
     if (!text) throw new Error("Colle d'abord ton script.");
-    let scenes = null, note = "", viaIa = false;
-    if (state.useAi && iaOn && text.length <= 12000) {
-      try {
-        scenes = normalize(await api("/api/decoupe", { script: text }));
-        scenes.forEach((s) => { s.duree = s.voix ? durFor(s.voix) : 3; });
-        if (!scenes.length) scenes = null; else viaIa = true;
-      } catch (e) {
-        note = " " + ((e && e.message) || "L'IA n'a pas répondu.") + " Découpage automatique.";
-      }
-    }
-    if (!scenes) scenes = localSplit(text);
-    for (const s of state.scenes) clearBackground(s);
+    const scenes = segmentScript(text);
+    // Les vidéos déjà téléchargées sont gardées et redistribuées sur les nouveaux passages.
+    const keep = [...new Map([...media.bg.values()].filter((b) => !b.reused).map((b) => [b.url, b])).values()];
+    for (const s of state.scenes) media.bg.delete(s.id);
     if (media.voiceFile) clearVoice();
-    state.scenes = scenes; state.example = false; page = 0;
-    persist(); renderScenes(); seek(1.2);
-    const clean = (s) => s.split("\n").map((l) => l.trim().replace(BULLET, "").replace(/^#{1,3}\s+.*$/, "").replace(/^>\s?/, "")).join(" ");
-    const same = !viaIa || sameWords(clean(text), scenes.map((s) => s.voix).join(" "));
-    return { count: scenes.length, note: note + (same ? "" : " Vérifie la voix de chaque scène : elle ne reprend pas ton script mot pour mot.") };
+    state.scenes = scenes;
+    if (state.pace === "unique") keep.splice(1);
+    keep.slice(0, scenes.length).forEach((b, j) => media.bg.set(scenes[Math.floor((j * scenes.length) / keep.length)].id, { ...b, reused: false }));
+    for (const b of keep.slice(scenes.length)) { URL.revokeObjectURL(b.url); b.el.pause(); }
+    persist(); seek(0.5);
+    return scenes.length;
   }
 
   const stepState = (id, cls) => { $(id).className = cls; };
@@ -1568,34 +1298,29 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     const report = (m) => status("script-status", m);
     const notes = [];
     try {
-      stepState("st-scenes", "run"); report("Découpage du script…");
-      const r = await buildScenes();
-      if (r.note) notes.push(r.note.trim());
+      stepState("st-scenes", "run"); report("Préparation du texte…");
+      buildScenes();
       stepState("st-scenes", "done");
 
-      if (state.voice.mode === "ia") {
+      if (state.voice.mode !== "fichier") {
         stepState("st-voice", "run");
         const v = await generateVoice(report);
         stepState("st-voice", "done");
         notes.push(`Voix ${v.voice} : ${fmt(v.seconds)}.`);
       } else {
         stepState("st-voice", "skip");
-        notes.push("Importe ton enregistrement dans « Voix » : les scènes se caleront dessus.");
+        notes.push("Importe ton enregistrement dans « Voix » : la vidéo se calera dessus.");
       }
 
-      if (state.autoBroll) {
-        stepState("st-broll", "run");
-        const b = await autoBroll(40, report);
-        stepState("st-broll", "done");
-        notes.push(`${b.done} image(s) et vidéo(s) ajoutées${b.left ? `, ${b.left} scène(s) sans fond (relance « Trouver les médias manquants » ou importe les tiens)` : ""}.`);
-        if (!b.done && b.lastErr) notes.push(b.lastErr);
-        if (state.scenes.some((s) => { const x = media.bg.get(s.id); return x && x.credit && !isFree(x.credit.license) && x.credit.src === "wikimedia"; }))
-          notes.push("Certaines archives exigent un crédit : copie-le depuis « Publication YouTube ».");
-      } else {
-        stepState("st-broll", "skip");
-      }
+      stepState("st-broll", "run");
+      const b = await autoBroll(40, report);
+      stepState("st-broll", "done");
+      if (b.empty) notes.push("Aucune vidéo trouvée" + (b.lastErr ? ` (${b.lastErr})` : "") + " : change de source ou importe ta vidéo dans l'étape 3.");
+      else if (b.reused && state.pace !== "unique") notes.push("Clique sur « Plus de variété » pour remplacer les plans prolongés.");
+      if (state.scenes.some((s) => { const x = media.bg.get(s.id); return x && x.credit && x.credit.src === "wikimedia" && !isFree(x.credit.license); }))
+        notes.push("Certaines archives exigent un crédit : copie-le depuis « Publication YouTube ».");
       seek(0.3);
-      status("script-status", `Vidéo prête : ${state.scenes.length} scènes, ${fmt(timeline().total)}. ${notes.join(" ")} Vérifie l'aperçu, puis exporte.`, "ok");
+      status("script-status", `Vidéo prête : ${fmt(timeline().total)}. ${notes.join(" ")} Vérifie l'aperçu, puis exporte.`, b.empty ? "warn" : "ok");
     } catch (e) {
       ["st-scenes", "st-voice", "st-broll"].forEach((id) => { if ($(id).className === "run") stepState(id, ""); });
       status("script-status", (e && e.message) || "La génération a échoué.", "warn");
@@ -1606,11 +1331,12 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
 
   $("btn-voice").addEventListener("click", async () => {
     const btn = $("btn-voice");
-    if (!state.scenes.length) { status("voice-status", "Crée d'abord les scènes à partir de ton script.", "warn"); return; }
+    if (!state.scenes.length) { try { buildScenes(); } catch (e) { status("voice-status", e.message, "warn"); return; } }
     btn.disabled = true;
     try {
       const v = await generateVoice((m) => status("voice-status", m));
-      status("voice-status", `Voix ${v.voice} générée : ${fmt(v.seconds)}. Les scènes sont calées dessus.`, "ok");
+      fillGaps(); renderScenes();
+      status("voice-status", `Voix ${v.voice} générée : ${fmt(v.seconds)}. Les vidéos sont calées dessus.`, "ok");
     } catch (e) {
       status("voice-status", "La voix n'a pas pu être générée : " + ((e && e.message) || "erreur") + ".", "warn");
     } finally { btn.disabled = false; }
@@ -1621,7 +1347,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     if (!f) return;
     state.scenes.forEach((s) => { delete s.speech; });
     await setVoiceFile(f, false);
-    status("voice-status", `${f.name} · ${fmt(voiceEl.duration || 0)}. Les scènes sont calées proportionnellement sur ta voix.`, "ok");
+    status("voice-status", `${f.name} · ${fmt(voiceEl.duration || 0)}. Les vidéos sont calées proportionnellement sur ta voix.`, "ok");
   });
   $("btn-copy").addEventListener("click", () => {
     copyText($("prompter").textContent, () => status("voice-status", "Texte copié.", "ok"), () => {
@@ -1630,13 +1356,57 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
       status("voice-status", "Texte sélectionné : copie-le avec Ctrl+C.");
     });
   });
-  $("btn-broll-all").addEventListener("click", async () => {
-    const btn = $("btn-broll-all");
+  async function brollButton(btn, opts) {
+    if (!state.scenes.length) { try { buildScenes(); } catch (e) { status("broll-note", e.message, "warn"); return; } }
     btn.disabled = true;
     try {
-      const b = await autoBroll(40, (m) => status("script-status", m));
-      status("script-status", `${b.done} média(s) ajoutés.${b.left ? ` ${b.left} scène(s) encore sans fond : relance, change la source ou les mots-clés.` : ""}${!b.done && b.lastErr ? " " + b.lastErr : ""}`, b.done ? "ok" : "warn");
+      const b = await autoBroll(40, (m) => status("broll-note", m), opts);
+      if (b.empty) status("broll-note", "Aucune vidéo trouvée" + (b.lastErr ? ` : ${b.lastErr}` : "") + ". Change de source, ou cherche avec d'autres mots-clés ci-dessous.", "warn");
+      seek(scrubTime());
     } finally { btn.disabled = false; }
+  }
+  $("btn-broll-all").addEventListener("click", () => brollButton($("btn-broll-all"), { fresh: true }));
+  $("btn-broll-more").addEventListener("click", () => brollButton($("btn-broll-more")));
+
+  // Remplacer la vidéo du moment affiché
+  $("cur-kw").addEventListener("input", (e) => { const s = state.scenes[momentIdx]; if (s) { s.broll = e.target.value; persist(); } });
+  $("cur-file").addEventListener("change", async (e) => {
+    const f = e.target.files && e.target.files[0], s = state.scenes[momentIdx];
+    if (!f || !s) return;
+    try { await setBackground(s, f, { key: "file:" + f.name + f.size }); fillGaps(); renderScenes(); seek(scrubTime()); }
+    catch (err) { status("broll-note", err.message, "warn"); }
+    e.target.value = "";
+  });
+  $("cur-search").addEventListener("click", async () => {
+    const s = state.scenes[momentIdx];
+    if (!s) return;
+    const q = keywords(s);
+    const results = $("cur-results"), search = $("cur-search");
+    if (!q) return;
+    const src = sourcePlan(s, historicScript())[0];
+    search.disabled = true; results.hidden = false; results.textContent = `Recherche : ${SOURCES[src].label}…`;
+    try {
+      const found = await mediaSearch(q, src);
+      results.replaceChildren(...found.map((m) => {
+        const c = m.credit;
+        const tip = c.src === "pexels" ? `Vidéo de ${c.author} sur Pexels` : `${c.title} · ${c.author} · ${c.license}${m.mb ? ` · environ ${Math.ceil(m.mb)} Mo` : ""}`;
+        const img = el("img", { src: m.image, alt: c.title || q, loading: "lazy" });
+        if (m.fallback) img.addEventListener("error", () => { if (img.src !== m.fallback) img.src = m.fallback; }, { once: true });
+        const tags = [el("span", { class: "rtag", text: `▶${m.dur ? " " + fmt(m.dur) : ""}` })];
+        if (c.src === "wikimedia") tags.push(el("span", { class: "rlic" + (isFree(c.license) ? " free" : ""), text: isFree(c.license) ? "Dom. public" : c.license }));
+        const b = el("button", { type: "button", title: tip }, img, ...tags);
+        b.addEventListener("click", async () => {
+          results.textContent = m.mb > 60 ? `Téléchargement du film (environ ${Math.ceil(m.mb)} Mo), patiente…` : "Téléchargement…";
+          try { await setBackground(s, await mediaDownload(m), metaOf(m)); fillGaps(); renderScenes(); seek(scrubTime()); }
+          catch (e) { results.textContent = e.message; }
+        });
+        return b;
+      }));
+      if (!found.length) results.textContent = src === "film"
+        ? "Aucun film d'archives : essaie des mots-clés en anglais (ex. « WW2 artillery », « 1960 Africa »)."
+        : "Aucun résultat : essaie d'autres mots-clés (en anglais, Pexels trouve davantage).";
+    } catch (e) { results.textContent = (e && e.message) || "Recherche impossible."; }
+    finally { search.disabled = false; }
   });
 
   $("btn-gen").addEventListener("click", async () => {
@@ -1666,7 +1436,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   const loadMB = () => (mbPromise ??= import("/vendor/mediabunny.min.mjs"));
   let exporting = false, cancelExport = null, lastBlob = null, lastUrl = null;
   const expStatus = (m, c) => status("exp-status", m, c);
-  function fileBase() { return slug(state.scenes[0] && state.scenes[0].titre) + (state.aspect === "9:16" ? "-short" : ""); }
+  function fileBase() { const s = state.scenes[0]; return slug(s && (s.titre || s.voix.split(" ").slice(0, 7).join(" "))) + (state.aspect === "9:16" ? "-short" : ""); }
 
   function clipSample(s, t0, t1) {
     const sr = s.sampleRate;
@@ -1681,7 +1451,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
 
   async function exportVideo() {
     if (exporting) return;
-    if (!state.scenes.length) { expStatus("Ajoute au moins une scène.", "warn"); return; }
+    if (!state.scenes.length) { expStatus("Génère d'abord ta vidéo.", "warn"); return; }
     if (!("VideoEncoder" in window)) { expStatus("Ce navigateur ne sait pas encoder de vidéo. Utilise Chrome ou Edge à jour sur ordinateur.", "warn"); return; }
     stop();
     const { starts, durs } = timeline();
@@ -1699,7 +1469,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     if (!vcodec) { expStatus("Ce navigateur ne sait pas encoder de vidéo. Utilise Chrome ou Edge à jour sur ordinateur.", "warn"); return; }
     // H.264 + AAC en MP4 (accepté partout) ; sinon VP9 + Opus en WebM (accepté par YouTube)
     const ext = vcodec === "avc" ? "mp4" : "webm";
-    const name = `${fileBase()}${from || to < state.scenes.length - 1 ? `-scenes-${from + 1}-${to + 1}` : ""}.${ext}`;
+    const name = `${fileBase()}${from || to < state.scenes.length - 1 ? `-extrait-${Math.floor(t0)}s` : ""}.${ext}`;
 
     // Fichier de destination : écriture directe sur le disque si le navigateur le permet
     let writable = null;
@@ -1726,7 +1496,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     expStatus("Préparation de l'encodeur…");
 
     let output = null;
-    const bgReaders = new Map(); // scène -> lecteur du B-roll, ouvert à la demande
+    const bgReaders = new Map(); // vidéo source -> lecteur, ouvert à la demande et partagé entre passages
     let curBg = null;
     try {
       const quality = state.exp.quality === "standard" ? MB.QUALITY_MEDIUM : MB.QUALITY_HIGH;
@@ -1767,21 +1537,20 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
         const eta = p > 0.01 ? elp / p - elp : 0;
         expStatus(`Encodage : ${fmt(f / fps)} sur ${fmt(span)} (${Math.round(p * 100)} %)` + (eta ? ` · reste environ ${fmt(eta)}` : "") + ". Tu peux changer d'onglet.");
       };
-      // Image de B-roll de la scène courante, décodée à l'image près et bouclée si le clip est plus court.
+      // Image de la vidéo du passage courant, décodée à l'image près et bouclée si le clip est plus court.
       const bgFrame = async (i) => {
-        const sc = state.scenes[i];
-        const bg = media.bg.get(sc.id);
-        if (!bg || bg.kind !== "video") return null;
+        const bg = bgFor(i);
+        if (!bg) return null;
         if (!curBg || curBg.i !== i) {
           if (curBg && curBg.iter) await curBg.iter.return?.();
-          let rd = bgReaders.get(sc.id);
+          let rd = bgReaders.get(bg.blob);
           if (!rd) {
             const inp = new MB.Input({ source: new MB.BlobSource(bg.blob), formats: MB.ALL_FORMATS });
             const vt = await inp.getPrimaryVideoTrack();
             rd = vt && (await vt.canDecode())
               ? { inp, sink: new MB.CanvasSink(vt, { width: cv.width, height: cv.height, fit: "cover" }), dur: (await vt.computeDuration()) || bg.dur || 1 }
               : { inp };
-            bgReaders.set(sc.id, rd);
+            bgReaders.set(bg.blob, rd);
           }
           if (!rd.sink) { curBg = { i, iter: null }; return null; }
           const fStart = f, fEnd = Math.min(N, Math.ceil((starts[i] + durs[i] - t0) * fps));
@@ -1898,12 +1667,12 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   $("btn-thumb").addEventListener("click", () => {
     const prev = state.aspect;
     const was = scrubTime();
-    cv.width = 1920; cv.height = 1080; fitCache.clear();
+    cv.width = 1920; cv.height = 1080;
     const { starts, durs } = timeline();
     drawFrame((starts[0] || 0) + Math.min(2.5, (durs[0] || 3) * 0.9), { clean: true });
     cv.toBlob((b) => {
       if (b) saveBlob(b, `${fileBase()}-miniature.jpg`);
-      if (prev !== "16:9") { cv.width = 1080; cv.height = 1920; fitCache.clear(); }
+      if (prev !== "16:9") { cv.width = 1080; cv.height = 1920; }
       seek(was);
       expStatus("Miniature 1920×1080 téléchargée. Retouche-la si besoin : ton visage et 3 mots maximum convertissent mieux.", "ok");
     }, "image/jpeg", 0.9);
@@ -1912,42 +1681,40 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   /* ---------------- Contrôles ---------------- */
   $("btn-play").addEventListener("click", () => { if (playing) stop(); else play(); });
   $("scrub").addEventListener("input", () => { if (playing) stop(); seek(scrubTime()); });
-  $("ar-portrait").addEventListener("click", () => { setAspect("9:16"); renderScenes(); });
-  $("ar-land").addEventListener("click", () => { setAspect("16:9"); renderScenes(); });
-  $("btn-add").addEventListener("click", () => {
-    state.scenes.push({ id: uid(), type: "texte", titre: "Nouvelle scène", texte: "", items: [], voix: "", broll: "", duree: 5 });
-    page = Math.floor((state.scenes.length - 1) / PAGE);
-    persist(); renderScenes();
-    changed(state.scenes.length - 1);
-    const last = $("scenes").lastElementChild;
-    if (last) last.querySelector("input[type=text]").focus();
-  });
+  // Changer de format change l'orientation des vidéos à chercher : on remet les vidéos à zéro.
+  const switchAspect = (a) => {
+    if (state.aspect === a) return;
+    setAspect(a);
+    if (media.bg.size) status("broll-note", "Format changé : clique sur « Changer toutes les vidéos » pour des vidéos à la bonne orientation.");
+  };
+  $("ar-portrait").addEventListener("click", () => switchAspect("9:16"));
+  $("ar-land").addEventListener("click", () => switchAspect("16:9"));
 
   /* ---------------- Démarrage ---------------- */
   setTimeout(() => { loadMB().catch(() => { mbPromise = null; }); }, 1500);
-  if (!state.scenes.length) state.scenes = localSplit(state.script);
+  if (!state.scenes.length) state.scenes = segmentScript(state.script);
   bindInputs();
   renderTemplates();
   setAspect(state.aspect === "16:9" ? "16:9" : "9:16");
   renderScenes();
   seek(1.5);
-  renderVoices();
 
-  Promise.all(['800 80px "Barlow Condensed"', '700 40px "Barlow"', '600 40px "Barlow"', '500 40px "Barlow"', '600 24px "IBM Plex Mono"', '800 60px "Playfair Display"']
-    .map((f) => document.fonts.load(f).catch(() => null)))
-    .then(() => { fitCache.clear(); if (!playing) seek(scrubTime()); });
+  Promise.all(['800 80px "Barlow Condensed"', '700 40px "Barlow"', '600 40px "Barlow"'].map((f) => document.fonts.load(f).catch(() => null)))
+    .then(() => { if (!playing) seek(scrubTime()); });
 
   fetch("/api/statut", { credentials: "same-origin" })
     .then((r) => (r.status === 401 ? (location.href = "/connexion.html?e=expire", null) : r.json()))
     .then((d) => {
       iaOn = Boolean(d && d.ia);
       brollOn = Boolean(d && d.broll);
-      if (!iaOn) { $("s-ai").checked = false; $("s-ai").disabled = true; $("s-ai").parentElement.title = "IA non activée sur le serveur"; }
+      elevenOn = Boolean(d && d.eleven);
       if (!brollOn) {
         for (const o of $("s-source").options) if (SOURCES[o.value] && SOURCES[o.value].pexels) { o.disabled = true; o.textContent = SOURCES[o.value].label + " : clé requise"; }
-        if (SOURCES[state.mediaSource].pexels) { state.mediaSource = "auto"; $("s-source").value = "auto"; }
+        if (state.mediaSource === "video") { state.mediaSource = "auto"; $("s-source").value = "auto"; }
       }
+      $("el-note").hidden = elevenOn;
+      renderVoices();
       renderScenes();
     })
-    .catch(() => { $("s-ai").checked = false; $("s-ai").disabled = true; });
+    .catch(() => { renderVoices(); });
 })();

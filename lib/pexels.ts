@@ -1,6 +1,5 @@
 // B-rolls libres de droits via l'API Pexels. La clé reste sur le serveur.
 const API = "https://api.pexels.com/videos";
-const PHOTOS = "https://api.pexels.com/v1";
 
 export type Orientation = "portrait" | "landscape";
 type PexelsFile = { id: number; link: string; width: number | null; height: number | null; file_type: string };
@@ -10,8 +9,8 @@ export function pexelsDisponible(): boolean {
   return Boolean(process.env.PEXELS_API_KEY);
 }
 
-async function pexels(path: string, base = API): Promise<unknown> {
-  const res = await fetch(base + path, { headers: { Authorization: process.env.PEXELS_API_KEY ?? "" }, cache: "no-store" });
+async function pexels(path: string): Promise<unknown> {
+  const res = await fetch(API + path, { headers: { Authorization: process.env.PEXELS_API_KEY ?? "" }, cache: "no-store" });
   if (!res.ok) throw new Error(`pexels_${res.status}`);
   return res.json();
 }
@@ -26,7 +25,7 @@ function choisirFichier(files: PexelsFile[]): PexelsFile | null {
 }
 
 export async function chercherVideos(q: string, orientation: Orientation) {
-  const params = new URLSearchParams({ query: q, orientation, per_page: "8", locale: "fr-FR", size: "medium" });
+  const params = new URLSearchParams({ query: q, orientation, per_page: "15", locale: "fr-FR", size: "medium" });
   const data = (await pexels(`/search?${params}`)) as { videos?: PexelsVideo[] };
   return (data.videos ?? [])
     .map((v) => {
@@ -43,26 +42,3 @@ export async function lienFichier(videoId: number, fileId: number): Promise<stri
   return f && /^https:\/\/videos\.pexels\.com\//.test(f.link) ? f.link : null;
 }
 
-type PexelsPhoto = { id: number; width: number; height: number; url: string; alt?: string; photographer?: string; src: { original: string; medium: string } };
-
-/** Image redimensionnée par le CDN Pexels : 1920 px sur le grand côté de la vidéo, compressée. */
-function lienPhoto(p: PexelsPhoto, orientation: Orientation): string | null {
-  if (!/^https:\/\/images\.pexels\.com\//.test(p.src.original)) return null;
-  return `${p.src.original}?auto=compress&cs=tinysrgb&${orientation === "portrait" ? "h" : "w"}=1920`;
-}
-
-export async function chercherPhotos(q: string, orientation: Orientation) {
-  const params = new URLSearchParams({ query: q, orientation, per_page: "12", locale: "fr-FR" });
-  const data = (await pexels(`/search?${params}`, PHOTOS)) as { photos?: PexelsPhoto[] };
-  return (data.photos ?? [])
-    .map((p) => {
-      const link = lienPhoto(p, orientation);
-      return link && /^https:\/\/images\.pexels\.com\//.test(p.src.medium) && { id: p.id, link, image: p.src.medium, page: p.url, author: p.photographer ?? "", alt: p.alt ?? "" };
-    })
-    .filter(Boolean);
-}
-
-/** Lien de la photo retrouvé auprès de Pexels à partir de son identifiant (relais). */
-export async function lienPhotoParId(id: number, orientation: Orientation): Promise<string | null> {
-  return lienPhoto((await pexels(`/photos/${id}`, PHOTOS)) as PexelsPhoto, orientation);
-}

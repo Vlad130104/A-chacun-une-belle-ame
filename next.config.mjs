@@ -4,11 +4,11 @@ const CSP = [
   // 'wasm-unsafe-eval' : nécessaire au moteur de voix et à l'encodeur (WebAssembly), sans autoriser eval()
   "script-src 'self' 'wasm-unsafe-eval'",
   "style-src 'self'",
-  // Médiathèque : Pexels (vidéos et photos) et archives Wikimedia Commons (domaine public et licences libres)
+  // Vidéos réalistes : Pexels et films d'archives Wikimedia Commons (vignettes et fichiers)
   "img-src 'self' blob: data: https://images.pexels.com https://upload.wikimedia.org",
   "media-src 'self' blob:",
   "font-src 'self'",
-  "connect-src 'self' https://videos.pexels.com https://images.pexels.com https://commons.wikimedia.org https://upload.wikimedia.org",
+  "connect-src 'self' https://videos.pexels.com https://commons.wikimedia.org https://upload.wikimedia.org",
   "form-action 'self'",
   "base-uri 'none'",
   "frame-ancestors 'none'",
