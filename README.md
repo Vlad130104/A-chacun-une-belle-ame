@@ -6,26 +6,23 @@ de quelques secondes à plusieurs heures.
 
 ## Fonctions
 
-Éditeur organisé comme HeyGen : barre du haut (format 9:16 ou 16:9, **Générer la vidéo**, **Télécharger**),
-rail d'outils à gauche (Script, Voix, Sous-titres, Export), grand aperçu au centre avec bouton **plein écran**.
+**Tu donnes le script, Bachir IA monte la vidéo.** Interface claire bleu ciel et blanc :
+script à gauche, aperçu au centre, paramètres et téléchargement à droite.
 
-- **Le script est lu mot pour mot** : il n'est jamais réécrit. Il est découpé en phrases (14 mots au plus par plan).
-- **Une vidéo par phrase, choisie pour ce qu'elle dit** : Claude lit chaque passage et donne la recherche en anglais
-  qui montre exactement ce qui est dit, et s'il faut des images d'époque. Vidéos réelles de Pexels et Pixabay
-  (interrogées ensemble, résultats alternés), films d'archives de Wikimedia Commons pour les passages historiques. Sans clé Claude, repli sur des mots-clés extraits du texte.
-  Bouton ↻ sous l'aperçu : autre vidéo pour le passage affiché.
-- **Toutes les voix ElevenLabs** : la bibliothèque publique complète (recherche, langue, genre, usage, écoute gratuite
-  des extraits), les voix du compte (y compris clonées), 3 voix gratuites calculées dans le navigateur, ou ta voix.
-  Une voix de la bibliothèque est ajoutée au compte ElevenLabs quand on la choisit (obligatoire pour la faire lire).
-- **Un clic, une vidéo finie** : texte analysé, voix, vidéos, montage, puis bouton Télécharger.
-  Au-delà de 20 minutes, le fichier s'écrit directement sur le disque (Chrome ou Edge sur ordinateur).
-- **Vidéos longues** : les vidéos téléchargées sont stockées sur le disque (stockage privé du navigateur), pas en mémoire :
-  jusqu'à 300 vidéos différentes par montage ; au-delà, les passages prolongent le plan précédent.
-- **Claude écrit le script** à partir d'un sujet, pour une durée de 1 minute à 2 heures (par parties de 10 minutes,
-  qui deviennent des chapitres YouTube).
-- **Sous-titres animés** mot par mot (6 styles), export `.srt`, chapitres YouTube, crédits des vidéos, miniature.
-- **Onglet Services** : montre quels services sont branchés (Claude, ElevenLabs, Pexels, Pixabay, Wikimedia) et ce
-  qu'apporte chaque clé manquante. Mixkit n'a pas d'API publique : ses vidéos ne sont pas recherchées automatiquement.
+- **Le script est lu mot pour mot**, découpé en phrases (14 mots au plus par plan), sous-titré mot par mot.
+- **Une vidéo par phrase, choisie pour ce qu'elle dit** : Claude lit chaque phrase et décrit ce qu'il faut montrer.
+  - *Vidéos réelles* (gratuit) : recherche dans Pexels et Pixabay, archives Wikimedia pour les passages historiques.
+  - *Vidéos IA sur mesure* (payant, via fal, modèle Kling 2.6) : chaque phrase est filmée d'après la description de Claude,
+    pour une correspondance exacte. Devis affiché et confirmé avant de lancer (environ 0,35 $ par plan de 5 s,
+    120 plans au plus ; le reste et les échecs passent en vidéos réelles).
+  - Bouton ↻ : autre vidéo (ou nouveau plan IA) pour la phrase affichée.
+- **Voix** : toute la bibliothèque ElevenLabs (recherche, filtres, extraits gratuits), voix du compte et clones,
+  3 voix gratuites dans le navigateur, ou ta voix enregistrée.
+- **Grand format** (plein écran), **téléchargement** en un clic, export long écrit sur le disque au-delà de 20 minutes.
+- **Connexions** : chaque service se branche en collant sa clé dans Paramètres → Connexions. La clé est vérifiée
+  par un appel gratuit au service, chiffrée (AES-256-GCM, clé dérivée de `SESSION_SECRET`) et gardée dans un cookie
+  HttpOnly : elle n'est plus jamais lisible par la page. Les variables d'environnement Vercel restent prioritaires.
+- **Claude écrit le script** à partir d'un sujet (1 minute à 2 heures). Export `.srt`, chapitres, crédits, miniature.
 
 ## Sécurité
 
@@ -49,6 +46,8 @@ il ne remplace pas le pare-feu Vercel.
 
 ## Variables d'environnement
 
+Les clés de service peuvent aussi être collées dans le studio (Paramètres → Connexions) au lieu de Vercel.
+
 | Variable | Rôle |
 | --- | --- |
 | `ACCESS_PASSWORD_HASH` | `npm run hash-password -- "mot de passe long"` |
@@ -56,6 +55,7 @@ il ne remplace pas le pare-feu Vercel.
 | `ANTHROPIC_API_KEY` | Facultatif : ajuste le script à la durée choisie et écrit des scripts à partir d'un sujet (Claude) |
 | `PEXELS_API_KEY` | Facultatif (gratuit sur pexels.com/api) : active les vidéos modernes (les archives Wikimedia marchent sans) |
 | `PIXABAY_API_KEY` | Facultatif (gratuit sur pixabay.com/api/docs) : deuxième banque de vidéos, plus de choix par phrase |
+| `FAL_KEY` | Facultatif, payant : vidéos IA sur mesure (fal.ai, Kling 2.6) |
 | `ELEVENLABS_API_KEY` | Facultatif (payant au caractère) : active les voix ElevenLabs |
 
 ## Licences des composants embarqués

@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { avecCles } from "../../../../lib/cles";
 import { guardApi, jsonError } from "../../../../lib/guard";
 import { chercherVideos, pexelsDisponible } from "../../../../lib/pexels";
 import { chercherVideosPixabay, pixabayDisponible } from "../../../../lib/pixabay";
@@ -6,7 +7,7 @@ import { chercherVideosPixabay, pixabayDisponible } from "../../../../lib/pixaba
 export const runtime = "nodejs";
 
 // Recherche dans toutes les banques configurées (Pexels, Pixabay) ; résultats alternés pour varier les plans.
-export async function POST(req: NextRequest) {
+async function post(req: NextRequest) {
   const g = await guardApi(req, 2_000, "broll", 400);
   if (g instanceof NextResponse) return g;
   if (!pexelsDisponible() && !pixabayDisponible()) return jsonError("broll_non_configure", 503);
@@ -28,3 +29,5 @@ export async function POST(req: NextRequest) {
   for (let i = 0; i < Math.max(a.length, c.length); i++) { if (a[i]) videos.push(a[i]); if (c[i]) videos.push(c[i]); }
   return NextResponse.json({ videos });
 }
+
+export const POST = (req: NextRequest) => avecCles(req, () => post(req));

@@ -1,4 +1,5 @@
 // B-rolls libres de droits via l'API Pexels. La clé reste sur le serveur.
+import { cle } from "./cles";
 const API = "https://api.pexels.com/videos";
 
 export type Orientation = "portrait" | "landscape";
@@ -6,11 +7,11 @@ type PexelsFile = { id: number; link: string; width: number | null; height: numb
 type PexelsVideo = { id: number; duration: number; image: string; url: string; user?: { name?: string }; video_files: PexelsFile[] };
 
 export function pexelsDisponible(): boolean {
-  return Boolean(process.env.PEXELS_API_KEY);
+  return Boolean(cle("PEXELS_API_KEY"));
 }
 
 async function pexels(path: string): Promise<unknown> {
-  const res = await fetch(API + path, { headers: { Authorization: process.env.PEXELS_API_KEY ?? "" }, cache: "no-store" });
+  const res = await fetch(API + path, { headers: { Authorization: cle("PEXELS_API_KEY") }, cache: "no-store" });
   if (!res.ok) throw new Error(`pexels_${res.status}`);
   return res.json();
 }

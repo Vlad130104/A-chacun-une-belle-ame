@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { avecCles } from "../../../../lib/cles";
 import { jsonError, rateLimit, sessionOf } from "../../../../lib/guard";
 import { lienFichier, pexelsDisponible } from "../../../../lib/pexels";
 import { lienFichierPixabay, pixabayDisponible } from "../../../../lib/pixabay";
@@ -7,7 +8,7 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 // Relais de secours quand le navigateur ne peut pas télécharger le clip directement chez Pexels ou Pixabay.
-export async function GET(req: NextRequest) {
+async function get(req: NextRequest) {
   const session = await sessionOf(req);
   if (!session) return jsonError("non_connecte", 401);
   if (req.headers.get("sec-fetch-site") && req.headers.get("sec-fetch-site") !== "same-origin") return jsonError("origine_refusee", 403);
@@ -38,3 +39,5 @@ export async function GET(req: NextRequest) {
     return jsonError("broll_erreur", 502);
   }
 }
+
+export const GET = (req: NextRequest) => avecCles(req, () => get(req));

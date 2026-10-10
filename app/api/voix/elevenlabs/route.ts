@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { avecCles } from "../../../../lib/cles";
 import { guardApi, jsonError, rateLimit, sessionOf } from "../../../../lib/guard";
 import { ElevenErreur, elevenDisponible, listerVoix, MODELES, synthese, type Modele } from "../../../../lib/elevenlabs";
 
@@ -8,7 +9,7 @@ export const maxDuration = 60;
 const erreur = (e: unknown) => (e instanceof ElevenErreur ? jsonError(e.code, e.status) : jsonError("voix_erreur", 502));
 
 // Liste des voix du compte ElevenLabs.
-export async function GET(req: NextRequest) {
+async function get(req: NextRequest) {
   const session = await sessionOf(req);
   if (!session) return jsonError("non_connecte", 401);
   if (req.headers.get("sec-fetch-site") && req.headers.get("sec-fetch-site") !== "same-origin") return jsonError("origine_refusee", 403);
@@ -22,7 +23,7 @@ export async function GET(req: NextRequest) {
 }
 
 // Lecture d'un passage du script. Un appel par passage : la durée de chaque plan vidéo suit la voix.
-export async function POST(req: NextRequest) {
+async function post(req: NextRequest) {
   const g = await guardApi(req, 8_000, "voix", 2_000);
   if (g instanceof NextResponse) return g;
   if (!elevenDisponible()) return jsonError("voix_non_configuree", 503);
@@ -40,3 +41,7 @@ export async function POST(req: NextRequest) {
     return erreur(e);
   }
 }
+
+export const GET = (req: NextRequest) => avecCles(req, () => get(req));
+
+export const POST = (req: NextRequest) => avecCles(req, () => post(req));

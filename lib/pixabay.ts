@@ -1,4 +1,6 @@
 // Vidéos libres de Pixabay. La clé reste sur le serveur ; les réponses sont gardées 24 h (règle de l'API Pixabay).
+import { cle } from "./cles";
+
 const API = "https://pixabay.com/api/videos/";
 const CDN = /^https:\/\/cdn\.pixabay\.com\//;
 
@@ -8,12 +10,12 @@ export type Orientation = "portrait" | "landscape";
 export const RENDUS = ["tiny", "small", "medium", "large"] as const;
 
 export function pixabayDisponible(): boolean {
-  return Boolean(process.env.PIXABAY_API_KEY);
+  return Boolean(cle("PIXABAY_API_KEY"));
 }
 
 const cache = new Map<string, { t: number; data: { hits?: Hit[] } }>();
 async function pixabay(params: Record<string, string>): Promise<{ hits?: Hit[] }> {
-  const q = new URLSearchParams({ key: process.env.PIXABAY_API_KEY ?? "", safesearch: "true", ...params });
+  const q = new URLSearchParams({ key: cle("PIXABAY_API_KEY"), safesearch: "true", ...params });
   const k = q.toString();
   const hit = cache.get(k);
   if (hit && Date.now() - hit.t < 24 * 3600 * 1000) return hit.data;

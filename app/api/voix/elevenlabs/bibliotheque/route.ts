@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { avecCles } from "../../../../../lib/cles";
 import { jsonError, rateLimit, sessionOf } from "../../../../../lib/guard";
 import { bibliotheque, ElevenErreur, elevenDisponible } from "../../../../../lib/elevenlabs";
 
@@ -7,7 +8,7 @@ export const runtime = "nodejs";
 const GENRES = new Set(["", "female", "male", "neutral"]);
 const USAGES = new Set(["", "narrative_story", "conversational", "characters_animation", "social_media", "educational", "advertisement", "entertainment_tv", "informative_educational"]);
 
-export async function GET(req: NextRequest) {
+async function get(req: NextRequest) {
   const session = await sessionOf(req);
   if (!session) return jsonError("non_connecte", 401);
   if (req.headers.get("sec-fetch-site") && req.headers.get("sec-fetch-site") !== "same-origin") return jsonError("origine_refusee", 403);
@@ -25,3 +26,5 @@ export async function GET(req: NextRequest) {
     return e instanceof ElevenErreur ? jsonError(e.code, e.status) : jsonError("voix_erreur", 502);
   }
 }
+
+export const GET = (req: NextRequest) => avecCles(req, () => get(req));

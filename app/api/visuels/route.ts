@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { avecCles } from "../../../lib/cles";
 import { PASSAGES_MAX, choisirVisuels, erreurIa } from "../../../lib/claude";
 import { guardApi, jsonError } from "../../../lib/guard";
 
@@ -6,7 +7,7 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 // Une requête par lot de 200 passages au plus ; une vidéo de 2 h en demande environ 5.
-export async function POST(req: NextRequest) {
+async function post(req: NextRequest) {
   const g = await guardApi(req, 120_000, "visuels", 100);
   if (g instanceof NextResponse) return g;
   const b = (g.body ?? {}) as { passages?: unknown; contexte?: unknown };
@@ -21,3 +22,5 @@ export async function POST(req: NextRequest) {
     return jsonError(code, status);
   }
 }
+
+export const POST = (req: NextRequest) => avecCles(req, () => post(req));

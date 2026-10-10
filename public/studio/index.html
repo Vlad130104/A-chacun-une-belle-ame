@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="color-scheme" content="dark">
+<meta name="color-scheme" content="light">
 <title>Bachir IA</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/fonts/fonts.css">
@@ -16,39 +16,28 @@
   <span class="ptitle" id="p-title">Nouvelle vidéo</span>
   <span class="ptime" id="v-total"></span>
   <div class="top-actions">
-    <div class="seg" role="group" aria-label="Format">
-      <button type="button" id="ar-portrait" aria-pressed="true">9:16</button>
-      <button type="button" id="ar-land" aria-pressed="false">16:9</button>
-    </div>
-    <button class="btn primary" id="btn-generate" type="button">Générer la vidéo</button>
+    <button class="btn primary" id="btn-generate" type="button">▶ Créer la vidéo</button>
     <button class="btn" id="btn-download" type="button" disabled>⬇ Télécharger</button>
-    <form method="post" action="/api/logout"><button class="btn ghost small" type="submit" title="Se déconnecter">Quitter</button></form>
+    <form method="post" action="/api/logout"><button class="btn ghost small" type="submit">Quitter</button></form>
   </div>
 </header>
 
 <div class="studio">
-  <nav class="rail" role="tablist" aria-label="Outils">
-    <button type="button" role="tab" data-tab="script" aria-selected="true"><span aria-hidden="true">✎</span>Script</button>
-    <button type="button" role="tab" data-tab="voix" aria-selected="false"><span aria-hidden="true">🎙</span>Voix</button>
-    <button type="button" role="tab" data-tab="subs" aria-selected="false"><span aria-hidden="true">Aa</span>Sous-titres</button>
-    <button type="button" role="tab" data-tab="export" aria-selected="false"><span aria-hidden="true">⬇</span>Export</button>
-    <button type="button" role="tab" data-tab="services" aria-selected="false"><span aria-hidden="true">⚙</span>Services<i class="dot" id="svc-dot" hidden></i></button>
-  </nav>
-
-  <aside class="side">
-    <section class="tab" id="tab-script" role="tabpanel">
-      <h2>Script</h2>
+  <!-- 1. Le script : la seule chose à fournir -->
+  <section class="col left" aria-labelledby="h-script">
+    <div class="card">
+      <div class="chead"><span class="step">1</span><h2 id="h-script">Ton script</h2></div>
+      <textarea id="s-script" rows="18" aria-label="Script de la vidéo" placeholder="Colle ton script ici. Chaque phrase sera lue par la voix et illustrée par une vidéo qui montre exactement ce qu'elle dit."></textarea>
+      <p class="hint" id="script-info"></p>
+      <p class="hint">Le texte est lu mot pour mot. <code>## Titre</code> crée un chapitre YouTube.</p>
       <div class="row">
         <select id="s-model" class="flex1" aria-label="Modèle de script"></select>
         <button class="btn small" id="btn-model" type="button">Utiliser</button>
       </div>
-      <textarea id="s-script" rows="16" aria-label="Script de la vidéo" placeholder="Colle ton script ici. Chaque mot sera lu par la voix et illustré par une vidéo qui montre ce qui est dit."></textarea>
-      <p class="hint" id="script-info"></p>
-      <p class="hint">Chaque mot de ton script est lu tel quel ; chaque phrase reçoit la vidéo qui la montre. <code>## Partie</code> crée un chapitre YouTube.</p>
       <details class="sub">
         <summary>Pas de script ? Claude l'écrit</summary>
         <div class="duration">
-          <label for="s-minutes"><span class="lbl">Durée de la vidéo</span> <b id="s-minutes-val">1 min</b></label>
+          <label for="s-minutes"><span class="lbl">Durée</span> <b id="s-minutes-val">1 min</b></label>
           <input type="range" id="s-minutes" min="1" max="120" step="1" value="1">
           <div class="ticks" aria-hidden="true"><span>1 min</span><span>30 min</span><span>1 h</span><span>1 h 30</span><span>2 h</span></div>
         </div>
@@ -62,120 +51,154 @@
         <button class="btn" id="btn-gen" type="button">Écrire le script</button>
         <p class="status" id="gen-status" role="status"></p>
       </details>
-    </section>
+    </div>
+  </section>
 
-    <section class="tab" id="tab-voix" role="tabpanel" hidden>
-      <h2>Voix</h2>
-      <p class="current" id="v-current"></p>
-      <div class="seg wide" role="tablist" aria-label="Type de voix">
-        <button type="button" data-vtab="biblio" aria-pressed="true">Bibliothèque</button>
-        <button type="button" data-vtab="mes" aria-pressed="false">Mes voix</button>
-        <button type="button" data-vtab="gratuites" aria-pressed="false">Gratuites</button>
-        <button type="button" data-vtab="fichier" aria-pressed="false">Ma voix</button>
-      </div>
-      <p class="hint" id="el-note">Voix ElevenLabs : ajoute <code>ELEVENLABS_API_KEY</code> dans Vercel pour les activer.</p>
-      <div class="filters" id="vl-filters">
-        <input type="search" id="vl-q" placeholder="Rechercher une voix (nom, style…)" aria-label="Rechercher une voix">
-        <select id="vl-lang" aria-label="Langue"><option value="fr">Français</option><option value="en">Anglais</option><option value="es">Espagnol</option><option value="ar">Arabe</option><option value="pt">Portugais</option><option value="">Toutes langues</option></select>
-        <select id="vl-genre" aria-label="Genre"><option value="">Tous genres</option><option value="female">Femme</option><option value="male">Homme</option><option value="neutral">Neutre</option></select>
-        <select id="vl-usage" aria-label="Usage"><option value="">Tous usages</option><option value="narrative_story">Narration</option><option value="social_media">Réseaux sociaux</option><option value="informative_educational">Éducatif</option><option value="advertisement">Publicité</option><option value="conversational">Conversation</option><option value="characters_animation">Personnages</option></select>
-      </div>
-      <div class="voices" id="voices" role="radiogroup" aria-label="Choix de la voix"></div>
-      <button class="btn small" id="vl-more" type="button" hidden>Voir plus de voix</button>
-      <div class="own" id="own-voice" hidden>
-        <p class="hint">Enregistre le script avec ta voix (téléphone ou micro), en un seul fichier, puis importe-le.</p>
-        <div class="prompter" id="prompter" tabindex="0" aria-label="Texte à lire"></div>
-        <div class="row">
-          <button class="btn small" id="btn-copy" type="button">Copier le texte</button>
-          <label class="btn small" for="voice-file">Importer l'audio</label>
-          <input id="voice-file" type="file" accept="audio/*" hidden>
-        </div>
-      </div>
-      <div class="grid2">
-        <label class="f" id="el-opts"><span>Modèle ElevenLabs</span>
-          <select id="el-model"><option value="qualite">Qualité maximale (v2)</option><option value="rapide">Rapide, 2× moins cher (Flash)</option></select>
-        </label>
-        <label class="f"><span>Vitesse</span>
-          <select id="v-speed"><option value="0.9">Posée</option><option value="1">Normale</option><option value="1.1">Rapide</option><option value="1.2">Très rapide</option></select>
-        </label>
-      </div>
-      <div class="row">
-        <button class="btn" id="btn-voice" type="button">Générer seulement la voix</button>
-        <button class="btn ghost small" id="btn-voice-clear" type="button" hidden>Retirer la voix</button>
-      </div>
-      <p class="status" id="voice-status" role="status"></p>
-    </section>
-
-    <section class="tab" id="tab-subs" role="tabpanel" hidden>
-      <h2>Sous-titres</h2>
-      <label class="check"><input type="checkbox" id="subs" checked> Sous-titres animés, mot par mot</label>
-      <div class="tpls" id="tpls" role="radiogroup" aria-label="Style des sous-titres"></div>
-    </section>
-
-    <section class="tab" id="tab-export" role="tabpanel" hidden>
-      <h2>Export</h2>
-      <div class="grid2">
-        <label class="f"><span>Images / s</span><select id="ex-fps"><option value="24">24 (plus rapide)</option><option value="30">30</option></select></label>
-        <label class="f"><span>Qualité</span><select id="ex-quality"><option value="standard">Standard</option><option value="high">Haute</option></select></label>
-      </div>
-      <label class="check"><input type="checkbox" id="rg-all" checked> Toute la vidéo</label>
-      <div class="grid2" id="rg-pick" hidden>
-        <label class="f"><span>Début</span><select id="rg-from"></select></label>
-        <label class="f"><span>Fin</span><select id="rg-to"></select></label>
-      </div>
-      <p class="hint" id="rg-info"></p>
-      <div class="row">
-        <button class="btn primary flex1" id="btn-export" type="button">Exporter la vidéo</button>
-        <button class="btn ghost" id="btn-cancel" type="button" hidden>Annuler</button>
-      </div>
-      <h3>Publication YouTube</h3>
-      <label class="f"><span>Chapitres</span><textarea id="chapters" rows="4" readonly></textarea></label>
-      <p class="hint" id="chapters-note"></p>
-      <label class="f"><span>Crédits des vidéos (à coller dans la description)</span><textarea id="credits" rows="4" readonly></textarea></label>
-      <div class="row">
-        <button class="btn small" id="btn-credits" type="button">Copier les crédits</button>
-        <button class="btn small" id="btn-chapters" type="button">Copier les chapitres</button>
-        <button class="btn small" id="btn-srt" type="button">Sous-titres .srt</button>
-        <button class="btn small" id="btn-thumb" type="button">Miniature JPG</button>
-      </div>
-      <p class="credits">Voix : ElevenLabs · Piper (siwis CC BY 4.0, gilles CC0, mls CC BY 4.0) · Vidéos : <a href="https://www.pexels.com" target="_blank" rel="noopener">Pexels</a> · archives <a href="https://commons.wikimedia.org" target="_blank" rel="noopener">Wikimedia Commons</a></p>
-    </section>
-    <section class="tab" id="tab-services" role="tabpanel" hidden>
-      <h2>Services</h2>
-      <p class="hint">Bachir IA rassemble ces services. Chaque clé se colle dans Vercel (Settings → Environment Variables, type « Sensitive »), puis on redéploie. Les clés restent sur le serveur, jamais dans le navigateur.</p>
-      <ul class="services" id="services"></ul>
-      <p class="hint">Mixkit n'a pas d'API publique : Bachir IA ne peut pas y chercher de vidéos automatiquement. Pexels et Pixabay couvrent les mêmes usages (vidéos libres, usage commercial).</p>
-    </section>
-  </aside>
-
-  <main class="canvas-area">
-    <div class="player" id="player">
+  <!-- 2. Le montage -->
+  <main class="col center" aria-label="Aperçu">
+    <div class="card player" id="player">
       <div class="stage-wrap"><div class="stage" id="stage"><canvas id="cv" width="1080" height="1920" aria-label="Aperçu de la vidéo"></canvas></div></div>
       <div class="timebar">
         <button class="play" id="btn-play" type="button" aria-label="Lire">▶</button>
         <span id="t-cur">0:00</span><input type="range" id="scrub" min="0" max="10000" value="80" aria-label="Position dans la vidéo"><span id="t-tot">0:00</span>
-        <button class="icon-btn" id="btn-swap" type="button" title="Mettre une autre vidéo sur ce passage" aria-label="Autre vidéo pour ce passage">↻</button>
+        <button class="icon-btn" id="btn-swap" type="button" title="Autre vidéo pour ce passage" aria-label="Autre vidéo pour ce passage">↻</button>
         <button class="icon-btn" id="btn-full" type="button" title="Grand format (Échap pour sortir)" aria-label="Grand format">⤢</button>
       </div>
       <p class="caption-now" id="cur-text"></p>
     </div>
-    <div class="progress">
+    <div class="card progress">
       <ol class="steps" id="gen-steps" hidden>
         <li id="st-scenes">Analyse du script</li>
         <li id="st-voice">Voix off</li>
         <li id="st-broll">Vidéos</li>
         <li id="st-export">Montage final</li>
       </ol>
-      <p class="status" id="script-status" role="status"></p>
+      <p class="status" id="script-status" role="status">Colle ton script à gauche, règle les paramètres à droite, puis « Créer la vidéo ».</p>
       <div class="meter" id="meter" hidden><i id="meter-fill"></i></div>
       <p class="status" id="exp-status" role="status"></p>
-    </div>
-    <div class="result" id="result" hidden>
-      <video id="result-video" controls playsinline></video>
-      <button class="btn primary" id="btn-save" type="button">⬇ Télécharger la vidéo</button>
+      <div class="result" id="result" hidden>
+        <video id="result-video" controls playsinline></video>
+        <button class="btn primary" id="btn-save" type="button">⬇ Télécharger la vidéo</button>
+      </div>
     </div>
   </main>
+
+  <!-- 3. Les paramètres -->
+  <aside class="col right" aria-labelledby="h-params">
+    <div class="card">
+      <div class="chead"><span class="step">2</span><h2 id="h-params">Paramètres</h2></div>
+
+      <details class="group" open>
+        <summary>Format</summary>
+        <div class="formats" role="group" aria-label="Format">
+          <button type="button" id="ar-portrait" aria-pressed="true"><i class="fmt v"></i>Vertical 9:16<small>TikTok, Shorts, Reels</small></button>
+          <button type="button" id="ar-land" aria-pressed="false"><i class="fmt h"></i>Horizontal 16:9<small>YouTube</small></button>
+        </div>
+      </details>
+
+      <details class="group" open>
+        <summary>Voix</summary>
+        <p class="current" id="v-current"></p>
+        <button class="btn wide" id="btn-voices" type="button">Choisir une voix…</button>
+        <div class="grid2">
+          <label class="f" id="el-opts"><span>Modèle ElevenLabs</span>
+            <select id="el-model"><option value="qualite">Qualité maximale</option><option value="rapide">Rapide, 2× moins cher</option></select>
+          </label>
+          <label class="f"><span>Vitesse</span>
+            <select id="v-speed"><option value="0.9">Posée</option><option value="1">Normale</option><option value="1.1">Rapide</option><option value="1.2">Très rapide</option></select>
+          </label>
+        </div>
+        <div class="row">
+          <button class="btn small" id="btn-voice" type="button">Préparer la voix seule</button>
+          <button class="btn ghost small" id="btn-voice-clear" type="button" hidden>Retirer la voix</button>
+        </div>
+        <p class="status" id="voice-status" role="status"></p>
+      </details>
+
+      <details class="group" open>
+        <summary>Vidéos</summary>
+        <div class="choices" role="radiogroup" aria-label="Source des vidéos">
+          <label class="choice"><input type="radio" name="vmode" id="vm-banques" value="banques" checked><span><b>Vidéos réelles</b><small>Pexels, Pixabay et archives, choisies phrase par phrase. Gratuit.</small></span></label>
+          <label class="choice"><input type="radio" name="vmode" id="vm-ia" value="ia"><span><b>Vidéos IA sur mesure</b><small>Chaque phrase est filmée par l'IA (Kling via fal). Correspondance exacte. Payant.</small></span></label>
+        </div>
+        <p class="hint" id="ia-cost"></p>
+      </details>
+
+      <details class="group">
+        <summary>Sous-titres</summary>
+        <label class="check"><input type="checkbox" id="subs" checked> Sous-titres animés, mot par mot</label>
+        <div class="tpls" id="tpls" role="radiogroup" aria-label="Style des sous-titres"></div>
+      </details>
+
+      <details class="group" open>
+        <summary>Téléchargement</summary>
+        <div class="grid2">
+          <label class="f"><span>Images / s</span><select id="ex-fps"><option value="24">24 (plus rapide)</option><option value="30">30</option></select></label>
+          <label class="f"><span>Qualité</span><select id="ex-quality"><option value="standard">Standard</option><option value="high">Haute</option></select></label>
+        </div>
+        <label class="check"><input type="checkbox" id="rg-all" checked> Toute la vidéo</label>
+        <div class="grid2" id="rg-pick" hidden>
+          <label class="f"><span>Début</span><select id="rg-from"></select></label>
+          <label class="f"><span>Fin</span><select id="rg-to"></select></label>
+        </div>
+        <p class="hint" id="rg-info"></p>
+        <div class="row">
+          <button class="btn primary flex1" id="btn-export" type="button">Exporter la vidéo</button>
+          <button class="btn ghost" id="btn-cancel" type="button" hidden>Annuler</button>
+        </div>
+        <div class="row">
+          <button class="btn small" id="btn-srt" type="button">Sous-titres .srt</button>
+          <button class="btn small" id="btn-thumb" type="button">Miniature</button>
+          <button class="btn small" id="btn-chapters" type="button">Copier les chapitres</button>
+          <button class="btn small" id="btn-credits" type="button">Copier les crédits</button>
+        </div>
+        <details class="sub">
+          <summary>Chapitres et crédits</summary>
+          <label class="f"><span>Chapitres YouTube</span><textarea id="chapters" rows="4" readonly></textarea></label>
+          <p class="hint" id="chapters-note"></p>
+          <label class="f"><span>Crédits (description)</span><textarea id="credits" rows="4" readonly></textarea></label>
+        </details>
+      </details>
+
+      <details class="group" id="services-group">
+        <summary>Connexions <i class="dot" id="svc-dot" hidden></i></summary>
+        <p class="hint">Colle la clé de chaque service pour le brancher. Elle est vérifiée, chiffrée et gardée sur le serveur : elle n'est plus jamais affichée.</p>
+        <ul class="services" id="services"></ul>
+      </details>
+      <p class="credits">Voix : ElevenLabs · Piper (siwis CC BY 4.0, gilles CC0, mls CC BY 4.0) · Vidéos : <a href="https://www.pexels.com" target="_blank" rel="noopener">Pexels</a>, <a href="https://pixabay.com" target="_blank" rel="noopener">Pixabay</a>, <a href="https://commons.wikimedia.org" target="_blank" rel="noopener">Wikimedia Commons</a>, IA <a href="https://fal.ai" target="_blank" rel="noopener">fal</a></p>
+    </div>
+  </aside>
 </div>
+
+<dialog class="modal" id="voice-dialog" aria-labelledby="vd-title">
+  <div class="mhead"><h2 id="vd-title">Choisir une voix</h2><button class="icon-btn" id="vd-close" type="button" aria-label="Fermer">✕</button></div>
+  <p class="current" id="v-current2"></p>
+  <div class="seg wide" role="tablist" aria-label="Type de voix">
+    <button type="button" data-vtab="biblio" aria-pressed="true">Bibliothèque</button>
+    <button type="button" data-vtab="mes" aria-pressed="false">Mes voix</button>
+    <button type="button" data-vtab="gratuites" aria-pressed="false">Gratuites</button>
+    <button type="button" data-vtab="fichier" aria-pressed="false">Ma voix</button>
+  </div>
+  <p class="hint" id="el-note">Voix ElevenLabs : branche ta clé dans Paramètres → Connexions.</p>
+  <div class="filters" id="vl-filters">
+    <input type="search" id="vl-q" placeholder="Rechercher une voix (nom, style…)" aria-label="Rechercher une voix">
+    <select id="vl-lang" aria-label="Langue"><option value="fr">Français</option><option value="en">Anglais</option><option value="es">Espagnol</option><option value="ar">Arabe</option><option value="pt">Portugais</option><option value="">Toutes langues</option></select>
+    <select id="vl-genre" aria-label="Genre"><option value="">Tous genres</option><option value="female">Femme</option><option value="male">Homme</option><option value="neutral">Neutre</option></select>
+    <select id="vl-usage" aria-label="Usage"><option value="">Tous usages</option><option value="narrative_story">Narration</option><option value="social_media">Réseaux sociaux</option><option value="informative_educational">Éducatif</option><option value="advertisement">Publicité</option><option value="conversational">Conversation</option><option value="characters_animation">Personnages</option></select>
+  </div>
+  <div class="voices" id="voices" role="radiogroup" aria-label="Choix de la voix"></div>
+  <button class="btn small" id="vl-more" type="button" hidden>Voir plus de voix</button>
+  <div class="own" id="own-voice" hidden>
+    <p class="hint">Enregistre le script avec ta voix (téléphone ou micro), en un seul fichier, puis importe-le.</p>
+    <div class="prompter" id="prompter" tabindex="0" aria-label="Texte à lire"></div>
+    <div class="row">
+      <button class="btn small" id="btn-copy" type="button">Copier le texte</button>
+      <label class="btn small" for="voice-file">Importer l'audio</label>
+      <input id="voice-file" type="file" accept="audio/*" hidden>
+    </div>
+  </div>
+  <div class="mfoot"><button class="btn primary" id="vd-ok" type="button">Valider</button></div>
+</dialog>
 <script src="/studio/studio.js" defer></script>
 </body>
 </html>

@@ -172,6 +172,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   const DEFAULT_STATE = {
     brief: { ton: "educatif", sujet: "Pourquoi la plupart des petites chaînes YouTube abandonnent avant 100 abonnés, et comment tenir." },
     minutes: 1,
+    videoMode: "banques",
     keepText: false,
     script: EXAMPLE_SCRIPT,
     aspect: "9:16",
@@ -191,7 +192,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   for (const k of ["brief", "brand", "exp", "voice"]) state[k] = { ...DEFAULT_STATE[k], ...state[k] };
   if (typeof state.script !== "string") state.script = DEFAULT_STATE.script;
   state.minutes = clampMin(state.minutes);
-  if (typeof state.keepText !== "boolean") state.keepText = false;
+  if (!["banques", "ia"].includes(state.videoMode)) state.videoMode = "banques";
   if (!["ia", "eleven", "fichier"].includes(state.voice.mode)) state.voice.mode = "ia";
   if (!["0.9", "1", "1.1", "1.2"].includes(String(state.voice.speed))) state.voice.speed = "1";
   if (state.v !== 4) { state.scenes = []; state.v = 4; } // ancien format à scènes graphiques : re-découpé au démarrage
@@ -441,7 +442,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     const lt = Math.max(0, t - TLc.starts[i]), dur = TLc.durs[i], sc = state.scenes[i];
     const src = bgSource(bgFor(i), lt, opts);
     if (src) drawCover(src.el, src.w, src.h, 1);
-    else if (!media.bg.size) note("Clique sur « Générer la vidéo »");
+    else if (!media.bg.size) note("Clique sur « Créer la vidéo »");
 
     if (!opts.clean && brand.subs && sc.voix && sc.voix.trim()) {
       // Voile discret sous les sous-titres, pour les lire sur n'importe quelle vidéo
@@ -548,7 +549,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   }
 
   /* ---------------- Serveur Bachir IA ---------------- */
-  let iaOn = false, brollOn = false, elevenOn = false;
+  let iaOn = false, brollOn = false, elevenOn = false, falOn = false;
   const API_MSG = {
     ia_non_configuree: "L'IA n'est pas encore activée sur le serveur (clé API absente).",
     ia_saturee: "L'IA est saturée. Réessaie dans une minute.",
@@ -567,6 +568,14 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     voix_saturee: "ElevenLabs limite les requêtes simultanées. Réessaie dans une minute.",
     voix_introuvable: "Cette voix n'existe plus sur ton compte ElevenLabs. Choisis-en une autre.",
     voix_erreur: "ElevenLabs n'a pas répondu. Réessaie.",
+    cle_format: "Cette clé n'a pas le bon format : copie-la en entier, sans espace.",
+    cle_refusee: "Clé refusée par le service : vérifie que tu as copié la bonne clé.",
+    ia_video_non_configuree: "Vidéos IA non branchées : colle ta clé fal dans Paramètres → Connexions.",
+    ia_video_cle: "La clé fal est refusée : vérifie-la dans Paramètres → Connexions.",
+    ia_video_credit: "Crédit fal épuisé : recharge ton compte sur fal.ai (Billing).",
+    ia_video_sature: "fal limite les générations simultanées : réessaie dans une minute.",
+    ia_video_refus: "L'IA a refusé de générer ce plan (contenu sensible).",
+    ia_video_erreur: "La génération IA n'a pas abouti. Réessaie.",
   };
   async function api(path, payload) {
     let res;
@@ -785,6 +794,53 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     renderScenes();
     return { done, fail, lastErr, empty: !media.bg.size };
   }
+  // Vidéos IA sur mesure : chaque phrase est filmée par Kling (via fal) d'après la description de Claude.
+  async function iaClip(sc) {
+    const prompt = sc.plan || sc.q || keywords(sc) || sc.voix;
+    const r = await api("/api/ia-video", { prompt, format: state.aspect });
+    const t0 = Date.now();
+    for (;;) {
+      await new Promise((ok) => setTimeout(ok, 6000));
+      if (Date.now() - t0 > 12 * 60 * 1000) throw new Error("génération trop longue");
+      const res = await fetch(`/api/ia-video?s=${encodeURIComponent(r.statut)}&r=${encodeURIComponent(r.resultat)}`, { credentials: "same-origin" });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw { code: d.error, message: API_MSG[d.error] || "Génération IA impossible." };
+      if (d.etat === "echec") throw new Error("plan IA en échec");
+      if (d.etat !== "fini") continue;
+      let file = null;
+      try { const f = await fetch(d.url, { mode: "cors", credentials: "omit" }); if (f.ok) file = await keep(f, "video/mp4"); } catch (e) { file = null; }
+      if (!file) {
+        const f = await fetch("/api/ia-video/fichier?u=" + encodeURIComponent(d.url), { credentials: "same-origin" });
+        if (!f.ok) throw new Error("téléchargement du plan IA impossible");
+        file = await keep(f, "video/mp4");
+      }
+      await setBackground(sc, file, { key: "ia:" + sc.id + ":" + Date.now(), credit: { src: "ia", kind: "Vidéo IA", author: "Kling 2.6 via fal", license: "", page: "" } });
+      return;
+    }
+  }
+  async function iaBroll(report) {
+    await clipStore();
+    const list = state.scenes.filter((s) => s.voix && s.voix.trim());
+    const todo = list.length <= IA_MAX ? list.slice() : Array.from({ length: IA_MAX }, (_, j) => list[Math.floor((j * list.length) / IA_MAX)]);
+    const total = todo.length;
+    let done = 0, fail = 0, lastErr = "", stop = false;
+    const worker = async () => {
+      while (todo.length && !stop) {
+        const sc = todo.shift();
+        try { await iaClip(sc); done++; }
+        catch (e) {
+          fail++; lastErr = (e && e.message) || "";
+          if (e && ["ia_video_credit", "ia_video_cle", "ia_video_non_configuree"].includes(e.code)) stop = true;
+        }
+        report(`Vidéos IA : ${done} sur ${total} filmée(s)${fail ? `, ${fail} en échec` : ""}… (1 à 3 min par plan, 4 à la fois)`);
+      }
+    };
+    report(`Vidéos IA : 0 sur ${total} filmée(s)… (1 à 3 min par plan, 4 à la fois)`);
+    await Promise.all([worker(), worker(), worker(), worker()]);
+    renderScenes();
+    return { done, fail, lastErr, stop };
+  }
+
   // Claude lit chaque passage et choisit la vidéo qui montre exactement ce qui est dit (requête en anglais).
   async function planVisuals(report) {
     const list = state.scenes;
@@ -798,13 +854,13 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
       while (next < starts.length) {
         const a = starts[next++], part = list.slice(a, a + 150);
         const r = await api("/api/visuels", { passages: part.map((s) => (s.voix || s.titre || "…").slice(0, 500)), contexte });
-        part.forEach((s, j) => { const v = r.visuels && r.visuels[j]; s.q = (v && v.requete) || ""; s.archive = v ? Boolean(v.archive) : null; });
+        part.forEach((s, j) => { const v = r.visuels && r.visuels[j]; s.q = (v && v.requete) || ""; s.archive = v ? Boolean(v.archive) : null; s.plan = (v && v.plan) || ""; });
         done += part.length;
         report(`Choix des vidéos : ${done} passage(s) sur ${list.length} analysé(s)…`);
       }
     };
     try { await Promise.all([worker(), worker()]); }
-    catch (e) { list.forEach((s) => { delete s.q; delete s.archive; }); return false; }
+    catch (e) { list.forEach((s) => { delete s.q; delete s.archive; delete s.plan; }); return false; }
     persist();
     return true;
   }
@@ -836,13 +892,13 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     const seen = new Set(), rows = [];
     for (const s of state.scenes) {
       const b = media.bg.get(s.id);
-      if (!b || !b.credit || seen.has(b.key)) continue;
+      if (!b || !b.credit || b.credit.src === "ia" || seen.has(b.key)) continue;
       seen.add(b.key);
       const c = b.credit;
       rows.push(BANKS[c.src] ? `${c.kind} : ${c.author || "auteur"} sur ${BANKS[c.src].name} (${c.page})`
         : `« ${c.title} », ${c.author}, ${c.license}, via Wikimedia Commons (${c.page})`);
     }
-    if (media.voiceTts && /siwis|mls_1840/.test(state.voice.id)) rows.push(`Voix de synthèse : Piper, voix ${state.voice.id.includes("siwis") ? "siwis" : "mls_1840"} (CC BY 4.0)`);
+    if (media.voiceTts && state.voice.mode === "ia" && /siwis|mls_1840/.test(state.voice.id)) rows.push(`Voix de synthèse : Piper, voix ${state.voice.id.includes("siwis") ? "siwis" : "mls_1840"} (CC BY 4.0)`);
     return rows.length ? "Crédits images, vidéos et voix :\n" + rows.map((r) => "- " + r).join("\n") : "";
   }
 
@@ -980,7 +1036,8 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     if (v.mode === "eleven" && v.elId) name = `${v.elName || "voix"} · ElevenLabs`;
     else if (v.mode === "fichier") name = media.voiceFile && !media.voiceTts ? "ton enregistrement" : "ton enregistrement (à importer)";
     else if (v.mode === "ia") name = `${(piperMod && piperMod.VOICES.find((x) => x.id === v.id) || { name: "Siwis" }).name} · gratuite`;
-    $("v-current").textContent = "Voix choisie : " + name;
+    $("v-current").textContent = "Voix : " + name;
+    $("v-current2").textContent = "Voix choisie : " + name;
     $("btn-voice").hidden = v.mode === "fichier";
     document.querySelectorAll("#voices .voice").forEach((c) => c.setAttribute("aria-checked", String(c.dataset.key === (v.mode === "eleven" ? "el:" + v.elId : v.mode === "ia" ? "pi:" + v.id : ""))));
   }
@@ -1086,7 +1143,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     if (t === "biblio") loadBiblio(true);
     else if (t === "mes") loadMes();
     else if (t === "gratuites") loadGratuites();
-    else { state.voice.mode = "fichier"; persist(); updateCurrent(); }
+    else updateCurrent(); // « Ma voix » devient la voix choisie à l'import du fichier
   }
   let voicesBound = false;
   function renderVoices() {
@@ -1097,9 +1154,13 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
       for (const id of ["vl-lang", "vl-genre", "vl-usage"]) $(id).addEventListener("change", () => loadBiblio(true));
       $("vl-more").addEventListener("click", () => { vlPage++; loadBiblio(false); });
     }
-    if (state.voice.mode === "eleven" && !elevenOn) state.voice.mode = "ia";
-    setVtab(state.voice.mode === "fichier" ? "fichier" : state.voice.mode === "eleven" ? "mes" : elevenOn ? "biblio" : "gratuites");
     updateCurrent();
+  }
+  // Fenêtre de choix de la voix, comme une bibliothèque.
+  function openVoices() {
+    renderVoices();
+    $("voice-dialog").showModal();
+    setVtab(state.voice.mode === "fichier" ? "fichier" : state.voice.mode === "eleven" ? "mes" : elevenOn ? "biblio" : "gratuites");
   }
   const V_SAMPLE = "Salut ! Voici la voix que tu as choisie pour ta prochaine vidéo.";
 
@@ -1117,7 +1178,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     momentIdx = i;
     const s = state.scenes[i], bg = bgFor(i);
     const c = bg && bg.credit;
-    const src = !bg ? "" : !c ? " · ta vidéo" : c.src === "wikimedia" ? " · archive Wikimedia" : ` · vidéo de ${c.author || "auteur"} (${(BANKS[c.src] || { name: "banque" }).name})`;
+    const src = !bg ? "" : !c ? " · ta vidéo" : c.src === "ia" ? " · filmé par l'IA" : c.src === "wikimedia" ? " · archive Wikimedia" : ` · vidéo de ${c.author || "auteur"} (${(BANKS[c.src] || { name: "banque" }).name})`;
     $("cur-text").textContent = `« ${String(s.voix || s.titre || "").slice(0, 160)} »` + (s.q ? ` → ${s.q}` : "") + src;
   }
   const momentLater = () => { clearTimeout(momentTimer); momentTimer = setTimeout(() => { if (!playing && !exporting) renderMoment(); }, 150); };
@@ -1241,7 +1302,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     $("subs").checked = !!state.brand.subs;
     $("subs").addEventListener("change", (e) => { state.brand.subs = e.target.checked; persist(); seek(scrubTime()); });
     $("s-script").value = state.script;
-    $("s-script").addEventListener("input", (e) => { state.script = e.target.value; persist(); scriptInfo(); });
+    $("s-script").addEventListener("input", (e) => { state.script = e.target.value; persist(); scriptInfo(); clearTimeout(costTimer); costTimer = setTimeout(iaCost, 500); });
     $("el-model").value = state.voice.model;
     $("el-model").addEventListener("change", (e) => { state.voice.model = e.target.value; persist(); });
     $("v-speed").value = state.voice.speed;
@@ -1252,32 +1313,88 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     $("rg-all").addEventListener("change", rangeInfo);
     $("rg-from").addEventListener("change", rangeInfo);
     $("rg-to").addEventListener("change", rangeInfo);
-    document.querySelectorAll(".rail [data-tab]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
+    $(state.videoMode === "ia" ? "vm-ia" : "vm-banques").checked = true;
+    for (const id of ["vm-banques", "vm-ia"]) $(id).addEventListener("change", (e) => { if (e.target.checked) { state.videoMode = e.target.value; persist(); iaCost(); } });
+    $("btn-voices").addEventListener("click", openVoices);
+    $("vd-close").addEventListener("click", () => $("voice-dialog").close());
+    $("vd-ok").addEventListener("click", () => $("voice-dialog").close());
   }
-  // Onglets de gauche, comme dans un éditeur vidéo : un seul panneau ouvert à la fois.
-  function showTab(name) {
-    document.querySelectorAll(".rail [data-tab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
-    for (const t of ["script", "voix", "subs", "export", "services"]) $("tab-" + t).hidden = t !== name;
+  // Coût estimé des vidéos IA : un plan de 5 s par phrase, 120 plans au plus (le reste en vidéos réelles).
+  const IA_MAX = 120, IA_PRIX = 0.35;
+  function iaCost() {
+    if (state.videoMode !== "ia") { $("ia-cost").textContent = ""; return; }
+    const n = Math.min(IA_MAX, String(state.script || "").trim() ? segmentScript(state.script).length : 0);
+    let msg = n ? `≈ ${n} plan(s) × ${IA_PRIX.toFixed(2).replace(".", ",")} $ = ${(n * IA_PRIX).toFixed(2).replace(".", ",")} $ sur ton compte fal, 1 à 3 min par plan.` : "Coût affiché dès que tu as collé ton script.";
+    if (!falOn) msg += " Branche d'abord ta clé fal dans Connexions.";
+    $("ia-cost").className = "hint" + (falOn ? "" : " warn");
+    $("ia-cost").textContent = msg;
   }
-  // Services branchés sur le serveur : ce qui marche, ce qui manque, et ce que chacun apporte.
+  // Connexions : chaque service se branche en collant sa clé (vérifiée et chiffrée par le serveur).
   const SERVICES = [
-    { k: "ia", name: "Claude", env: "ANTHROPIC_API_KEY", role: "Choisit la vidéo de chaque phrase et écrit des scripts.", sans: "Vidéos choisies par simples mots-clés, moins précises." },
-    { k: "eleven", name: "ElevenLabs", env: "ELEVENLABS_API_KEY", role: "Toutes les voix ultra-réalistes et tes voix clonées.", sans: "3 voix gratuites ou ta propre voix." },
-    { k: "pexels", name: "Pexels", env: "PEXELS_API_KEY", role: "Vidéos réelles modernes : gens, objets, interviews.", sans: "Moins de choix de vidéos." },
-    { k: "pixabay", name: "Pixabay", env: "PIXABAY_API_KEY", role: "Deuxième banque de vidéos : plus de choix par phrase.", sans: "Moins de choix de vidéos." },
-    { k: "wiki", name: "Wikimedia Commons", env: "", role: "Films d'archives historiques (sans clé).", sans: "" },
+    { k: "ia", nom: "ANTHROPIC_API_KEY", name: "Claude", role: "Lit chaque phrase et choisit la vidéo qui la montre ; écrit des scripts.", sans: "vidéos choisies par simples mots-clés, bien moins précises.", prix: "Payant à l'usage, quelques centimes par vidéo.", lien: "https://console.anthropic.com/settings/keys" },
+    { k: "eleven", nom: "ELEVENLABS_API_KEY", name: "ElevenLabs", role: "Toutes les voix ultra-réalistes, et tes voix clonées.", sans: "3 voix gratuites ou ta propre voix.", prix: "Essai gratuit, puis abonnement.", lien: "https://elevenlabs.io/app/settings/api-keys" },
+    { k: "pexels", nom: "PEXELS_API_KEY", name: "Pexels", role: "Vidéos réelles : gens, objets, lieux, interviews.", sans: "pas de vidéos modernes.", prix: "Gratuit.", lien: "https://www.pexels.com/api/" },
+    { k: "pixabay", nom: "PIXABAY_API_KEY", name: "Pixabay", role: "Deuxième banque de vidéos : plus de choix par phrase.", sans: "moins de choix.", prix: "Gratuit.", lien: "https://pixabay.com/api/docs/" },
+    { k: "fal", nom: "FAL_KEY", name: "fal · vidéos IA (Kling)", role: "Filme chaque phrase sur mesure par l'IA : correspondance exacte.", sans: "pas de vidéos IA.", prix: "Payant : environ 0,35 $ par plan de 5 s.", lien: "https://fal.ai/dashboard/keys" },
   ];
   function renderServices(d) {
+    const src = d.sources || {};
     $("services").replaceChildren(...SERVICES.map((sv) => {
-      const on = sv.k === "wiki" ? true : Boolean(d[sv.k]);
+      const on = Boolean(d[sv.k]), fromVercel = src[sv.k] === "serveur";
+      const input = el("input", { type: "password", placeholder: `Colle ta clé ${sv.name.split(" ")[0]}`, autocomplete: "off", "aria-label": `Clé ${sv.name}` });
+      const plug = el("button", { type: "button", class: "btn small primary", text: on ? "Remplacer" : "Brancher" });
+      const unplug = el("button", { type: "button", class: "btn small ghost", text: "Retirer", hidden: !on || fromVercel });
+      const note = el("small", { text: "" });
+      plug.addEventListener("click", async () => {
+        const valeur = input.value.trim();
+        if (!valeur) { input.focus(); return; }
+        plug.disabled = true; note.textContent = "Vérification de la clé…"; note.className = "";
+        try {
+          const r = await api("/api/cles", { nom: sv.nom, valeur });
+          input.value = "";
+          await refreshStatus();
+          status("script-status", `${sv.name} est branché${r.verifiee ? "" : " (clé non vérifiée : elle sera testée à la première utilisation)"}.`, "ok");
+        } catch (e) { note.textContent = (e && e.message) || "Branchement impossible."; note.className = "warn"; plug.disabled = false; }
+      });
+      unplug.addEventListener("click", async () => {
+        if (!window.confirm(`Débrancher ${sv.name} ?`)) return;
+        try {
+          const r = await fetch("/api/cles", { method: "DELETE", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify({ nom: sv.nom }) });
+          if (r.ok) await refreshStatus();
+        } catch (e) { /* réseau */ }
+      });
       return el("li", { class: on ? "on" : "off" },
-        el("b", { text: `${on ? "✓" : "✗"} ${sv.name}` }),
-        el("small", { text: on ? sv.role : `Non branché : ${sv.sans} Ajoute ${sv.env} dans Vercel.` }));
-    }));
-    const n = SERVICES.filter((sv) => sv.k !== "wiki" && d[sv.k]).length;
-    const dot = $("svc-dot");
-    dot.hidden = n === 4;
-    dot.textContent = String(4 - n);
+        el("div", { class: "shead" }, el("b", { text: sv.name }), el("span", { class: "badge", text: on ? (fromVercel ? "Branché (Vercel)" : "Branché") : "À brancher" })),
+        el("small", { text: on ? `${sv.role} ${sv.prix}` : `Sans lui : ${sv.sans} ${sv.prix}` }),
+        fromVercel ? null : el("div", { class: "krow" }, input, plug, unplug),
+        el("a", { href: sv.lien, target: "_blank", rel: "noopener", text: on ? "Gérer mon compte" : "Créer ma clé ↗" }),
+        note);
+    }), el("li", { class: "on" }, el("div", { class: "shead" }, el("b", { text: "Wikimedia Commons" }), el("span", { class: "badge", text: "Toujours branché" })), el("small", { text: "Films d'archives historiques, sans clé." })));
+    const missing = SERVICES.filter((sv) => !d[sv.k]).length;
+    $("svc-dot").hidden = !missing;
+    $("svc-dot").textContent = String(missing);
+  }
+  // Relit quels services sont branchés et met l'interface à jour.
+  async function refreshStatus() {
+    let d = {};
+    try {
+      const r = await fetch("/api/statut", { credentials: "same-origin" });
+      if (r.status === 401) { location.href = "/connexion.html?e=expire"; return; }
+      d = await r.json();
+    } catch (e) { d = {}; }
+    const elevenBefore = elevenOn;
+    iaOn = Boolean(d.ia); brollOn = Boolean(d.broll); elevenOn = Boolean(d.eleven); falOn = Boolean(d.fal);
+    $("el-note").hidden = elevenOn;
+    $("el-opts").hidden = !elevenOn;
+    renderServices(d);
+    iaCost();
+    if (elevenBefore !== elevenOn) { mesVoix = null; if ($("voice-dialog").open) setVtab(elevenOn ? "biblio" : "gratuites"); }
+    if (state.voice.mode === "eleven" && !elevenOn) { state.voice.mode = "ia"; persist(); }
+    updateCurrent();
+    const missing = SERVICES.filter((sv) => !d[sv.k]).map((sv) => sv.name.split(" ")[0]);
+    if (missing.length && !$("btn-generate").disabled && !media.bg.size)
+      status("script-status", `À brancher pour des montages précis : ${missing.join(", ")}. Paramètres → Connexions : colle tes clés.`, "warn");
+    return d;
   }
   function setAspect(a) {
     state.aspect = a;
@@ -1375,7 +1492,8 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     const first = String(state.script || "").split("\n").map((l) => l.replace(/^#+\s*|^>\s*/, "").trim()).find(Boolean);
     $("p-title").textContent = first ? first.slice(0, 70) : "Nouvelle vidéo";
   }
-  function setScript(text) { state.script = text; $("s-script").value = text; persist(); scriptInfo(); }
+  let costTimer = null;
+  function setScript(text) { state.script = text; $("s-script").value = text; persist(); scriptInfo(); iaCost(); }
 
   // Script écrit par Claude à partir d'un sujet, partie par partie (une partie ≈ 10 minutes, jusqu'à 2 heures).
   async function writeScript(source, minutes, report) {
@@ -1404,7 +1522,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   }
   $("btn-generate").addEventListener("click", async () => {
     const btn = $("btn-generate");
-    if (!String(state.script || "").trim()) { showTab("script"); status("script-status", "Colle d'abord ton script dans l'onglet Script (ou fais-le écrire par Claude).", "warn"); return; }
+    if (!String(state.script || "").trim()) { $("s-script").focus(); status("script-status", "Colle d'abord ton script à gauche (ou fais-le écrire par Claude).", "warn"); return; }
     // Vidéo longue : le fichier s'écrit sur le disque. L'emplacement se choisit maintenant, pendant le clic.
     let target = null;
     if (scriptMinutes() > 20) {
@@ -1412,6 +1530,14 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
       try { target = await openTarget(); }
       catch (e) { status("script-status", (e && e.message) || "Choisis où enregistrer la vidéo pour continuer.", "warn"); return; }
       if (!target) return;
+    }
+    const useIa = state.videoMode === "ia" && falOn;
+    if (useIa) {
+      const n = Math.min(IA_MAX, segmentScript(state.script).length);
+      if (!window.confirm(`Vidéos IA : ${n} plan(s), environ ${(n * IA_PRIX).toFixed(2).replace(".", ",")} $ facturés sur ton compte fal. Continuer ?`)) {
+        if (target && target.writable) { try { await target.writable.abort(); } catch (x) { /* fermé */ } }
+        return;
+      }
     }
     btn.disabled = true; $("btn-download").disabled = true; $("result").hidden = true;
     $("gen-steps").hidden = false;
@@ -1433,15 +1559,20 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
       } else if (media.voiceFile) {
         stepState("st-voice", "done");
       } else {
-        throw new Error("Tu as choisi « Ma voix » : importe ton enregistrement dans l'onglet Voix, ou choisis une autre voix.");
+        throw new Error("Tu as choisi « Ma voix » : importe ton enregistrement (Paramètres → Voix → Choisir une voix → Ma voix), ou choisis une autre voix.");
       }
 
       stepState("st-broll", "run");
+      if (useIa) {
+        const ia = await iaBroll(report);
+        notes.push(`${ia.done} plan(s) filmé(s) par l'IA.`);
+        if (ia.fail) notes.push(`${ia.fail} plan(s) IA en échec${ia.lastErr ? ` (${ia.lastErr})` : ""} : remplacés par des vidéos réelles.`);
+      } else if (state.videoMode === "ia") notes.push("Vidéos IA non branchées (clé fal) : vidéos réelles utilisées.");
       const b = await autoBroll(Math.min(maxClips(), state.scenes.length), report);
       stepState("st-broll", "done");
-      if (b.empty) throw new Error("Aucune vidéo trouvée" + (b.lastErr ? ` (${b.lastErr})` : "") + ". Vérifie les clés Pexels ou Pixabay dans l'onglet Services, puis relance.");
+      if (b.empty) throw new Error("Aucune vidéo trouvée" + (b.lastErr ? ` (${b.lastErr})` : "") + ". Branche Pexels ou Pixabay dans Paramètres → Connexions, puis relance.");
       if (state.scenes.some((s) => { const x = media.bg.get(s.id); return x && x.credit && x.credit.src === "wikimedia" && !isFree(x.credit.license); }))
-        notes.push("Certaines archives exigent un crédit : copie-le dans l'onglet Export.");
+        notes.push("Certaines archives exigent un crédit : copie-le dans Paramètres → Téléchargement.");
 
       // Montage final : la vidéo est encodée tout de suite, prête à télécharger.
       stepState("st-export", "run");
@@ -1450,7 +1581,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
       stepState("st-export", ok ? "done" : "");
       status("script-status", ok
         ? `Ta vidéo est prête : ${fmt(timeline().total)}. ${notes.join(" ")} ${target ? "Elle est enregistrée sur ton disque." : "Clique sur « Télécharger »."}`
-        : `Vidéo préparée (${fmt(timeline().total)}) mais le montage final n'a pas abouti : relance « Exporter la vidéo » dans l'onglet Export.`, ok ? "ok" : "warn");
+        : `Vidéo préparée (${fmt(timeline().total)}) mais le montage final n'a pas abouti : relance « Exporter la vidéo » dans Paramètres → Téléchargement.`, ok ? "ok" : "warn");
     } catch (e) {
       steps.forEach((id) => { if ($(id).className === "run") stepState(id, ""); });
       if (target && target.writable) { try { await target.writable.abort(); } catch (x) { /* déjà fermé */ } }
@@ -1493,6 +1624,15 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     if (!state.scenes.length || exporting) return;
     const btn = $("btn-swap"), s = state.scenes[sceneAt(scrubTime())];
     const used = new Set([...media.bg.values()].map((b) => b.key));
+    if (state.videoMode === "ia" && falOn) {
+      if (!window.confirm(`Refilmer ce passage par l'IA (environ ${IA_PRIX.toFixed(2).replace(".", ",")} $) ?`)) return;
+      btn.disabled = true;
+      status("script-status", "L'IA refilme ce passage (1 à 3 minutes)…");
+      try { await iaClip(s); fillGaps(); renderScenes(); seek(scrubTime()); status("script-status", "Plan refilmé. Réexporte pour l'inclure dans le fichier.", "ok"); }
+      catch (e) { status("script-status", (e && e.message) || "Échec de la génération.", "warn"); }
+      finally { btn.disabled = false; }
+      return;
+    }
     btn.disabled = true;
     status("script-status", "Recherche d'une autre vidéo pour ce passage…");
     try {
@@ -1522,7 +1662,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     try {
       const text = await writeScript(sujet, state.minutes, (m) => status("gen-status", m));
       setScript(text);
-      status("gen-status", `Script de ${fmtMin(wordsOf(text).length / WPM)} écrit et placé ci-dessus. Relis-le, puis clique sur « Générer la vidéo ».`, "ok");
+      status("gen-status", `Script de ${fmtMin(wordsOf(text).length / WPM)} écrit et placé ci-dessus. Relis-le, puis clique sur « Créer la vidéo ».`, "ok");
     } catch (e) {
       status("gen-status", (e && e.message) || "L'écriture a échoué. Réessaie.", "warn");
     } finally { btn.disabled = false; }
@@ -1807,7 +1947,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   const switchAspect = (a) => {
     if (state.aspect === a) return;
     setAspect(a);
-    if (media.bg.size) status("script-status", "Format changé : clique sur « Générer la vidéo » pour des vidéos à la bonne orientation.");
+    if (media.bg.size) status("script-status", "Format changé : clique sur « Créer la vidéo » pour des vidéos à la bonne orientation.");
   };
   // Grand format : plein écran (Échap pour sortir) ; à défaut, aperçu agrandi dans la page.
   $("btn-full").addEventListener("click", () => {
@@ -1839,17 +1979,6 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   Promise.all(['800 80px "Barlow Condensed"', '700 40px "Barlow"', '600 40px "Barlow"'].map((f) => document.fonts.load(f).catch(() => null)))
     .then(() => { if (!playing) seek(scrubTime()); });
 
-  fetch("/api/statut", { credentials: "same-origin" })
-    .then((r) => (r.status === 401 ? (location.href = "/connexion.html?e=expire", null) : r.json()))
-    .then((d) => {
-      iaOn = Boolean(d && d.ia);
-      brollOn = Boolean(d && d.broll);
-      elevenOn = Boolean(d && d.eleven);
-      $("el-note").hidden = elevenOn;
-      renderServices(d || {});
-      if (!brollOn) status("script-status", "Vidéos modernes non activées (aucune clé Pexels ou Pixabay sur le serveur) : seules les archives Wikimedia sont utilisées. Voir l'onglet Services.", "warn");
-      renderVoices();
-      renderScenes();
-    })
-    .catch(() => { renderVoices(); renderServices({}); });
+  renderVoices();
+  refreshStatus();
 })();

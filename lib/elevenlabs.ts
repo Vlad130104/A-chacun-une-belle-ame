@@ -1,11 +1,13 @@
 // Voix ElevenLabs. La clé reste sur le serveur : le navigateur n'envoie que le texte et l'identifiant de la voix.
+import { cle } from "./cles";
+
 const API = "https://api.elevenlabs.io";
 
 export const MODELES = { qualite: "eleven_multilingual_v2", rapide: "eleven_flash_v2_5" } as const;
 export type Modele = keyof typeof MODELES;
 
 export function elevenDisponible(): boolean {
-  return Boolean(process.env.ELEVENLABS_API_KEY);
+  return Boolean(cle("ELEVENLABS_API_KEY"));
 }
 
 export class ElevenErreur extends Error {
@@ -15,7 +17,7 @@ export class ElevenErreur extends Error {
 async function eleven(path: string, init: RequestInit = {}): Promise<Response> {
   const res = await fetch(API + path, {
     ...init,
-    headers: { "xi-api-key": process.env.ELEVENLABS_API_KEY ?? "", ...(init.headers ?? {}) },
+    headers: { "xi-api-key": cle("ELEVENLABS_API_KEY"), ...(init.headers ?? {}) },
     cache: "no-store",
   });
   if (res.ok) return res;

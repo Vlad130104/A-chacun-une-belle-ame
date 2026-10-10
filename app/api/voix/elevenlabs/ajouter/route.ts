@@ -1,10 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { avecCles } from "../../../../../lib/cles";
 import { guardApi, jsonError } from "../../../../../lib/guard";
 import { ajouterVoix, ElevenErreur, elevenDisponible } from "../../../../../lib/elevenlabs";
 
 export const runtime = "nodejs";
 
-export async function POST(req: NextRequest) {
+async function post(req: NextRequest) {
   const g = await guardApi(req, 1_000, "voixajout", 60);
   if (g instanceof NextResponse) return g;
   if (!elevenDisponible()) return jsonError("voix_non_configuree", 503);
@@ -17,3 +18,5 @@ export async function POST(req: NextRequest) {
     return e instanceof ElevenErreur ? jsonError(e.code, e.status) : jsonError("voix_erreur", 502);
   }
 }
+
+export const POST = (req: NextRequest) => avecCles(req, () => post(req));

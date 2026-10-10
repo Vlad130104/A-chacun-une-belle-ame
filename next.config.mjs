@@ -8,7 +8,7 @@ const CSP = [
   "img-src 'self' blob: data: https://images.pexels.com https://cdn.pixabay.com https://upload.wikimedia.org",
   "media-src 'self' blob:",
   "font-src 'self'",
-  "connect-src 'self' https://videos.pexels.com https://cdn.pixabay.com https://commons.wikimedia.org https://upload.wikimedia.org",
+  "connect-src 'self' https://videos.pexels.com https://cdn.pixabay.com https://commons.wikimedia.org https://upload.wikimedia.org https://*.fal.media",
   "form-action 'self'",
   "base-uri 'none'",
   "frame-ancestors 'none'",
