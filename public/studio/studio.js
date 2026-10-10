@@ -558,9 +558,9 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     trop_long: "Texte trop long.",
     script_invalide: "Script vide ou trop long pour l'IA (12 000 caractères maximum).",
     brief_invalide: "Texte vide ou trop long (2 heures de script maximum ; sujet : 3 000 caractères maximum).",
-    broll_non_configure: "B-rolls automatiques non activés : ajoute la clé Pexels (gratuite) sur le serveur.",
-    broll_sature: "Pexels limite les recherches : réessaie dans quelques minutes.",
-    broll_erreur: "Pexels n'a pas répondu. Réessaie.",
+    broll_non_configure: "Vidéos modernes non activées : ajoute une clé Pexels ou Pixabay (gratuites) sur le serveur.",
+    broll_sature: "Les banques de vidéos limitent les recherches : réessaie dans quelques minutes.",
+    broll_erreur: "Les banques de vidéos n'ont pas répondu. Réessaie.",
     voix_non_configuree: "Voix ElevenLabs non activées : ajoute ELEVENLABS_API_KEY sur le serveur.",
     voix_cle_invalide: "La clé ElevenLabs configurée sur le serveur est refusée.",
     voix_quota: "Crédits ElevenLabs épuisés : recharge ton abonnement ou choisis une voix gratuite.",
@@ -582,7 +582,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     return data;
   }
 
-  /* ---------------- Vidéos : Pexels et films d'archives Wikimedia Commons ---------------- */
+  /* ---------------- Vidéos : Pexels, Pixabay et films d'archives Wikimedia Commons ---------------- */
   // Repli sans Claude : un passage historique est illustré par des images d'époque.
   const HISTORIC = /\b(guerres?|mondiale|poilus?|tranchées?|nazis?|hitler|staline|churchill|de gaulle|napol[ée]on|débarquement|résistance|occupation|armistice|colonial[es]?|colonisation|colonies|indépendances?|empires?|empereurs?|pharaons?|antiquité|médiéval|moyen[- ]âge|révolution|monarchie|rois?|reines?|siècles?|archives?|historiques?|histoire|1[5-9]\d\d|20[0-1]\d|années (?:folles|vingt|trente|quarante|cinquante|soixante))\b/iu;
   const isHistoric = (text) => HISTORIC.test(String(text || ""));
@@ -678,17 +678,19 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     return [];
   }
 
-  let pexelsBlocked = false;
-  async function pexelsSearch(q) {
+  let pexelsBlocked = false; // banques de vidéos saturées pour cette génération
+  const BANKS = { pexels: { name: "Pexels", tag: "px", license: "Licence Pexels" }, pixabay: { name: "Pixabay", tag: "pb", license: "Licence Pixabay" } };
+  // Une recherche interroge toutes les banques branchées sur le serveur (Pexels, Pixabay), résultats alternés.
+  async function stockSearch(q) {
     const d = await api("/api/broll/recherche", { q, orientation: state.aspect === "16:9" ? "landscape" : "portrait" });
-    return (d.videos || []).map((v) => ({ key: "px:v" + v.id, kind: "video", id: v.id, fileId: v.fileId, link: v.link, image: v.image, dur: v.duration,
-      credit: { src: "pexels", kind: "Vidéo", author: v.author, license: "Licence Pexels", page: v.page } }));
+    return (d.videos || []).filter((v) => BANKS[v.source]).map((v) => ({ key: `${BANKS[v.source].tag}:v${v.id}`, kind: "video", id: v.id, fileId: v.fileId, link: v.link, image: v.image, dur: v.duration,
+      credit: { src: v.source, kind: "Vidéo", author: v.author, license: BANKS[v.source].license, page: v.page } }));
   }
   async function mediaSearch(q, src) {
     if (src === "film") return commonsSearch(q);
-    const res = await pexelsSearch(q);
+    const res = await stockSearch(q);
     const first = q.split(" ")[0];
-    return res.length || first === q ? res : pexelsSearch(first);
+    return res.length || first === q ? res : stockSearch(first);
   }
   // Les vidéos téléchargées s'écrivent dans le stockage privé du navigateur (sur le disque, pas en mémoire) :
   // une vidéo de 2 heures peut en utiliser des centaines sans saturer l'ordinateur.
@@ -720,7 +722,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     if (res && res.ok) return keep(res, type);
     if (m.credit.src === "wikimedia") throw new Error("téléchargement impossible depuis Wikimedia Commons");
     // Téléchargement direct refusé : passage par le relais du serveur
-    res = await fetch(`/api/broll/fichier?id=${encodeURIComponent(m.id)}&f=${encodeURIComponent(m.fileId)}`, { credentials: "same-origin" });
+    res = await fetch(`/api/broll/fichier?s=${encodeURIComponent(m.credit.src)}&id=${encodeURIComponent(m.id)}&f=${encodeURIComponent(m.fileId)}`, { credentials: "same-origin" });
     if (!res.ok) throw new Error("téléchargement de la vidéo impossible");
     return keep(res, type);
   }
@@ -734,7 +736,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   }
   // Vidéos différentes au plus : 300 si elles s'écrivent sur le disque (stockage privé du navigateur), 120 sinon.
   const maxClips = () => (clipDir ? 300 : 120);
-  const MAX_SEARCHES = 180; // Pexels autorise 200 recherches par heure
+  const MAX_SEARCHES = 180; // Pexels autorise 200 recherches par heure (Pixabay : 100 par minute)
   // Télécharge une vidéo pour les passages qui n'en ont pas (ou qui en réutilisent une), sans doublon.
   // Au-delà de `limit`, les passages choisis sont répartis sur toute la vidéo ; les autres prolongent le plan précédent.
   async function autoBroll(limit, report) {
@@ -837,7 +839,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
       if (!b || !b.credit || seen.has(b.key)) continue;
       seen.add(b.key);
       const c = b.credit;
-      rows.push(c.src === "pexels" ? `${c.kind} : ${c.author || "auteur"} sur Pexels (${c.page})`
+      rows.push(BANKS[c.src] ? `${c.kind} : ${c.author || "auteur"} sur ${BANKS[c.src].name} (${c.page})`
         : `« ${c.title} », ${c.author}, ${c.license}, via Wikimedia Commons (${c.page})`);
     }
     if (media.voiceTts && /siwis|mls_1840/.test(state.voice.id)) rows.push(`Voix de synthèse : Piper, voix ${state.voice.id.includes("siwis") ? "siwis" : "mls_1840"} (CC BY 4.0)`);
@@ -1115,7 +1117,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     momentIdx = i;
     const s = state.scenes[i], bg = bgFor(i);
     const c = bg && bg.credit;
-    const src = !bg ? "" : !c ? " · ta vidéo" : c.src === "wikimedia" ? " · archive Wikimedia" : ` · vidéo de ${c.author || "Pexels"} (Pexels)`;
+    const src = !bg ? "" : !c ? " · ta vidéo" : c.src === "wikimedia" ? " · archive Wikimedia" : ` · vidéo de ${c.author || "auteur"} (${(BANKS[c.src] || { name: "banque" }).name})`;
     $("cur-text").textContent = `« ${String(s.voix || s.titre || "").slice(0, 160)} »` + (s.q ? ` → ${s.q}` : "") + src;
   }
   const momentLater = () => { clearTimeout(momentTimer); momentTimer = setTimeout(() => { if (!playing && !exporting) renderMoment(); }, 150); };
@@ -1146,7 +1148,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
       const c = chaptersText();
       $("chapters").value = c.text;
       $("chapters-note").textContent = c.note;
-      $("credits").value = creditsText() || "Aucun média de Pexels ou de Wikimedia Commons dans cette vidéo.";
+      $("credits").value = creditsText() || "Aucune vidéo de Pexels, Pixabay ou Wikimedia Commons dans cette vidéo.";
       fillRange();
     }, 150);
   }
@@ -1255,7 +1257,27 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   // Onglets de gauche, comme dans un éditeur vidéo : un seul panneau ouvert à la fois.
   function showTab(name) {
     document.querySelectorAll(".rail [data-tab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
-    for (const t of ["script", "voix", "subs", "export"]) $("tab-" + t).hidden = t !== name;
+    for (const t of ["script", "voix", "subs", "export", "services"]) $("tab-" + t).hidden = t !== name;
+  }
+  // Services branchés sur le serveur : ce qui marche, ce qui manque, et ce que chacun apporte.
+  const SERVICES = [
+    { k: "ia", name: "Claude", env: "ANTHROPIC_API_KEY", role: "Choisit la vidéo de chaque phrase et écrit des scripts.", sans: "Vidéos choisies par simples mots-clés, moins précises." },
+    { k: "eleven", name: "ElevenLabs", env: "ELEVENLABS_API_KEY", role: "Toutes les voix ultra-réalistes et tes voix clonées.", sans: "3 voix gratuites ou ta propre voix." },
+    { k: "pexels", name: "Pexels", env: "PEXELS_API_KEY", role: "Vidéos réelles modernes : gens, objets, interviews.", sans: "Moins de choix de vidéos." },
+    { k: "pixabay", name: "Pixabay", env: "PIXABAY_API_KEY", role: "Deuxième banque de vidéos : plus de choix par phrase.", sans: "Moins de choix de vidéos." },
+    { k: "wiki", name: "Wikimedia Commons", env: "", role: "Films d'archives historiques (sans clé).", sans: "" },
+  ];
+  function renderServices(d) {
+    $("services").replaceChildren(...SERVICES.map((sv) => {
+      const on = sv.k === "wiki" ? true : Boolean(d[sv.k]);
+      return el("li", { class: on ? "on" : "off" },
+        el("b", { text: `${on ? "✓" : "✗"} ${sv.name}` }),
+        el("small", { text: on ? sv.role : `Non branché : ${sv.sans} Ajoute ${sv.env} dans Vercel.` }));
+    }));
+    const n = SERVICES.filter((sv) => sv.k !== "wiki" && d[sv.k]).length;
+    const dot = $("svc-dot");
+    dot.hidden = n === 4;
+    dot.textContent = String(4 - n);
   }
   function setAspect(a) {
     state.aspect = a;
@@ -1417,7 +1439,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
       stepState("st-broll", "run");
       const b = await autoBroll(Math.min(maxClips(), state.scenes.length), report);
       stepState("st-broll", "done");
-      if (b.empty) throw new Error("Aucune vidéo trouvée" + (b.lastErr ? ` (${b.lastErr})` : "") + ". Vérifie la clé Pexels sur le serveur, puis relance.");
+      if (b.empty) throw new Error("Aucune vidéo trouvée" + (b.lastErr ? ` (${b.lastErr})` : "") + ". Vérifie les clés Pexels ou Pixabay dans l'onglet Services, puis relance.");
       if (state.scenes.some((s) => { const x = media.bg.get(s.id); return x && x.credit && x.credit.src === "wikimedia" && !isFree(x.credit.license); }))
         notes.push("Certaines archives exigent un crédit : copie-le dans l'onglet Export.");
 
@@ -1756,7 +1778,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   });
   $("btn-credits").addEventListener("click", () => {
     const txt = creditsText();
-    if (!txt) { expStatus("Aucun crédit à copier : pas de média Pexels ou Wikimedia dans cette vidéo."); return; }
+    if (!txt) { expStatus("Aucun crédit à copier : pas de vidéo Pexels, Pixabay ou Wikimedia dans cette vidéo."); return; }
     copyText(txt, () => expStatus("Crédits copiés : colle-les dans la description.", "ok"), () => { $("credits").select(); expStatus("Crédits sélectionnés : copie-les avec Ctrl+C."); });
   });
   $("btn-chapters").addEventListener("click", () => {
@@ -1824,9 +1846,10 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
       brollOn = Boolean(d && d.broll);
       elevenOn = Boolean(d && d.eleven);
       $("el-note").hidden = elevenOn;
-      if (!brollOn) status("script-status", "Vidéos modernes non activées (clé Pexels absente sur le serveur) : seules les archives Wikimedia sont utilisées.", "warn");
+      renderServices(d || {});
+      if (!brollOn) status("script-status", "Vidéos modernes non activées (aucune clé Pexels ou Pixabay sur le serveur) : seules les archives Wikimedia sont utilisées. Voir l'onglet Services.", "warn");
       renderVoices();
       renderScenes();
     })
-    .catch(() => { renderVoices(); });
+    .catch(() => { renderVoices(); renderServices({}); });
 })();

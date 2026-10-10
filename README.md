@@ -11,8 +11,8 @@ rail d'outils à gauche (Script, Voix, Sous-titres, Export), grand aperçu au ce
 
 - **Le script est lu mot pour mot** : il n'est jamais réécrit. Il est découpé en phrases (14 mots au plus par plan).
 - **Une vidéo par phrase, choisie pour ce qu'elle dit** : Claude lit chaque passage et donne la recherche en anglais
-  qui montre exactement ce qui est dit, et s'il faut des images d'époque. Vidéos réelles de Pexels, films d'archives de
-  Wikimedia Commons pour les passages historiques. Sans clé Claude, repli sur des mots-clés extraits du texte.
+  qui montre exactement ce qui est dit, et s'il faut des images d'époque. Vidéos réelles de Pexels et Pixabay
+  (interrogées ensemble, résultats alternés), films d'archives de Wikimedia Commons pour les passages historiques. Sans clé Claude, repli sur des mots-clés extraits du texte.
   Bouton ↻ sous l'aperçu : autre vidéo pour le passage affiché.
 - **Toutes les voix ElevenLabs** : la bibliothèque publique complète (recherche, langue, genre, usage, écoute gratuite
   des extraits), les voix du compte (y compris clonées), 3 voix gratuites calculées dans le navigateur, ou ta voix.
@@ -24,6 +24,8 @@ rail d'outils à gauche (Script, Voix, Sous-titres, Export), grand aperçu au ce
 - **Claude écrit le script** à partir d'un sujet, pour une durée de 1 minute à 2 heures (par parties de 10 minutes,
   qui deviennent des chapitres YouTube).
 - **Sous-titres animés** mot par mot (6 styles), export `.srt`, chapitres YouTube, crédits des vidéos, miniature.
+- **Onglet Services** : montre quels services sont branchés (Claude, ElevenLabs, Pexels, Pixabay, Wikimedia) et ce
+  qu'apporte chaque clé manquante. Mixkit n'a pas d'API publique : ses vidéos ne sont pas recherchées automatiquement.
 
 ## Sécurité
 
@@ -53,6 +55,7 @@ il ne remplace pas le pare-feu Vercel.
 | `SESSION_SECRET` | `npm run new-secret` |
 | `ANTHROPIC_API_KEY` | Facultatif : ajuste le script à la durée choisie et écrit des scripts à partir d'un sujet (Claude) |
 | `PEXELS_API_KEY` | Facultatif (gratuit sur pexels.com/api) : active les vidéos modernes (les archives Wikimedia marchent sans) |
+| `PIXABAY_API_KEY` | Facultatif (gratuit sur pixabay.com/api/docs) : deuxième banque de vidéos, plus de choix par phrase |
 | `ELEVENLABS_API_KEY` | Facultatif (payant au caractère) : active les voix ElevenLabs |
 
 ## Licences des composants embarqués

@@ -32,6 +32,7 @@
     <button type="button" role="tab" data-tab="voix" aria-selected="false"><span aria-hidden="true">🎙</span>Voix</button>
     <button type="button" role="tab" data-tab="subs" aria-selected="false"><span aria-hidden="true">Aa</span>Sous-titres</button>
     <button type="button" role="tab" data-tab="export" aria-selected="false"><span aria-hidden="true">⬇</span>Export</button>
+    <button type="button" role="tab" data-tab="services" aria-selected="false"><span aria-hidden="true">⚙</span>Services<i class="dot" id="svc-dot" hidden></i></button>
   </nav>
 
   <aside class="side">
@@ -138,6 +139,12 @@
         <button class="btn small" id="btn-thumb" type="button">Miniature JPG</button>
       </div>
       <p class="credits">Voix : ElevenLabs · Piper (siwis CC BY 4.0, gilles CC0, mls CC BY 4.0) · Vidéos : <a href="https://www.pexels.com" target="_blank" rel="noopener">Pexels</a> · archives <a href="https://commons.wikimedia.org" target="_blank" rel="noopener">Wikimedia Commons</a></p>
+    </section>
+    <section class="tab" id="tab-services" role="tabpanel" hidden>
+      <h2>Services</h2>
+      <p class="hint">Bachir IA rassemble ces services. Chaque clé se colle dans Vercel (Settings → Environment Variables, type « Sensitive »), puis on redéploie. Les clés restent sur le serveur, jamais dans le navigateur.</p>
+      <ul class="services" id="services"></ul>
+      <p class="hint">Mixkit n'a pas d'API publique : ses vidéos ne peuvent pas être recherchées automatiquement. Télécharge-les sur mixkit.co et utilise-les avec le bouton ↻ ou en remplaçant un plan.</p>
     </section>
   </aside>
 
