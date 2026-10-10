@@ -1,0 +1,30 @@
+{
+  "name": "bachir-ia",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Bachir IA : studio de vidéos de sensibilisation HSE, du script à la vidéo MP4.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "hash-password": "node scripts/hash-password.mjs",
+    "new-secret": "node -e \"console.log(require('crypto').randomBytes(48).toString('base64url'))\""
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.128.0",
+    "next": "15.5.26",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "22.18.6",
+    "@types/react": "19.3.0",
+    "typescript": "5.9.2"
+  },
+  "overrides": {
+    "postcss": "8.5.28"
+  }
+}

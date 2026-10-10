@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Connexion · Bachir IA</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/connexion.css">
+</head>
+<body>
+<main class="card">
+  <div class="band" aria-hidden="true"></div>
+  <h1>Bachir <span>IA</span></h1>
+  <p class="sub">Studio vidéo HSE · accès réservé</p>
+  <p class="msg" id="msg" role="alert" hidden></p>
+  <form method="post" action="/api/login" autocomplete="on">
+    <label for="motdepasse">Mot de passe</label>
+    <input id="motdepasse" name="motdepasse" type="password" autocomplete="current-password" required maxlength="256" autofocus>
+    <button type="submit">Se connecter</button>
+  </form>
+  <p class="foot">Session de 12 heures. Tes vidéos, photos et enregistrements restent sur ton ordinateur.</p>
+</main>
+<script src="/connexion.js" defer></script>
+</body>
+</html>
