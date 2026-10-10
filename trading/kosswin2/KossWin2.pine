@@ -12,10 +12,11 @@
 //  • Zones : Order Block + FVG et Supply / Demand, nés de la jambe qui a cassé
 //    la structure. Une zone n'est AFFICHÉE qu'après la prise de son inducement
 //    (premier repli interne formé après la cassure).
-//  • Doji de CHoCH : doji formés dans le mouvement du CHoCH, AVANT la bougie
-//    de cassure. La bougie doji devient violette seulement si le PREMIER
-//    contact du prix avec sa zone (son plus haut / plus bas) produit un rejet.
-//    Aucune zone n'est tracée.
+//  • Doji de CHoCH : doji formés dans le mouvement du CHoCH, bougie de cassure
+//    comprise. La bougie doji devient violette seulement si le PREMIER contact
+//    du prix avec sa zone (son plus haut / plus bas) produit un rejet. Elle
+//    redevient normale dès qu'une clôture traverse sa zone. Aucune zone n'est
+//    tracée.
 //
 //  La logique est identique dans KossWin2.mq5 (MetaTrader 5).
 // ════════════════════════════════════════════════════════════════════════════
@@ -379,12 +380,11 @@ paintDoji(Doji d) =>
     d.body := line.new(d.bar, bTop, d.bar, bBot, color = dojiCol, width = dojiBodyW)
     true
 
-// Doji du mouvement du CHoCH, positionnés AVANT la bougie de cassure : de la
-// bougie du swing cassé (début de la dernière jambe) à la bougie qui précède
-// le CHoCH.
+// Doji du mouvement du CHoCH : de la bougie du swing cassé (début de la
+// dernière jambe) jusqu'à la bougie de cassure (CHoCH) comprise.
 collectDoji(int dir, int fromBar) =>
     int len = bar_index - fromBar
-    for k = len to 1
+    for k = len to 0
         int b = bar_index - k
         if isDoji(k) and not dojiSeen.contains(b)
             dojiSeen.put(b, true)
@@ -468,15 +468,16 @@ if barstate.isconfirmed
     //        plus bas), la bougie de contact doit faire un REJET : clôture hors
     //        de la zone, côté réaction, d'au moins reactAtr × ATR. Rejet → la
     //        bougie doji devient violette. Pas de rejet au 1er contact → écarté.
+    //        Une clôture qui traverse la zone efface le violet (bougie normale).
     if dojis.size() > 0
         for i = dojis.size() - 1 to 0
-            Doji d = dojis.get(i)
-            if d.active
-                continue
+            Doji d    = dojis.get(i)
             bool bull = d.dir == 1
             bool inZ  = bull ? low <= d.top : high >= d.bottom
             bool kill = false
-            if inZ
+            if d.active
+                kill := bull ? close < d.bottom : close > d.top
+            else if inZ
                 bool rejected = bull ? close > d.top + reactAtr * atr : close < d.bottom - reactAtr * atr
                 if rejected
                     d.active := true

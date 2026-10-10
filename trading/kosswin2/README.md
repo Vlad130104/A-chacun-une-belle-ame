@@ -116,14 +116,15 @@ Zone d'achat :
 ### 3.6 Doji de CHoCH (bougie violette)
 
 - **Doji** : bougie dont le corps fait au plus **10 %** de son amplitude (réglable).
-- **Où on les cherche** : seulement dans le mouvement des **CHoCH** (pas des BOS), et **avant** la bougie de cassure. La recherche va de la bougie du swing cassé (début de la dernière jambe) jusqu'à la bougie qui **précède** le CHoCH. La bougie de CHoCH elle-même est exclue.
+- **Où on les cherche** : seulement dans le mouvement des **CHoCH** (pas des BOS). La recherche va de la bougie du swing cassé (début de la dernière jambe) jusqu'à la **bougie de CHoCH comprise**, si elle remplit les critères.
 - **Zone du doji** : du plus haut au plus bas de la bougie. Elle sert au calcul mais **n'est pas tracée**.
 - **Condition : un rejet au premier contact.** Après le CHoCH, la première bougie qui touche la zone du doji doit **clôturer hors de la zone, côté réaction**, à au moins **0,25 × ATR** :
   - au-dessus de la zone pour un CHoCH haussier ;
   - en dessous de la zone pour un CHoCH baissier ;
   - le seuil est réglable ; 0 = n'importe quelle clôture hors de la zone.
 - **Sans rejet au premier contact, le doji est écarté.** Un contact ultérieur ne le rattrape pas. Il est aussi écarté si le prix ne revient pas dans sa zone dans les 300 bougies qui suivent le CHoCH.
-- **Affichage** : la **bougie doji elle-même** devient violette, et le reste à partir de ce moment. Seules les 10 dernières sont gardées (réglable).
+- **Affichage** : la **bougie doji elle-même** devient violette. Seules les 10 dernières sont gardées (réglable).
+- **Invalidation** : la bougie **redevient normale** dès qu'une **clôture traverse sa zone** : une clôture sous le plus bas du doji pour un CHoCH haussier, au-dessus de son plus haut pour un baissier. Une simple mèche à travers la zone ne suffit pas.
   - **MT5** : la bougie est réellement recolorée, grâce à un tracé de type « bougies » de l'indicateur.
   - **TradingView** : Pine Script ne permet pas de changer la couleur d'une bougie passée. La bougie est donc **redessinée en violet par-dessus** l'originale : une ligne pour la mèche, une ligne épaisse pour le corps. Le réglage « Épaisseur du corps violet » (5 pixels par défaut) permet de l'ajuster au zoom.
 
@@ -163,7 +164,7 @@ Trois événements déclenchent une alerte : une zone validée par inducement, u
    - **Taille du point de sweep** : réglage `Taille du point`, de 1 (minuscule, par défaut) à 3 (ancienne taille).
    - **Accents** : le fichier est enregistré en UTF-8 avec BOM, pour que MetaEditor affiche correctement les accents des textes. Si des caractères étranges apparaissent dans les alertes, réenregistre le fichier en UTF-8 depuis MetaEditor.
 9. **Le biais n'est qu'une échelle de structure de plus.** Il dépend du timeframe choisi et de la force des swings. Un biais H4 haussier peut cohabiter avec une tendance journalière baissière. Il oriente la lecture, il ne prédit rien.
-10. **Le rejet au premier contact est un filtre sélectif, surtout avec un seuil d'amplitude.** Une zone de doji est petite : le prix y entre et en ressort facilement, donc une simple clôture hors de la zone ne prouve pas grand-chose. Sur 545 doji candidats (données simulées, doji placés avant le CHoCH), voici combien deviennent violets :
+10. **Le rejet au premier contact est un filtre sélectif, surtout avec un seuil d'amplitude.** Une zone de doji est petite : le prix y entre et en ressort facilement, donc une simple clôture hors de la zone ne prouve pas grand-chose. Sur environ 545 doji candidats (données simulées), voici combien deviennent violets :
 
     | Règle                           | Doji violets |
     | ------------------------------- | ------------ |
@@ -173,12 +174,15 @@ Trois événements déclenchent une alerte : une zone validée par inducement, u
 
     Le seuil de 0,25 × ATR est un choix de ma part, pas une règle SMC. Le régler à 0 donne ta définition au pied de la lettre.
 
+11. **La bougie de CHoCH n'est presque jamais un doji.** Pour casser la structure, elle doit clôturer au-delà du dernier sommet ou creux, ce qui demande en général un corps important. Un doji a un corps de 10 % au plus. Sur les données simulées, une seule bougie de CHoCH sur 546 doji candidats remplissait les critères. L'inclure ne change donc presque rien en pratique.
+12. **La plupart des bougies violettes finissent par redevenir normales.** Sur les données simulées, 91 % ont fini traversées par une clôture. Une bougie violette encore visible signale donc un doji dont la zone tient toujours, ce qui est plus utile qu'un historique permanent.
+
 ## 7. Vérifications faites
 
-- **Doji** : sur 5 × 6 000 bougies simulées, 545 doji candidats placés avant un CHoCH, dont 132 deviennent violets avec la règle par défaut (environ 1 toutes les 227 bougies). Invariants vérifiés sur chaque doji violet :
-  - le doji est strictement **avant** la bougie de CHoCH ;
+- **Doji** : sur 5 × 6 000 bougies simulées, on obtient 546 doji candidats, dont **une seule bougie de CHoCH**. 132 deviennent violets avec la règle par défaut (environ 1 toutes les 227 bougies), et 120 d'entre eux (91 %) redeviennent normaux plus tard, quand une clôture traverse leur zone. Invariants vérifiés :
+  - chaque doji se situe entre le début de la jambe et la bougie de CHoCH incluse ;
   - la bougie de rejet est bien le **premier** contact avec la zone après le CHoCH ;
-  - cette bougie touche la zone et clôture hors de la zone, côté réaction.
+  - chaque doji redevenu normal l'a été à la **première** clôture qui traverse sa zone, et pas avant.
 - Le biais n'a pas été simulé. Il réutilise exactement les règles de structure déjà vérifiées, appliquées au timeframe supérieur.
 - La logique a été reproduite en Python et exécutée sur 5 × 6 000 bougies simulées. Sur ces données : 1 321 cassures (dont 512 CHoCH), 1 079 zones créées, dont 572 (53 %) validées par inducement.
 - Invariants vérifiés sur chaque zone affichée :

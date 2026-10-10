@@ -3,7 +3,8 @@
 //|  Structure BOS / CHoCH, biais directionnel (TF supérieur),        |
 //|  liquidité, sweeps d'EQH / EQL, Order Blocks + FVG et             |
 //|  Supply / Demand validés par inducement, doji de CHoCH (bougie    |
-//|  recolorée en violet après un rejet au 1er contact).              |
+//|  recolorée en violet après un rejet au 1er contact, jusqu'à ce    |
+//|  qu'une clôture traverse sa zone).                                |
 //|  Même logique que KossWin2.pine (TradingView).                    |
 //+------------------------------------------------------------------+
 #property copyright   "KossWin2"
@@ -697,9 +698,8 @@ void PaintDoji(const Doji &d)
    g_dojiC[d.bar] = d.cl;
   }
 
-// Doji du mouvement du CHoCH, positionnés AVANT la bougie de cassure : de la
-// bougie du swing cassé (début de la dernière jambe) à la bougie qui précède
-// le CHoCH.
+// Doji du mouvement du CHoCH : de la bougie du swing cassé (début de la
+// dernière jambe) jusqu'à la bougie de cassure (CHoCH) comprise.
 void CollectDoji(int dir, int fromBar, int i, const double &op[], const double &h[], const double &l[], const double &c[])
   {
    int old = ArraySize(g_dojiSeen);
@@ -709,7 +709,7 @@ void CollectDoji(int dir, int fromBar, int i, const double &op[], const double &
       for(int x = old; x <= i; x++)
          g_dojiSeen[x] = false;
      }
-   for(int b = fromBar; b <= i - 1; b++)
+   for(int b = fromBar; b <= i; b++)
      {
       if(g_dojiSeen[b] || !IsDoji(b, op, h, l, c))
          continue;
@@ -821,29 +821,34 @@ void ProcessBar(int i, const datetime &t[], const double &op[], const double &h[
 //           plus bas), la bougie de contact doit faire un REJET : clôture hors
 //           de la zone, côté réaction, d'au moins InpReactAtr x ATR. Rejet → la
 //           bougie doji devient violette. Pas de rejet au 1er contact → écarté.
+//           Une clôture qui traverse la zone efface le violet (bougie normale).
    for(int k = ArraySize(g_dojis) - 1; k >= 0; k--)
      {
-      if(g_dojis[k].active)
-         continue;
       bool bull = g_dojis[k].dir == 1;
       bool inZ  = bull ? l[i] <= g_dojis[k].top : h[i] >= g_dojis[k].bottom;
       bool kill = false;
-      if(inZ)
+      if(g_dojis[k].active)
         {
-         double dist     = InpReactAtr * g_atr[i];
-         bool   rejected = bull ? c[i] > g_dojis[k].top + dist : c[i] < g_dojis[k].bottom - dist;
-         if(rejected)
-           {
-            g_dojis[k].active = true;
-            g_newDoji++;
-            if(InpShowDoji)
-               PaintDoji(g_dojis[k]);
-           }
-         else
-            kill = true;
+         // Clôture qui traverse la zone : la bougie redevient normale.
+         kill = bull ? c[i] < g_dojis[k].bottom : c[i] > g_dojis[k].top;
         }
       else
-         kill = i - g_dojis[k].created > InpDojiExpiry;
+         if(inZ)
+           {
+            double dist     = InpReactAtr * g_atr[i];
+            bool   rejected = bull ? c[i] > g_dojis[k].top + dist : c[i] < g_dojis[k].bottom - dist;
+            if(rejected)
+              {
+               g_dojis[k].active = true;
+               g_newDoji++;
+               if(InpShowDoji)
+                  PaintDoji(g_dojis[k]);
+              }
+            else
+               kill = true;   // pas de rejet au 1er contact : écarté
+           }
+         else
+            kill = i - g_dojis[k].created > InpDojiExpiry;
       if(kill)
          RemoveDoji(k);
      }
