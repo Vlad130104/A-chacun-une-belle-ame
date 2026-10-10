@@ -169,6 +169,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     script: EXAMPLE_SCRIPT,
     useAi: false,
     autoBroll: true,
+    mediaSource: "auto",
     aspect: "9:16",
     voice: { mode: "ia", id: "fr_FR-siwis-medium", speed: "1" },
     template: "impact",
@@ -188,6 +189,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   if (typeof state.script !== "string") state.script = DEFAULT_STATE.script;
   if (typeof state.useAi !== "boolean") state.useAi = false;
   if (typeof state.autoBroll !== "boolean") state.autoBroll = true;
+  if (!["auto", "video", "photo", "archive", "film"].includes(state.mediaSource)) state.mediaSource = "auto";
   if (!TEMPLATES[state.template]) state.template = "impact";
   state.scenes.forEach((s) => {
     s.id = s.id || uid();
@@ -385,7 +387,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     if (opts.bgCanvas) return { el: opts.bgCanvas, w: opts.bgCanvas.width, h: opts.bgCanvas.height };
     if (exporting) return null;
     const v = bg.el;
-    const want = bg.dur ? lt % bg.dur : 0;
+    const want = bg.dur ? (lt + (bg.offset || 0)) % bg.dur : 0;
     if (playing) {
       if (activeVideo !== v) {
         if (activeVideo) activeVideo.pause();
@@ -737,7 +739,9 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
       v.src = url;
       await new Promise((ok, ko) => { v.onloadeddata = ok; v.onerror = () => ko(new Error("vidéo illisible dans ce navigateur")); });
       v.addEventListener("seeked", () => { if (!playing && !exporting) drawFrame(scrubTime()); });
-      entry = { kind: "video", el: v, url, blob, dur: v.duration || 1, ...meta };
+      const dur = Number.isFinite(v.duration) && v.duration > 0 ? v.duration : 1;
+      // Clip long (film d'archives) : départ au hasard après le générique, pour varier les plans.
+      entry = { kind: "video", el: v, url, blob, dur, offset: dur > 30 ? Math.floor(dur * (0.15 + Math.random() * 0.4)) : 0, ...meta };
     }
     clearBackground(sc);
     media.bg.set(sc.id, entry);
@@ -787,45 +791,216 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     return data;
   }
 
-  /* ---------------- B-rolls Pexels ---------------- */
-  async function brollSearch(q) {
-    const d = await api("/api/broll/recherche", { q, orientation: state.aspect === "16:9" ? "landscape" : "portrait" });
-    return d.videos || [];
+  /* ---------------- Médiathèque : Pexels (vidéos, photos) et archives Wikimedia Commons ---------------- */
+  const SOURCES = {
+    auto: { label: "Automatique" },
+    video: { label: "Vidéos (Pexels)", pexels: true },
+    photo: { label: "Photos (Pexels)", pexels: true },
+    archive: { label: "Archives photos" },
+    film: { label: "Archives films" },
+  };
+  // Sujet historique : le mode automatique passe alors sur les archives (photos et films d'époque).
+  const HISTORIC = /\b(guerres?|mondiale|poilus?|tranchées?|nazis?|hitler|staline|churchill|de gaulle|napol[ée]on|débarquement|résistance|occupation|armistice|colonial[es]?|colonisation|colonies|indépendances?|empires?|empereurs?|pharaons?|antiquité|médiéval|moyen[- ]âge|révolution|monarchie|rois?|reines?|siècles?|archives?|historiques?|histoire|1[5-9]\d\d|20[0-1]\d|années (?:folles|vingt|trente|quarante|cinquante|soixante))\b/iu;
+  const isHistoric = (text) => HISTORIC.test(String(text || ""));
+  // Commons est surtout décrit en anglais : les mots-clés courants sont traduits pour les archives.
+  const EN_PHRASES = [
+    [/(?:seconde|deuxième|2e|2nde) guerre mondiale|39-45/g, "World War II"],
+    [/(?:première|1re|grande) guerre(?: mondiale)?|14-18/g, "World War I"],
+    [/guerre froide/g, "Cold War"], [/moyen[- ]âge/g, "Middle Ages"], [/de gaulle/g, "de Gaulle"],
+    [/côte d'ivoire/g, "Ivory Coast"], [/afrique de l'ouest/g, "West Africa"],
+  ];
+  const EN_WORDS = {
+    guerre: "war", guerres: "war", canon: "cannon", canons: "artillery", artillerie: "artillery", soldat: "soldier", soldats: "soldiers",
+    char: "tank", chars: "tanks", avion: "aircraft", avions: "aircraft", bombardement: "bombing", bombardements: "bombing", bombardier: "bomber",
+    navire: "ship", navires: "ships", bateau: "ship", sous: "", marin: "sailor", marins: "sailors", armée: "army", armées: "army", troupes: "troops",
+    débarquement: "landing", tranchée: "trench", tranchées: "trenches", résistance: "resistance", libération: "liberation", occupation: "occupation",
+    indépendance: "independence", colonial: "colonial", coloniale: "colonial", colonisation: "colonial", afrique: "Africa", africain: "African",
+    africains: "African", président: "president", discours: "speech", foule: "crowd", manifestation: "demonstration", ville: "city", usine: "factory",
+    ouvriers: "workers", ouvrier: "worker", paysans: "farmers", agriculture: "agriculture", train: "train", gare: "railway station", mine: "mine",
+    mines: "mine", mineurs: "miners", école: "school", enfants: "children", femmes: "women", marché: "market", port: "harbour", révolution: "revolution",
+    roi: "king", reine: "queen", empereur: "emperor", empire: "empire", château: "castle", église: "church", pont: "bridge", route: "road",
+    voiture: "car", voitures: "cars", explosion: "explosion", incendie: "fire", ruines: "ruins", médecin: "doctor", hôpital: "hospital",
+    paris: "Paris", londres: "London", allemagne: "Germany", allemand: "German", allemands: "German", français: "French", française: "French",
+    américain: "American", américains: "American", soviétique: "Soviet", japon: "Japan", japonais: "Japanese", normandie: "Normandy",
+    alliés: "Allied", allié: "Allied", alliées: "Allied", ennemi: "enemy", ennemis: "enemy", bataille: "battle", combat: "combat", combats: "combat",
+    infanterie: "infantry", cavalerie: "cavalry", parachutistes: "paratroopers", fusil: "rifle", fusils: "rifles", mitrailleuse: "machine gun",
+    prisonniers: "prisoners", réfugiés: "refugees", victoire: "victory", défilé: "parade", drapeau: "flag", plage: "beach", général: "general",
+    pologne: "Poland", italie: "Italy", russie: "Russia", chine: "China", sénégal: "Senegal", ghana: "Ghana", abidjan: "Abidjan", dakar: "Dakar",
+    mondiale: "world", histoire: "history", ancien: "old", ancienne: "old", interview: "interview", entretien: "interview", journaliste: "journalist",
+  };
+  // Renvoie la requête traduite (mots connus seulement) et la version mixte (mots inconnus gardés).
+  function toEnglish(q) {
+    let s = String(q || "").toLowerCase().replace(/[’`]/g, "'");
+    for (const [re, en] of EN_PHRASES) s = s.replace(re, en);
+    const known = [], mixed = [];
+    for (const raw of s.split(/\s+/)) {
+      const w = raw.replace(/^(?:l|d|qu|j|n|s|c|m|t)'/, "");
+      if (!w) continue;
+      const en = Object.hasOwn(EN_WORDS, w) ? EN_WORDS[w] : /^(?:[A-Z]|1[5-9]\d\d|20[0-2]\d$)/.test(w) ? w : null;
+      if (en) known.push(en);
+      mixed.push(en || w);
+    }
+    return { known: [...new Set(known)].join(" "), mixed: [...new Set(mixed)].join(" ") };
   }
-  async function brollDownload(v) {
-    try {
-      const r = await fetch(v.link, { mode: "cors", credentials: "omit" });
-      if (r.ok) return new Blob([await r.blob()], { type: "video/mp4" });
-    } catch (e) { /* téléchargement direct refusé : passage par le relais */ }
-    const r = await fetch(`/api/broll/fichier?id=${encodeURIComponent(v.id)}&f=${encodeURIComponent(v.fileId)}`, { credentials: "same-origin" });
-    if (!r.ok) throw new Error("téléchargement du B-roll impossible");
-    return new Blob([await r.blob()], { type: "video/mp4" });
+  const plainText = (html) => (new DOMParser().parseFromString(String(html || ""), "text/html").body.textContent || "").replace(/\s+/g, " ").trim();
+  const isFree = (lic) => /public domain|domaine public|^pd|cc0/i.test(lic || "");
+
+  async function commonsQuery(q, film) {
+    const p = new URLSearchParams({
+      action: "query", format: "json", formatversion: "2", origin: "*", generator: "search",
+      gsrsearch: `${q} filetype:${film ? "video" : "bitmap"}`, gsrnamespace: "6", gsrlimit: film ? "15" : "20",
+      prop: "videoinfo", viprop: "url|size|mime|extmetadata|derivatives", viurlwidth: "1280",
+      viextmetadatafilter: "Artist|Credit|LicenseShortName|ObjectName|DateTimeOriginal",
+    });
+    let r;
+    try { r = await fetch("https://commons.wikimedia.org/w/api.php?" + p, { credentials: "omit" }); }
+    catch (e) { throw { code: "wm_reseau", message: "Wikimedia Commons est injoignable depuis ce réseau." }; }
+    if (!r.ok) throw { code: "wm_erreur", message: "Wikimedia Commons n'a pas répondu. Réessaie." };
+    const pages = (((await r.json()) || {}).query || {}).pages || [];
+    pages.sort((a, b) => (a.index || 0) - (b.index || 0));
+    const out = [];
+    for (const pg of pages) {
+      const info = pg.videoinfo && pg.videoinfo[0];
+      if (!info) continue;
+      const md = info.extmetadata || {};
+      const credit = {
+        src: "wikimedia",
+        title: plainText(md.ObjectName && md.ObjectName.value) || String(pg.title || "").replace(/^File:/, "").replace(/\.[a-z0-9]+$/i, ""),
+        author: plainText(md.Artist && md.Artist.value) || plainText(md.Credit && md.Credit.value) || "auteur inconnu",
+        license: plainText(md.LicenseShortName && md.LicenseShortName.value) || "licence à vérifier",
+        page: info.descriptionurl || "",
+      };
+      const preview = info.thumburl ? info.thumburl.replace(/\/\d+px-([^/]+)$/, "/330px-$1") : "";
+      if (film) {
+        const webm = (info.derivatives || []).filter((d) => /^video\/webm/.test(d.type || "") && d.height >= 240 && /^https:\/\/upload\.wikimedia\.org\//.test(d.src || ""));
+        if (!webm.length) continue;
+        webm.sort((a, b) => a.height - b.height);
+        const d = webm.find((x) => x.height >= 480) || webm[webm.length - 1];
+        const dur = Number(info.duration) || 0;
+        const mb = d.bandwidth && dur ? (d.bandwidth * dur) / 8e6 : 0;
+        out.push({ key: "wm:" + pg.title, kind: "video", link: d.src, image: preview, fallback: info.thumburl, dur, mb, credit });
+      } else {
+        const link = info.thumburl || (/^image\/(jpeg|png|webp)$/.test(info.mime) ? info.url : "");
+        if (!link || !/^https:\/\/upload\.wikimedia\.org\//.test(link) || (info.width && info.width < 400)) continue;
+        out.push({ key: "wm:" + pg.title, kind: "image", link, image: preview || link, fallback: link, credit });
+      }
+    }
+    // Domaine public en premier : aucune obligation de crédit ni de partage à l'identique.
+    return out.sort((a, b) => isFree(b.credit.license) - isFree(a.credit.license));
   }
-  // Ajoute un B-roll aux scènes sans fond (au plus `limit` par passage), sans réutiliser deux fois le même clip.
+  // Archives : requête traduite, puis élargie (moins de mots) si elle ne donne rien.
+  async function commonsSearch(q, film) {
+    const { known, mixed } = toEnglish(q);
+    const tries = [...new Set([known, mixed, q, (known || mixed).split(" ")[0]])].filter(Boolean);
+    for (const t of tries) {
+      const res = await commonsQuery(t, film);
+      if (res.length) return res;
+    }
+    return [];
+  }
+
+  let pexelsBlocked = false;
+  async function mediaSearch(q, src) {
+    if (src === "archive" || src === "film") return commonsSearch(q, src === "film");
+    const orientation = state.aspect === "16:9" ? "landscape" : "portrait";
+    if (src === "photo") {
+      const d = await api("/api/broll/recherche", { q, orientation, kind: "photo" });
+      return (d.photos || []).map((p) => ({ key: "px:p" + p.id, kind: "image", id: p.id, link: p.link, image: p.image,
+        credit: { src: "pexels", kind: "Photo", author: p.author, license: "Licence Pexels", page: p.page } }));
+    }
+    const d = await api("/api/broll/recherche", { q, orientation });
+    return (d.videos || []).map((v) => ({ key: "px:v" + v.id, kind: "video", id: v.id, fileId: v.fileId, link: v.link, image: v.image, dur: v.duration,
+      credit: { src: "pexels", kind: "Vidéo", author: v.author, license: "Licence Pexels", page: v.page } }));
+  }
+  async function mediaDownload(m) {
+    const direct = async () => {
+      const r = await fetch(m.link, { mode: "cors", credentials: "omit" });
+      if (!r.ok) throw new Error("http " + r.status);
+      return r.blob();
+    };
+    if (m.credit.src === "wikimedia") {
+      let b;
+      try { b = await direct(); } catch (e) { throw new Error("téléchargement impossible depuis Wikimedia Commons"); }
+      return m.kind === "video" ? new Blob([b], { type: "video/webm" }) : b;
+    }
+    const relay = m.kind === "video" ? `/api/broll/fichier?id=${encodeURIComponent(m.id)}&f=${encodeURIComponent(m.fileId)}`
+      : `/api/broll/photo?id=${encodeURIComponent(m.id)}&o=${state.aspect === "16:9" ? "landscape" : "portrait"}`;
+    let b = null;
+    try { b = await direct(); } catch (e) { /* téléchargement direct refusé : passage par le relais */ }
+    if (!b) {
+      const r = await fetch(relay, { credentials: "same-origin" });
+      if (!r.ok) throw new Error("téléchargement du média impossible");
+      b = await r.blob();
+    }
+    if (m.kind === "video") return new Blob([b], { type: "video/mp4" });
+    return /^image\//.test(b.type) ? b : new Blob([b], { type: "image/jpeg" });
+  }
+  const metaOf = (m) => ({ key: m.key, credit: m.credit });
+
+  // Sources à essayer pour une scène, dans l'ordre. `historic` : le script entier parle d'histoire.
+  function sourcePlan(sc, i, historic) {
+    const choice = SOURCES[sc.src] ? sc.src : state.mediaSource;
+    const pex = brollOn && !pexelsBlocked;
+    const fallback = { video: ["video", "photo"], photo: ["photo", "video"], archive: ["archive"], film: ["film", "archive"] };
+    if (choice !== "auto") return SOURCES[choice].pexels && !pex ? ["archive"] : fallback[choice];
+    if (historic || isHistoric(`${sc.titre} ${sc.voix} ${sc.broll || ""}`)) return i % 2 ? ["archive", "film"] : ["film", "archive"];
+    return pex ? ["video", "photo", "archive"] : ["archive"];
+  }
+  // Ajoute un média aux scènes sans fond (au plus `limit` par passage), sans réutiliser deux fois le même.
   async function autoBroll(limit, report) {
-    const used = new Set([...media.bg.values()].map((b) => b.pexelsId).filter(Boolean));
-    const todo = state.scenes.filter((s) => !media.bg.has(s.id) && keywords(s)).slice(0, limit);
-    let done = 0, fail = 0;
+    const used = new Set([...media.bg.values()].map((b) => b.key).filter(Boolean));
+    const historic = isHistoric(state.scenes.map((s) => `${s.titre} ${s.voix}`).join(" ").slice(0, 20000));
+    const todo = state.scenes.map((s, i) => ({ s, i })).filter(({ s }) => !media.bg.has(s.id) && keywords(s)).slice(0, limit);
+    const searches = new Map();
+    const find = (q, src) => {
+      const k = src + "|" + q;
+      if (!searches.has(k)) searches.set(k, mediaSearch(q, src).catch((e) => { searches.delete(k); throw e; }));
+      return searches.get(k);
+    };
+    let done = 0, fail = 0, lastErr = "";
     const worker = async () => {
       while (todo.length) {
-        const sc = todo.shift();
-        try {
-          const vids = await brollSearch(keywords(sc));
-          const pick = vids.find((v) => !used.has(v.id)) || vids[0];
-          if (!pick) { fail++; continue; }
-          used.add(pick.id);
-          await setBackground(sc, await brollDownload(pick), { pexelsId: pick.id, author: pick.author });
-          done++;
-        } catch (e) {
-          fail++;
-          if (e && e.code === "broll_sature") todo.length = 0;
+        const { s: sc, i } = todo.shift();
+        const q = keywords(sc);
+        let ok = false;
+        for (const src of sourcePlan(sc, i, historic)) {
+          if (SOURCES[src].pexels && pexelsBlocked) continue;
+          try {
+            // Films d'archives au-delà de 60 Mo laissés au choix manuel : trop lourds pour un ajout automatique.
+            const items = (await find(q, src)).filter((m) => !(m.mb > 60));
+            const pick = items.find((m) => !used.has(m.key));
+            if (!pick) continue;
+            used.add(pick.key);
+            await setBackground(sc, await mediaDownload(pick), metaOf(pick));
+            ok = true;
+            break;
+          } catch (e) {
+            lastErr = (e && e.message) || "";
+            if (e && e.code === "broll_sature") pexelsBlocked = true;
+          }
         }
-        report(`B-rolls : ${done} ajoutés${fail ? `, ${fail} sans résultat` : ""}…`);
+        if (ok) done++; else fail++;
+        report(`Images et vidéos : ${done} ajoutées${fail ? `, ${fail} sans résultat` : ""}…`);
       }
     };
     await Promise.all([worker(), worker(), worker()]);
     renderScenes();
-    return { done, fail, left: state.scenes.filter((s) => !media.bg.has(s.id)).length };
+    return { done, fail, lastErr, left: state.scenes.filter((s) => !media.bg.has(s.id)).length };
+  }
+
+  // Texte de crédits à coller dans la description : obligatoire pour les licences CC BY et CC BY-SA.
+  function creditsText() {
+    const seen = new Set(), rows = [];
+    for (const s of state.scenes) {
+      const b = media.bg.get(s.id);
+      if (!b || !b.credit || seen.has(b.key)) continue;
+      seen.add(b.key);
+      const c = b.credit;
+      rows.push(c.src === "pexels" ? `${c.kind} : ${c.author || "auteur"} sur Pexels (${c.page})`
+        : `« ${c.title} », ${c.author}, ${c.license}, via Wikimedia Commons (${c.page})`);
+    }
+    if (media.voiceTts && /siwis|mls_1840/.test(state.voice.id)) rows.push(`Voix de synthèse : Piper, voix ${state.voice.id.includes("siwis") ? "siwis" : "mls_1840"} (CC BY 4.0)`);
+    return rows.length ? "Crédits images, vidéos et voix :\n" + rows.map((r) => "- " + r).join("\n") : "";
   }
 
   /* ---------------- Voix ---------------- */
@@ -989,8 +1164,10 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
       const bg = media.bg.get(s.id);
 
       const thumb = el("div", { class: "thumb" });
-      if (bg && bg.kind === "image") thumb.append(el("img", { src: bg.url, alt: "" }), el("span", { class: "tag", text: "Image" }));
-      else if (bg) thumb.append(el("video", { src: bg.url, muted: true, playsInline: true, preload: "metadata" }), el("span", { class: "tag", text: "B-roll" }));
+      const arch = bg && bg.credit && bg.credit.src === "wikimedia";
+      if (bg && bg.kind === "image") thumb.append(el("img", { src: bg.url, alt: "" }), el("span", { class: "tag", text: arch ? "Archive" : "Image" }));
+      else if (bg) thumb.append(el("video", { src: bg.url, muted: true, playsInline: true, preload: "metadata" }), el("span", { class: "tag", text: arch ? "Film d'archives" : "Vidéo" }));
+      if (bg && bg.credit) thumb.title = bg.credit.src === "pexels" ? `${bg.credit.kind} de ${bg.credit.author} sur Pexels` : `${bg.credit.title} · ${bg.credit.author} · ${bg.credit.license}`;
       else thumb.append(el("span", { text: "Pas de fond" }));
 
       const typeSel = el("select", { id: id("type"), "aria-label": `Type de la scène ${i + 1}` },
@@ -1013,11 +1190,14 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
       const voixLab = el("label", { class: "f" }, el("span", { text: "Voix off et sous-titres" }), voix);
 
       const file = el("input", { type: "file", id: id("bg"), accept: "image/*,video/*", "aria-label": "Image ou vidéo de fond" });
-      const kw = el("input", { type: "text", id: id("kw"), value: s.broll || "", placeholder: keywords({ ...s, broll: "" }) || "mots-clés du B-roll", "aria-label": "Mots-clés du B-roll" });
+      const kw = el("input", { type: "text", id: id("kw"), value: s.broll || "", placeholder: keywords({ ...s, broll: "" }) || "mots-clés (ex. WW2 artillery)", "aria-label": "Mots-clés de recherche" });
+      const srcSel = el("select", { id: id("src"), "aria-label": `Source des médias de la scène ${i + 1}` },
+        el("option", { value: "", text: "Source : réglage général", selected: !SOURCES[s.src] }),
+        Object.entries(SOURCES).filter(([v]) => v !== "auto").map(([v, o]) => el("option", { value: v, text: o.pexels && !brollOn ? `${o.label} : clé requise` : o.label, disabled: o.pexels && !brollOn, selected: v === s.src })));
       const search = el("button", { type: "button", class: "btn small", text: "Chercher" });
       const rm = el("button", { type: "button", class: "btn small ghost", text: "Retirer le fond", hidden: !bg });
       const results = el("div", { class: "results", hidden: true });
-      const mediaRow = el("div", { class: "media" }, file, ...(brollOn ? [kw, search] : []), rm);
+      const mediaRow = el("div", { class: "media" }, file, kw, srcSel, search, rm);
 
       const card = el("article", { class: "scene" }, thumb,
         el("div", { class: "body" },
@@ -1041,6 +1221,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
         changed(null);
       });
       kw.addEventListener("input", () => { s.broll = kw.value; persist(); });
+      srcSel.addEventListener("change", () => { if (srcSel.value) s.src = srcSel.value; else delete s.src; persist(); });
       file.addEventListener("change", async () => {
         const f = file.files && file.files[0];
         if (!f) return;
@@ -1051,19 +1232,29 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
       search.addEventListener("click", async () => {
         const q = keywords(s);
         if (!q) return;
-        search.disabled = true; results.hidden = false; results.textContent = "Recherche…";
+        const src = sourcePlan(s, i, isHistoric(state.scenes.map((x) => `${x.titre} ${x.voix}`).join(" ").slice(0, 20000)))[0];
+        search.disabled = true; results.hidden = false; results.textContent = `Recherche : ${SOURCES[src].label}…`;
         try {
-          const vids = await brollSearch(q);
-          results.replaceChildren(...vids.map((v) => {
-            const b = el("button", { type: "button", title: `Vidéo de ${v.author} sur Pexels` }, el("img", { src: v.image, alt: `B-roll : ${q}`, loading: "lazy" }));
+          const found = await mediaSearch(q, src);
+          results.replaceChildren(...found.map((m) => {
+            const c = m.credit;
+            const tip = c.src === "pexels" ? `${c.kind} de ${c.author} sur Pexels` : `${c.title} · ${c.author} · ${c.license}${m.mb ? ` · environ ${Math.ceil(m.mb)} Mo` : ""}`;
+            const img = el("img", { src: m.image, alt: `${c.title || q}`, loading: "lazy" });
+            if (m.fallback) img.addEventListener("error", () => { if (img.src !== m.fallback) img.src = m.fallback; }, { once: true });
+            const tags = [];
+            if (m.kind === "video") tags.push(el("span", { class: "rtag", text: `▶${m.dur ? " " + fmt(m.dur) : ""}` }));
+            if (c.src === "wikimedia") tags.push(el("span", { class: "rlic" + (isFree(c.license) ? " free" : ""), text: isFree(c.license) ? "Dom. public" : c.license }));
+            const b = el("button", { type: "button", title: tip }, img, ...tags);
             b.addEventListener("click", async () => {
-              results.textContent = "Téléchargement du B-roll…";
-              try { await setBackground(s, await brollDownload(v), { pexelsId: v.id, author: v.author }); renderScenes(); focusScene(i); }
+              results.textContent = m.mb > 60 ? `Téléchargement du film (environ ${Math.ceil(m.mb)} Mo), patiente…` : "Téléchargement…";
+              try { await setBackground(s, await mediaDownload(m), metaOf(m)); renderScenes(); focusScene(i); }
               catch (e) { results.textContent = e.message; }
             });
             return b;
           }));
-          if (!vids.length) results.textContent = "Aucun résultat : essaie d'autres mots-clés (en français ou en anglais).";
+          if (!found.length) results.textContent = src === "archive" || src === "film"
+            ? "Aucune archive : essaie des mots-clés en anglais (ex. « WW2 artillery », « 1960 Africa independance »)."
+            : "Aucun résultat : essaie d'autres mots-clés (en français ou en anglais).";
         } catch (e) { results.textContent = (e && e.message) || "Recherche impossible."; }
         finally { search.disabled = false; }
       });
@@ -1079,8 +1270,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     $("pg-next").disabled = page >= pages - 1;
     $("ex-badge").hidden = !state.example;
     const missing = state.scenes.filter((s) => !media.bg.has(s.id)).length;
-    $("broll-note").textContent = brollOn ? `${missing} scène(s) sans fond` : "Importe tes vidéos ou images par scène (B-rolls automatiques : clé Pexels à ajouter sur le serveur).";
-    $("btn-broll-all").hidden = !brollOn;
+    $("broll-note").textContent = `${missing} scène(s) sans fond` + (brollOn ? "" : " · archives Wikimedia actives ; vidéos et photos modernes : clé Pexels à ajouter sur le serveur");
     refreshDerived();
     updateTimes(scrubTime());
   }
@@ -1111,6 +1301,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
       const c = chaptersText();
       $("chapters").value = c.text;
       $("chapters-note").textContent = c.note;
+      $("credits").value = creditsText() || "Aucun média de Pexels ou de Wikimedia Commons dans cette vidéo.";
       fillRange();
     }, 150);
   }
@@ -1219,6 +1410,8 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     $("s-ai").checked = state.useAi;
     $("s-ai").addEventListener("change", (e) => { state.useAi = e.target.checked; persist(); });
     $("s-auto-broll").checked = state.autoBroll;
+    $("s-source").value = state.mediaSource;
+    $("s-source").addEventListener("change", (e) => { state.mediaSource = e.target.value; persist(); });
     $("s-auto-broll").addEventListener("change", (e) => { state.autoBroll = e.target.checked; persist(); });
     $("v-speed").value = state.voice.speed;
     $("v-speed").addEventListener("change", (e) => { state.voice.speed = e.target.value; persist(); });
@@ -1390,14 +1583,16 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
         notes.push("Importe ton enregistrement dans « Voix » : les scènes se caleront dessus.");
       }
 
-      if (state.autoBroll && brollOn) {
+      if (state.autoBroll) {
         stepState("st-broll", "run");
         const b = await autoBroll(40, report);
         stepState("st-broll", "done");
-        notes.push(`${b.done} B-roll(s) ajoutés${b.left ? `, ${b.left} scène(s) sans fond (relance « Trouver les B-rolls manquants » ou importe tes vidéos)` : ""}.`);
+        notes.push(`${b.done} image(s) et vidéo(s) ajoutées${b.left ? `, ${b.left} scène(s) sans fond (relance « Trouver les médias manquants » ou importe les tiens)` : ""}.`);
+        if (!b.done && b.lastErr) notes.push(b.lastErr);
+        if (state.scenes.some((s) => { const x = media.bg.get(s.id); return x && x.credit && !isFree(x.credit.license) && x.credit.src === "wikimedia"; }))
+          notes.push("Certaines archives exigent un crédit : copie-le depuis « Publication YouTube ».");
       } else {
         stepState("st-broll", "skip");
-        if (state.autoBroll && !brollOn) notes.push("B-rolls automatiques non activés sur le serveur : importe tes vidéos ou images par scène.");
       }
       seek(0.3);
       status("script-status", `Vidéo prête : ${state.scenes.length} scènes, ${fmt(timeline().total)}. ${notes.join(" ")} Vérifie l'aperçu, puis exporte.`, "ok");
@@ -1440,7 +1635,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     btn.disabled = true;
     try {
       const b = await autoBroll(40, (m) => status("script-status", m));
-      status("script-status", `${b.done} B-roll(s) ajoutés.${b.left ? ` ${b.left} scène(s) encore sans fond : relance pour continuer.` : ""}`, "ok");
+      status("script-status", `${b.done} média(s) ajoutés.${b.left ? ` ${b.left} scène(s) encore sans fond : relance, change la source ou les mots-clés.` : ""}${!b.done && b.lastErr ? " " + b.lastErr : ""}`, b.done ? "ok" : "warn");
     } finally { btn.disabled = false; }
   });
 
@@ -1590,7 +1785,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
           }
           if (!rd.sink) { curBg = { i, iter: null }; return null; }
           const fStart = f, fEnd = Math.min(N, Math.ceil((starts[i] + durs[i] - t0) * fps));
-          const times = function* () { for (let g = fStart; g < fEnd; g++) yield Math.max(0, t0 + g / fps - starts[i]) % rd.dur; };
+          const times = function* () { for (let g = fStart; g < fEnd; g++) yield (Math.max(0, t0 + g / fps - starts[i]) + (bg.offset || 0)) % rd.dur; };
           curBg = { i, iter: rd.sink.canvasesAtTimestamps(times()) };
         }
         if (!curBg.iter) return null;
@@ -1690,6 +1885,11 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     saveBlob(new Blob([rows.join("\n")], { type: "text/plain;charset=utf-8" }), `${fileBase()}.srt`);
     expStatus("Sous-titres .srt téléchargés. Sur YouTube : Sous-titres → Importer un fichier.", "ok");
   });
+  $("btn-credits").addEventListener("click", () => {
+    const txt = creditsText();
+    if (!txt) { expStatus("Aucun crédit à copier : pas de média Pexels ou Wikimedia dans cette vidéo."); return; }
+    copyText(txt, () => expStatus("Crédits copiés : colle-les dans la description.", "ok"), () => { $("credits").select(); expStatus("Crédits sélectionnés : copie-les avec Ctrl+C."); });
+  });
   $("btn-chapters").addEventListener("click", () => {
     const txt = $("chapters").value;
     if (!txt) return;
@@ -1743,7 +1943,10 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
       iaOn = Boolean(d && d.ia);
       brollOn = Boolean(d && d.broll);
       if (!iaOn) { $("s-ai").checked = false; $("s-ai").disabled = true; $("s-ai").parentElement.title = "IA non activée sur le serveur"; }
-      if (!brollOn) $("s-auto-broll").parentElement.title = "Clé Pexels absente sur le serveur";
+      if (!brollOn) {
+        for (const o of $("s-source").options) if (SOURCES[o.value] && SOURCES[o.value].pexels) { o.disabled = true; o.textContent = SOURCES[o.value].label + " : clé requise"; }
+        if (SOURCES[state.mediaSource].pexels) { state.mediaSource = "auto"; $("s-source").value = "auto"; }
+      }
       renderScenes();
     })
     .catch(() => { $("s-ai").checked = false; $("s-ai").disabled = true; });

@@ -31,7 +31,16 @@
           <button type="button" id="ar-portrait" aria-pressed="true">Short 9:16</button>
           <button type="button" id="ar-land" aria-pressed="false">Long 16:9</button>
         </div>
-        <label class="check"><input type="checkbox" id="s-auto-broll" checked> B-rolls automatiques</label>
+        <label class="check"><input type="checkbox" id="s-auto-broll" checked> Images et vidéos automatiques</label>
+        <label class="f inline"><span>Source</span>
+          <select id="s-source">
+            <option value="auto">Automatique : archives si le sujet est historique</option>
+            <option value="video">Vidéos modernes : gens, objets, interviews (Pexels)</option>
+            <option value="photo">Photos modernes (Pexels)</option>
+            <option value="archive">Archives photos : guerres, histoire (Wikimedia)</option>
+            <option value="film">Archives films : actualités d'époque (Wikimedia)</option>
+          </select>
+        </label>
         <label class="check"><input type="checkbox" id="s-ai"> Mise en page par Claude</label>
       </div>
       <div class="tpl-block">
@@ -42,7 +51,7 @@
       <ol class="steps" id="gen-steps" hidden>
         <li id="st-scenes">Découpage en scènes</li>
         <li id="st-voice">Voix off</li>
-        <li id="st-broll">B-rolls</li>
+        <li id="st-broll">Images et vidéos</li>
       </ol>
       <p class="status" id="script-status" role="status"></p>
 
@@ -96,7 +105,7 @@
     <section class="panel" aria-labelledby="h-scenes">
       <div class="phead"><span class="num">3</span><h2 id="h-scenes">Scènes</h2><span class="badge" id="ex-badge" hidden>Exemple</span><span class="aside" id="sc-total"></span></div>
       <div class="row">
-        <button class="btn small" id="btn-broll-all" type="button">Trouver les B-rolls manquants</button>
+        <button class="btn small" id="btn-broll-all" type="button">Trouver les médias manquants</button>
         <span class="hint" id="broll-note"></span>
       </div>
       <div class="scenes" id="scenes"></div>
@@ -157,13 +166,15 @@
       <summary>Publication YouTube</summary>
       <label class="f"><span>Chapitres pour la description</span><textarea id="chapters" rows="5" readonly></textarea></label>
       <p class="hint" id="chapters-note"></p>
+      <label class="f"><span>Crédits des médias (à coller dans la description)</span><textarea id="credits" rows="4" readonly></textarea></label>
       <div class="row">
+        <button class="btn small" id="btn-credits" type="button">Copier les crédits</button>
         <button class="btn small" id="btn-chapters" type="button">Copier les chapitres</button>
         <button class="btn small" id="btn-srt" type="button">Sous-titres .srt</button>
         <button class="btn small" id="btn-thumb" type="button">Miniature JPG</button>
       </div>
     </details>
-    <p class="credits">Voix : Piper (siwis CC BY 4.0, gilles CC0, mls CC BY 4.0) · B-rolls : <a href="https://www.pexels.com" target="_blank" rel="noopener">vidéos fournies par Pexels</a></p>
+    <p class="credits">Voix : Piper (siwis CC BY 4.0, gilles CC0, mls CC BY 4.0) · Médias : <a href="https://www.pexels.com" target="_blank" rel="noopener">Pexels</a> · archives <a href="https://commons.wikimedia.org" target="_blank" rel="noopener">Wikimedia Commons</a></p>
   </aside>
 </main>
 <script src="/studio/studio.js" defer></script>

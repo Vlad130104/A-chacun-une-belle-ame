@@ -13,8 +13,13 @@ de quelques secondes à plusieurs heures.
 - **Modèles** : 6 styles visuels (Impact, Minimal clair, Néon, Documentaire, Food & Promo, Business : couleurs,
   police, alignement, style de sous-titres) et 6 structures de script (Top 5, Storytelling, Tutoriel, Promo restaurant,
   Motivation, Actualité) à compléter entre crochets.
-- **B-rolls** : vidéo ou image par scène (import), ou recherche automatique de vidéos libres de droits Pexels
-  si `PEXELS_API_KEY` est défini. Rendu plein écran, sous-titres façon CapCut avec le mot prononcé surligné.
+- **Médiathèque** : par scène, import de tes images et vidéos, ou recherche dans 4 sources :
+  - vidéos et photos modernes (gens, objets, interviews) de Pexels, si `PEXELS_API_KEY` est défini ;
+  - archives photos et films d'époque (guerres, histoire, actualités anciennes) de Wikimedia Commons, sans clé,
+    interrogé directement par le navigateur, domaine public proposé en premier.
+  Le mode automatique choisit les archives quand le script parle d'histoire (alternance film et photo),
+  traduit les mots-clés en anglais pour Commons, et démarre les films longs après leur générique.
+  Les crédits (auteur, licence, lien) sont générés pour la description YouTube : obligatoires pour les licences CC BY et CC BY-SA.
 
 - **Script vers scènes** : une scène par paragraphe ; repères `# Titre`, `## Chapitre`, `> Citation — Auteur`, `- liste`.
   Aucune limite de longueur ; la mise en forme par Claude (facultative) traite jusqu'à 12 000 caractères.
@@ -34,7 +39,8 @@ de quelques secondes à plusieurs heures.
 - **Anti force brute** : 5 tentatives par IP toutes les 15 minutes, délai sur chaque échec, comparaison en temps constant.
 - **Toutes les pages et l'API sont fermées** sans session valide (middleware), sauf la page de connexion.
 - **CSRF** : contrôle de l'origine sur chaque requête POST.
-- **En-têtes stricts** : CSP sans script ni style en ligne et sans aucun domaine tiers, HSTS, anti-iframe,
+- **En-têtes stricts** : CSP sans script ni style en ligne ; seuls domaines tiers autorisés, en lecture : Pexels et Wikimedia
+  (médias), aucun script tiers. HSTS, anti-iframe,
   `nosniff`, référent jamais transmis aux autres sites, caméra/micro/géolocalisation désactivés, `noindex`.
 - **Aucune ressource externe** : polices hébergées sur le site, pas de Google Fonts, pas de traceur.
 - **Données locales** : photos, audio et vidéos sont traités dans le navigateur et ne sont jamais envoyés au serveur.
@@ -52,7 +58,7 @@ il ne remplace pas le pare-feu Vercel.
 | `ACCESS_PASSWORD_HASH` | `npm run hash-password -- "mot de passe long"` |
 | `SESSION_SECRET` | `npm run new-secret` |
 | `ANTHROPIC_API_KEY` | Facultatif : active la mise en forme et l'écriture des scripts par Claude |
-| `PEXELS_API_KEY` | Facultatif (gratuit sur pexels.com/api) : active la recherche automatique de B-rolls |
+| `PEXELS_API_KEY` | Facultatif (gratuit sur pexels.com/api) : active les vidéos et photos modernes (les archives Wikimedia marchent sans) |
 
 ## Licences des composants embarqués
 
