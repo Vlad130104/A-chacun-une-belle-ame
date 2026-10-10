@@ -31,7 +31,7 @@ export async function chercherVideos(q: string, orientation: Orientation) {
   return (data.videos ?? [])
     .map((v) => {
       const f = choisirFichier(v.video_files);
-      return f && { id: v.id, fileId: f.id, link: f.link, width: f.width, height: f.height, duration: v.duration, image: v.image, page: v.url, author: v.user?.name ?? "" };
+      return f && { id: v.id, fileId: f.id, link: f.link, width: f.width, height: f.height, duration: v.duration, image: v.image, page: v.url, author: v.user?.name ?? "", tags: (/\/video\/([^/]+?)-?\d*\/?$/.exec(v.url)?.[1] ?? "").replace(/-/g, " ").slice(0, 200) };
     })
     .filter(Boolean);
 }

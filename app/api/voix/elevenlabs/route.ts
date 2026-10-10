@@ -35,8 +35,7 @@ async function post(req: NextRequest) {
   const vitesse = Math.min(1.2, Math.max(0.7, Number(b.vitesse) || 1));
   if (!texte || !/^[A-Za-z0-9]{8,40}$/.test(voix)) return jsonError("requete_invalide", 400);
   try {
-    const mp3 = await synthese({ texte, voix, modele, vitesse, avant: str(b.avant, 400), apres: str(b.apres, 400) });
-    return new NextResponse(mp3, { headers: { "Content-Type": "audio/mpeg" } });
+    return NextResponse.json(await synthese({ texte, voix, modele, vitesse, avant: str(b.avant, 400), apres: str(b.apres, 400) }));
   } catch (e) {
     return erreur(e);
   }

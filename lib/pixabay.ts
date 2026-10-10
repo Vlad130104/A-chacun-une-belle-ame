@@ -5,7 +5,7 @@ const API = "https://pixabay.com/api/videos/";
 const CDN = /^https:\/\/cdn\.pixabay\.com\//;
 
 type Rendu = { url: string; width: number; height: number; size?: number; thumbnail?: string };
-type Hit = { id: number; pageURL: string; duration: number; user?: string; videos: Record<string, Rendu | undefined> };
+type Hit = { id: number; pageURL: string; duration: number; user?: string; tags?: string; videos: Record<string, Rendu | undefined> };
 export type Orientation = "portrait" | "landscape";
 export const RENDUS = ["tiny", "small", "medium", "large"] as const;
 
@@ -46,7 +46,7 @@ export async function chercherVideosPixabay(q: string, orientation: Orientation)
       const portrait = c.v.height > c.v.width;
       return {
         id: h.id, fileId: c.rendu, link: c.v.url, width: c.v.width, height: c.v.height, duration: h.duration,
-        image: c.v.thumbnail && CDN.test(c.v.thumbnail) ? c.v.thumbnail : "", page: h.pageURL, author: h.user ?? "",
+        image: c.v.thumbnail && CDN.test(c.v.thumbnail) ? c.v.thumbnail : "", page: h.pageURL, author: h.user ?? "", tags: String(h.tags ?? "").slice(0, 200),
         bonSens: orientation === "portrait" ? portrait : !portrait,
       };
     })

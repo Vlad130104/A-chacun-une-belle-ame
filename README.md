@@ -6,16 +6,26 @@ de quelques secondes à plusieurs heures.
 
 ## Fonctions
 
-**Tu donnes le script, Bachir IA monte la vidéo.** Interface claire bleu ciel et blanc :
+**Tu donnes le script, Bachir IA monte la vidéo.** Le flux suit le guide « SaaS B-roll AI » : script → scènes (Claude)
+→ voix (ElevenLabs) → recherche de vidéos (Pexels, Pixabay) → plans manquants générés (Kling via fal) → montage → export.
+Le montage se fait dans le navigateur (WebCodecs) plutôt que sur un serveur FFmpeg : aucun coût de rendu, aucune limite
+de taille de fichier côté serveur, et le fichier final ne transite jamais par le serveur. Interface claire bleu ciel et blanc :
 script à gauche, aperçu au centre, paramètres et téléchargement à droite.
 
 - **Le script est lu mot pour mot**, découpé en phrases (14 mots au plus par plan), sous-titré mot par mot.
-- **Une vidéo par phrase, choisie pour ce qu'elle dit** : Claude lit chaque phrase et décrit ce qu'il faut montrer.
-  - *Vidéos réelles* (gratuit) : recherche dans Pexels et Pixabay, archives Wikimedia pour les passages historiques.
-  - *Vidéos IA sur mesure* (payant, via fal, modèle Kling 2.6) : chaque phrase est filmée d'après la description de Claude,
-    pour une correspondance exacte. Devis affiché et confirmé avant de lancer (environ 0,35 $ par plan de 5 s,
-    120 plans au plus ; le reste et les échecs passent en vidéos réelles).
+- **Une vidéo par phrase, choisie pour ce qu'elle dit** : Claude lit chaque phrase, décrit ce qu'il faut montrer
+  et indique si une banque de vidéos a des chances de l'avoir.
+  - *Hybride (recommandé, logique du guide B-roll AI)* : vidéos réelles d'abord (Pexels, Pixabay, archives Wikimedia),
+    avec contrôle de pertinence (mots de la recherche retrouvés dans le titre ou les tags du clip) ; l'IA (Kling via fal)
+    ne filme que les phrases sans plan qui convient, dans la limite d'un budget par vidéo (2 à 50 $).
+  - *Vidéos réelles seulement* (gratuit) ou *tout en IA* (le plus précis, le plus cher).
   - Bouton ↻ : autre vidéo (ou nouveau plan IA) pour la phrase affichée.
+- **Synchronisation sur la voix réelle** : avec ElevenLabs, le temps de chaque mot (alignement caractère par caractère)
+  pilote les sous-titres ; chaque plan dure exactement le temps de sa phrase.
+- **Musique de fond** facultative, en boucle sous la voix, volume réglable, fondu final (vidéos de 30 min au plus).
+- **Reprise sur erreur** : si une étape échoue (clé, crédits, réseau), un nouveau clic ne refait que ce qui manque ;
+  l'analyse du script et la voix déjà faites sont gardées.
+- **Coûts visibles** à la fin de chaque création : analyses Claude, caractères ElevenLabs, plans IA et leur prix.
 - **Voix** : toute la bibliothèque ElevenLabs (recherche, filtres, extraits gratuits), voix du compte et clones,
   3 voix gratuites dans le navigateur, ou ta voix enregistrée.
 - **Grand format** (plein écran), **téléchargement** en un clic, export long écrit sur le disque au-delà de 20 minutes.

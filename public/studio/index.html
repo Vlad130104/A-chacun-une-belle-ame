@@ -76,6 +76,7 @@
       <p class="status" id="script-status" role="status">Colle ton script à gauche, règle les paramètres à droite, puis « Créer la vidéo ».</p>
       <div class="meter" id="meter" hidden><i id="meter-fill"></i></div>
       <p class="status" id="exp-status" role="status"></p>
+      <p class="hint" id="cost-line" hidden></p>
       <div class="result" id="result" hidden>
         <video id="result-video" controls playsinline></video>
         <button class="btn primary" id="btn-save" type="button">⬇ Télécharger la vidéo</button>
@@ -118,10 +119,26 @@
       <details class="group" open>
         <summary>Vidéos</summary>
         <div class="choices" role="radiogroup" aria-label="Source des vidéos">
-          <label class="choice"><input type="radio" name="vmode" id="vm-banques" value="banques" checked><span><b>Vidéos réelles</b><small>Pexels, Pixabay et archives, choisies phrase par phrase. Gratuit.</small></span></label>
-          <label class="choice"><input type="radio" name="vmode" id="vm-ia" value="ia"><span><b>Vidéos IA sur mesure</b><small>Chaque phrase est filmée par l'IA (Kling via fal). Correspondance exacte. Payant.</small></span></label>
+          <label class="choice"><input type="radio" name="vmode" id="vm-hybride" value="hybride" checked><span><b>Hybride (recommandé)</b><small>Vidéos réelles d'abord ; l'IA filme seulement les phrases sans plan qui convient.</small></span></label>
+          <label class="choice"><input type="radio" name="vmode" id="vm-banques" value="banques"><span><b>Vidéos réelles seulement</b><small>Pexels, Pixabay et archives, choisies phrase par phrase. Gratuit.</small></span></label>
+          <label class="choice"><input type="radio" name="vmode" id="vm-ia" value="ia"><span><b>Tout en IA</b><small>Chaque phrase filmée par l'IA (Kling via fal). Le plus précis, le plus cher.</small></span></label>
         </div>
+        <label class="f" id="ia-budget-row"><span>Budget IA maximum par vidéo</span>
+          <select id="ia-budget"><option value="2">2 $ (5 plans)</option><option value="5">5 $ (14 plans)</option><option value="10">10 $ (28 plans)</option><option value="20">20 $ (57 plans)</option><option value="50">50 $ (120 plans)</option></select>
+        </label>
         <p class="hint" id="ia-cost"></p>
+      </details>
+
+      <details class="group">
+        <summary>Musique de fond</summary>
+        <p class="hint">Facultatif : une musique libre de droits, jouée en boucle sous la voix.</p>
+        <div class="row">
+          <label class="btn small" for="music-file">Importer une musique</label>
+          <input id="music-file" type="file" accept="audio/*" hidden>
+          <span class="hint flex1" id="music-name">Aucune musique</span>
+          <button class="btn ghost small" id="music-clear" type="button" hidden>Retirer</button>
+        </div>
+        <label class="f"><span>Volume sous la voix</span><input type="range" id="music-vol" min="0.05" max="0.5" step="0.05" value="0.15"></label>
       </details>
 
       <details class="group">

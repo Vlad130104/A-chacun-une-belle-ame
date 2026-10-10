@@ -172,7 +172,9 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   const DEFAULT_STATE = {
     brief: { ton: "educatif", sujet: "Pourquoi la plupart des petites chaînes YouTube abandonnent avant 100 abonnés, et comment tenir." },
     minutes: 1,
-    videoMode: "banques",
+    videoMode: "hybride",
+    iaBudget: "5",
+    musicVol: "0.15",
     keepText: false,
     script: EXAMPLE_SCRIPT,
     aspect: "9:16",
@@ -192,7 +194,8 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   for (const k of ["brief", "brand", "exp", "voice"]) state[k] = { ...DEFAULT_STATE[k], ...state[k] };
   if (typeof state.script !== "string") state.script = DEFAULT_STATE.script;
   state.minutes = clampMin(state.minutes);
-  if (!["banques", "ia"].includes(state.videoMode)) state.videoMode = "banques";
+  if (!["banques", "hybride", "ia"].includes(state.videoMode)) state.videoMode = "hybride";
+  if (!["2", "5", "10", "20", "50"].includes(String(state.iaBudget))) state.iaBudget = "5";
   if (!["ia", "eleven", "fichier"].includes(state.voice.mode)) state.voice.mode = "ia";
   if (!["0.9", "1", "1.1", "1.2"].includes(String(state.voice.speed))) state.voice.speed = "1";
   if (state.v !== 4) { state.scenes = []; state.v = 4; } // ancien format à scènes graphiques : re-découpé au démarrage
@@ -217,10 +220,28 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   }
 
   // Médias de la session (jamais envoyés au serveur) : fonds de scène, logo, voix
-  const media = { bg: new Map(), logo: null, voiceFile: null, voiceTts: false };
+  const media = { bg: new Map(), logo: null, voiceFile: null, voiceTts: false, music: null };
+  let voiceKey = null;
   const voiceEl = new Audio();
   voiceEl.preload = "auto";
   let voiceLoaded = false;
+
+  // Coûts de la vidéo en cours (guide §11 : coûts visibles) ; remis à zéro à chaque création.
+  let cost = { claude: 0, chars: 0, ia: 0 };
+  // Musique de fond facultative, sous la voix.
+  const musicEl = new Audio();
+  musicEl.loop = true;
+  const musicLevel = () => clamp(Number(state.musicVol) || 0, 0, 0.6);
+  function setMusic(file) {
+    musicEl.pause();
+    if (musicEl.src) URL.revokeObjectURL(musicEl.src);
+    media.music = file || null;
+    if (file) { musicEl.src = URL.createObjectURL(file); musicEl.volume = musicLevel(); } else musicEl.removeAttribute("src");
+    $("music-name").textContent = file ? file.name : "Aucune musique";
+    $("music-clear").hidden = !file;
+  }
+  // Empreinte d'un texte : sert à reprendre une création là où elle s'est arrêtée.
+  function sig(str) { let h = 5381; for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0; return (h >>> 0).toString(36) + ":" + str.length; }
 
   /* ---------------- Utilitaires ---------------- */
   const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
@@ -352,7 +373,12 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     if (!total) return null;
     const speak = speechOf(sc, dur);
     if (lt > speak + 0.15) return null;
-    let w = Math.min(total - 1, Math.floor(clamp(lt / speak) * total));
+    let w;
+    // Voix ElevenLabs : temps réel de chaque mot ; sinon, mots répartis sur la durée de la phrase.
+    if (sc.mots && sc.mots.length === total) {
+      w = 0;
+      while (w < total - 1 && sc.mots[w + 1][0] <= lt) w++;
+    } else w = Math.min(total - 1, Math.floor(clamp(lt / speak) * total));
     let ci = 0;
     while (ci < ch.length - 1 && w >= ch[ci].length) { w -= ch[ci].length; ci++; }
     return { words: ch[ci], current: w };
@@ -479,6 +505,11 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
       try { voiceEl.currentTime = from; } catch (e) { /* ignore */ }
       voiceEl.play().catch(() => {});
     }
+    if (media.music) {
+      try { musicEl.currentTime = musicEl.duration ? from % musicEl.duration : 0; } catch (e) { /* ignore */ }
+      musicEl.volume = musicLevel();
+      musicEl.play().catch(() => {});
+    }
     const start = performance.now() - from * 1000;
     const p = { raf: 0 };
     playing = p;
@@ -499,6 +530,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     cancelAnimationFrame(playing.raf);
     playing = null;
     voiceEl.pause();
+    musicEl.pause();
     if (activeVideo) { activeVideo.pause(); activeVideo = null; }
     $("btn-play").textContent = "▶";
     momentLater();
@@ -692,7 +724,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   // Une recherche interroge toutes les banques branchées sur le serveur (Pexels, Pixabay), résultats alternés.
   async function stockSearch(q) {
     const d = await api("/api/broll/recherche", { q, orientation: state.aspect === "16:9" ? "landscape" : "portrait" });
-    return (d.videos || []).filter((v) => BANKS[v.source]).map((v) => ({ key: `${BANKS[v.source].tag}:v${v.id}`, kind: "video", id: v.id, fileId: v.fileId, link: v.link, image: v.image, dur: v.duration,
+    return (d.videos || []).filter((v) => BANKS[v.source]).map((v) => ({ key: `${BANKS[v.source].tag}:v${v.id}`, kind: "video", id: v.id, fileId: v.fileId, link: v.link, image: v.image, dur: v.duration, tags: v.tags || "",
       credit: { src: v.source, kind: "Vidéo", author: v.author, license: BANKS[v.source].license, page: v.page } }));
   }
   async function mediaSearch(q, src) {
@@ -737,6 +769,23 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   }
   const metaOf = (m) => ({ key: m.key, credit: m.credit });
 
+  // Coûts de la vidéo : ce qui a été réellement consommé pendant cette création.
+  function showCost() {
+    const parts = [];
+    if (cost.claude) parts.push(`Claude : ${cost.claude} analyse(s), quelques centimes`);
+    if (cost.chars) parts.push(`ElevenLabs : ${cost.chars.toLocaleString("fr-FR")} caractères`);
+    if (cost.ia) parts.push(`IA vidéo : ${cost.ia} plan(s) ≈ ${euros(cost.ia * IA_PRIX)}`);
+    $("cost-line").textContent = parts.length ? "Coûts de cette vidéo · " + parts.join(" · ") : "Coûts de cette vidéo · aucun service payant utilisé.";
+    $("cost-line").hidden = false;
+  }
+  // Pertinence d'un clip : mots de la recherche retrouvés dans sa description (titre Pexels, tags Pixabay, titre Wikimedia).
+  const EN_STOP = new Set("the a an of and or with in on at to for from by is are man woman people person".split(" "));
+  function relevance(m, q) {
+    const desc = ` ${String(m.tags || "")} ${String((m.credit && m.credit.title) || "")} `.toLowerCase();
+    const words = String(q || "").toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !EN_STOP.has(w));
+    if (!words.length) return 1;
+    return words.filter((w) => desc.includes(w.slice(0, Math.max(4, w.length - 2)))).length / words.length;
+  }
   // Sources à essayer, dans l'ordre : images d'époque pour un passage historique, vidéos modernes sinon.
   function sourcePlan(sc) {
     if (!brollOn || pexelsBlocked) return ["film"];
@@ -748,10 +797,11 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   const MAX_SEARCHES = 180; // Pexels autorise 200 recherches par heure (Pixabay : 100 par minute)
   // Télécharge une vidéo pour les passages qui n'en ont pas (ou qui en réutilisent une), sans doublon.
   // Au-delà de `limit`, les passages choisis sont répartis sur toute la vidéo ; les autres prolongent le plan précédent.
-  async function autoBroll(limit, report) {
+  // strict : un clip sans aucun mot commun avec la recherche n'est pas pris ; le passage est confié à l'IA (mode hybride).
+  async function autoBroll(limit, report, { strict = false } = {}) {
     await clipStore();
     const used = new Set([...media.bg.values()].map((b) => b.key).filter(Boolean));
-    const cand = state.scenes.filter((s) => { const b = media.bg.get(s.id); return (!b || b.reused) && keywords(s); });
+    const cand = state.scenes.filter((s) => { const b = media.bg.get(s.id); return (!b || b.reused) && keywords(s) && !(strict && s.wantIa); });
     const room = Math.max(0, Math.min(limit, maxClips() - used.size));
     const todo = cand.length <= room ? cand.slice() : Array.from({ length: room }, (_, j) => cand[Math.floor((j * cand.length) / room)]);
     const searches = new Map();
@@ -773,9 +823,13 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
           if (src === "video" && pexelsBlocked) continue;
           try {
             // Films d'archives au-delà de 60 Mo : trop lourds pour un ajout automatique.
-            const items = (await find(q, src)).filter((m) => !(m.mb > 60));
-            const pick = items.find((m) => !used.has(m.key));
-            if (!pick) continue;
+            const items = (await find(q, src)).filter((m) => !(m.mb > 60) && !used.has(m.key));
+            // Le plus pertinent d'abord ; à pertinence égale, l'ordre de la banque (le plus populaire).
+            const scored = items.map((m, i) => ({ m, r: relevance(m, q), i })).sort((a, b) => b.r - a.r || a.i - b.i);
+            const best = scored[0];
+            if (!best) continue;
+            if (strict && best.r === 0 && sc.q) { sc.needIa = true; continue; }
+            const pick = best.m;
             used.add(pick.key);
             await setBackground(sc, await mediaDownload(pick), metaOf(pick));
             ok = true;
@@ -818,16 +872,20 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
       return;
     }
   }
-  async function iaBroll(report) {
+  // Plans à filmer : tous (mode IA) ou seulement ceux sans clip pertinent (mode hybride), dans la limite du budget.
+  async function iaBroll(report, hybride) {
     await clipStore();
-    const list = state.scenes.filter((s) => s.voix && s.voix.trim());
-    const todo = list.length <= IA_MAX ? list.slice() : Array.from({ length: IA_MAX }, (_, j) => list[Math.floor((j * list.length) / IA_MAX)]);
+    // Un passage qui ne fait que prolonger le plan voisin (reused) compte comme sans vidéo.
+    const sansPlan = (x) => { const b = media.bg.get(x.id); return !b || b.reused; };
+    const list = state.scenes.filter((x) => x.voix && x.voix.trim() && (!hybride || ((x.wantIa || x.needIa) && sansPlan(x))));
+    const max = iaMaxPlans();
+    const todo = list.length <= max ? list.slice() : Array.from({ length: max }, (_, j) => list[Math.floor((j * list.length) / max)]);
     const total = todo.length;
     let done = 0, fail = 0, lastErr = "", stop = false;
     const worker = async () => {
       while (todo.length && !stop) {
         const sc = todo.shift();
-        try { await iaClip(sc); done++; }
+        try { await iaClip(sc); done++; cost.ia++; }
         catch (e) {
           fail++; lastErr = (e && e.message) || "";
           if (e && ["ia_video_credit", "ia_video_cle", "ia_video_non_configuree"].includes(e.code)) stop = true;
@@ -854,7 +912,8 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
       while (next < starts.length) {
         const a = starts[next++], part = list.slice(a, a + 150);
         const r = await api("/api/visuels", { passages: part.map((s) => (s.voix || s.titre || "…").slice(0, 500)), contexte });
-        part.forEach((s, j) => { const v = r.visuels && r.visuels[j]; s.q = (v && v.requete) || ""; s.archive = v ? Boolean(v.archive) : null; s.plan = (v && v.plan) || ""; });
+        part.forEach((s, j) => { const v = r.visuels && r.visuels[j]; s.q = (v && v.requete) || ""; s.archive = v ? Boolean(v.archive) : null; s.plan = (v && v.plan) || ""; s.wantIa = Boolean(v && v.ia); delete s.needIa; });
+        cost.claude++;
         done += part.length;
         report(`Choix des vidéos : ${done} passage(s) sur ${list.length} analysé(s)…`);
       }
@@ -961,9 +1020,12 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
       try { code = (await res.json()).error || code; } catch (e) { /* corps vide */ }
       throw { code, message: API_MSG[code] || "ElevenLabs n'a pas répondu (" + res.status + ")." };
     }
+    const d = await res.json();
+    const bin = Uint8Array.from(atob(d.audio || ""), (c) => c.charCodeAt(0));
     const ac = new OfflineAudioContext(1, 1, EL_RATE);
-    const buf = await ac.decodeAudioData(await res.arrayBuffer());
-    return { pcm: buf.getChannelData(0), sampleRate: buf.sampleRate };
+    const buf = await ac.decodeAudioData(bin.buffer);
+    cost.chars += text.length;
+    return { pcm: buf.getChannelData(0), sampleRate: buf.sampleRate, mots: Array.isArray(d.mots) ? d.mots : null };
   }
 
   // Une lecture par passage : la durée de chaque plan vidéo devient celle de sa phrase, plus une courte pause.
@@ -997,6 +1059,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
         if (state.scenes[i].voix && state.scenes[i].voix.trim()) {
           const a = await speakOne(i);
           sr = a.sampleRate; parts[i] = toInt16(a.pcm);
+          if (a.mots) state.scenes[i].mots = a.mots; else delete state.scenes[i].mots;
         }
         doneN++;
         const elapsed = (performance.now() - began) / 1000, p = doneN / n;
@@ -1313,18 +1376,31 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     $("rg-all").addEventListener("change", rangeInfo);
     $("rg-from").addEventListener("change", rangeInfo);
     $("rg-to").addEventListener("change", rangeInfo);
-    $(state.videoMode === "ia" ? "vm-ia" : "vm-banques").checked = true;
-    for (const id of ["vm-banques", "vm-ia"]) $(id).addEventListener("change", (e) => { if (e.target.checked) { state.videoMode = e.target.value; persist(); iaCost(); } });
+    $("vm-" + state.videoMode).checked = true;
+    for (const id of ["vm-banques", "vm-hybride", "vm-ia"]) $(id).addEventListener("change", (e) => { if (e.target.checked) { state.videoMode = e.target.value; persist(); iaCost(); } });
+    $("ia-budget").value = String(state.iaBudget);
+    $("ia-budget").addEventListener("change", (e) => { state.iaBudget = e.target.value; persist(); iaCost(); });
+    $("music-vol").value = String(state.musicVol);
+    $("music-vol").addEventListener("input", (e) => { state.musicVol = e.target.value; persist(); musicEl.volume = musicLevel(); });
+    $("music-file").addEventListener("change", (e) => { const f = e.target.files && e.target.files[0]; if (f) setMusic(f); e.target.value = ""; });
+    $("music-clear").addEventListener("click", () => setMusic(null));
     $("btn-voices").addEventListener("click", openVoices);
     $("vd-close").addEventListener("click", () => $("voice-dialog").close());
     $("vd-ok").addEventListener("click", () => $("voice-dialog").close());
   }
   // Coût estimé des vidéos IA : un plan de 5 s par phrase, 120 plans au plus (le reste en vidéos réelles).
   const IA_MAX = 120, IA_PRIX = 0.35;
+  const euros = (v) => v.toFixed(2).replace(".", ",") + " $";
+  const iaMaxPlans = () => Math.max(1, Math.min(IA_MAX, Math.floor((Number(state.iaBudget) || 5) / IA_PRIX)));
   function iaCost() {
-    if (state.videoMode !== "ia") { $("ia-cost").textContent = ""; return; }
-    const n = Math.min(IA_MAX, String(state.script || "").trim() ? segmentScript(state.script).length : 0);
-    let msg = n ? `≈ ${n} plan(s) × ${IA_PRIX.toFixed(2).replace(".", ",")} $ = ${(n * IA_PRIX).toFixed(2).replace(".", ",")} $ sur ton compte fal, 1 à 3 min par plan.` : "Coût affiché dès que tu as collé ton script.";
+    $("ia-budget-row").hidden = state.videoMode === "banques";
+    if (state.videoMode === "banques") { $("ia-cost").textContent = ""; return; }
+    const total = String(state.script || "").trim() ? segmentScript(state.script).length : 0;
+    const n = Math.min(iaMaxPlans(), total);
+    let msg;
+    if (!total) msg = "Coût affiché dès que tu as collé ton script.";
+    else if (state.videoMode === "ia") msg = `${n} plan(s) filmé(s) par l'IA × ${euros(IA_PRIX)} = ${euros(n * IA_PRIX)} au plus` + (n < total ? ` ; les ${total - n} autres en vidéos réelles.` : ".");
+    else msg = `Vidéos réelles d'abord ; l'IA ne filme que les phrases sans plan pertinent : ${euros(n * IA_PRIX)} au plus (${n} plan(s)), souvent beaucoup moins.`;
     if (!falOn) msg += " Branche d'abord ta clé fal dans Connexions.";
     $("ia-cost").className = "hint" + (falOn ? "" : " warn");
     $("ia-cost").textContent = msg;
@@ -1532,28 +1608,46 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
       if (!target) return;
     }
     const useIa = state.videoMode === "ia" && falOn;
-    if (useIa) {
-      const n = Math.min(IA_MAX, segmentScript(state.script).length);
-      if (!window.confirm(`Vidéos IA : ${n} plan(s), environ ${(n * IA_PRIX).toFixed(2).replace(".", ",")} $ facturés sur ton compte fal. Continuer ?`)) {
+    if (falOn && state.videoMode !== "banques") {
+      const n = Math.min(iaMaxPlans(), segmentScript(state.script).length);
+      const quoi = useIa ? `${n} plan(s) filmé(s) par l'IA` : `l'IA filmera seulement les phrases sans vidéo pertinente, ${n} plan(s) au plus`;
+      if (!window.confirm(`Vidéos IA : ${quoi}, soit ${euros(n * IA_PRIX)} au plus facturés sur ton compte fal. Continuer ?`)) {
         if (target && target.writable) { try { await target.writable.abort(); } catch (x) { /* fermé */ } }
         return;
       }
     }
     btn.disabled = true; $("btn-download").disabled = true; $("result").hidden = true;
     $("gen-steps").hidden = false;
+    cost = { claude: 0, chars: 0, ia: 0 };
+    $("cost-line").hidden = true;
     const steps = ["st-scenes", "st-voice", "st-broll", "st-export"];
     steps.forEach((id) => stepState(id, ""));
     const report = (m) => status("script-status", m);
     const notes = [];
     try {
+      // Reprise : si le script et le format n'ont pas changé, l'analyse et la voix déjà faites sont gardées ;
+      // seule l'étape en échec (ou manquante) est relancée.
+      const scriptSig = sig(state.script + "|" + state.aspect);
       stepState("st-scenes", "run"); report("Analyse du script…");
-      buildScenes();
-      if (!(await planVisuals(report))) notes.push(iaOn ? "Choix des vidéos simplifié (Claude n'a pas répondu)." : "Sans la clé Claude, les vidéos sont choisies par mots-clés : la correspondance est moins précise.");
+      if (state.planSig === scriptSig && state.scenes.length && state.scenes.some((x) => x.q)) {
+        notes.push("Analyse du script reprise.");
+      } else {
+        buildScenes();
+        state.planSig = null;
+        if (await planVisuals(report)) state.planSig = scriptSig;
+        else notes.push(iaOn ? "Choix des vidéos simplifié (Claude n'a pas répondu)." : "Sans la clé Claude, les vidéos sont choisies par mots-clés : la correspondance est moins précise.");
+        persist();
+      }
       stepState("st-scenes", "done");
 
-      if (state.voice.mode !== "fichier") {
+      const vk = scriptSig + "|" + [state.voice.mode, state.voice.id, state.voice.elId, state.voice.model, state.voice.speed].join("|");
+      if (state.voice.mode !== "fichier" && media.voiceTts && voiceKey === vk) {
+        stepState("st-voice", "done");
+        notes.push("Voix reprise.");
+      } else if (state.voice.mode !== "fichier") {
         stepState("st-voice", "run");
         const v = await generateVoice(report);
+        voiceKey = vk;
         stepState("st-voice", "done");
         notes.push(`Voix ${v.voice}.`);
       } else if (media.voiceFile) {
@@ -1563,11 +1657,14 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
       }
 
       stepState("st-broll", "run");
-      if (useIa) {
-        const ia = await iaBroll(report);
-        notes.push(`${ia.done} plan(s) filmé(s) par l'IA.`);
+      // Guide §7 : vidéos réelles d'abord (pertinence vérifiée), l'IA seulement pour les phrases sans plan qui convient.
+      const hybride = state.videoMode === "hybride" && falOn;
+      if (hybride) await autoBroll(Math.min(maxClips(), state.scenes.length), report, { strict: true });
+      if (useIa || hybride) {
+        const ia = await iaBroll(report, hybride);
+        if (ia.done) notes.push(`${ia.done} plan(s) filmé(s) par l'IA.`);
         if (ia.fail) notes.push(`${ia.fail} plan(s) IA en échec${ia.lastErr ? ` (${ia.lastErr})` : ""} : remplacés par des vidéos réelles.`);
-      } else if (state.videoMode === "ia") notes.push("Vidéos IA non branchées (clé fal) : vidéos réelles utilisées.");
+      } else if (state.videoMode !== "banques") notes.push("Vidéos IA non branchées (clé fal) : vidéos réelles utilisées.");
       const b = await autoBroll(Math.min(maxClips(), state.scenes.length), report);
       stepState("st-broll", "done");
       if (b.empty) throw new Error("Aucune vidéo trouvée" + (b.lastErr ? ` (${b.lastErr})` : "") + ". Branche Pexels ou Pixabay dans Paramètres → Connexions, puis relance.");
@@ -1579,13 +1676,15 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
       report("Montage final en cours…");
       const ok = await exportVideo(target || { writable: null });
       stepState("st-export", ok ? "done" : "");
+      showCost();
       status("script-status", ok
         ? `Ta vidéo est prête : ${fmt(timeline().total)}. ${notes.join(" ")} ${target ? "Elle est enregistrée sur ton disque." : "Clique sur « Télécharger »."}`
         : `Vidéo préparée (${fmt(timeline().total)}) mais le montage final n'a pas abouti : relance « Exporter la vidéo » dans Paramètres → Téléchargement.`, ok ? "ok" : "warn");
     } catch (e) {
       steps.forEach((id) => { if ($(id).className === "run") stepState(id, ""); });
       if (target && target.writable) { try { await target.writable.abort(); } catch (x) { /* déjà fermé */ } }
-      status("script-status", (e && e.message) || "La génération a échoué.", "warn");
+      status("script-status", ((e && e.message) || "La génération a échoué.") + " Corrige le problème puis reclique : seule l'étape en échec sera refaite.", "warn");
+      showCost();
     } finally {
       btn.disabled = false;
     }
@@ -1628,7 +1727,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
       if (!window.confirm(`Refilmer ce passage par l'IA (environ ${IA_PRIX.toFixed(2).replace(".", ",")} $) ?`)) return;
       btn.disabled = true;
       status("script-status", "L'IA refilme ce passage (1 à 3 minutes)…");
-      try { await iaClip(s); fillGaps(); renderScenes(); seek(scrubTime()); status("script-status", "Plan refilmé. Réexporte pour l'inclure dans le fichier.", "ok"); }
+      try { await iaClip(s); cost.ia++; fillGaps(); renderScenes(); seek(scrubTime()); status("script-status", "Plan refilmé. Réexporte pour l'inclure dans le fichier.", "ok"); }
       catch (e) { status("script-status", (e && e.message) || "Échec de la génération.", "warn"); }
       finally { btn.disabled = false; }
       return;
@@ -1716,6 +1815,30 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     }
   }
 
+  // Piste audio de l'export : la voix seule, ou la voix et la musique mélangées (musique en boucle, fondu final).
+  let musicNote = "";
+  async function exportAudio() {
+    musicNote = "";
+    if (!media.music) return media.voiceFile;
+    const total = timeline().total;
+    if (total > 30 * 60) { musicNote = " Musique non incluse : au-delà de 30 minutes, ajoute-la au montage final dans ton logiciel."; return media.voiceFile; }
+    const sr = 24000, mix = new OfflineAudioContext(1, Math.ceil(total * sr), sr);
+    if (media.voiceFile) {
+      const v = mix.createBufferSource();
+      v.buffer = await mix.decodeAudioData(await media.voiceFile.arrayBuffer());
+      v.connect(mix.destination); v.start(0);
+    }
+    const m = mix.createBufferSource(), g = mix.createGain();
+    m.buffer = await mix.decodeAudioData(await media.music.arrayBuffer());
+    m.loop = true;
+    g.gain.setValueAtTime(musicLevel(), 0);
+    g.gain.setValueAtTime(musicLevel(), Math.max(0, total - 2));
+    g.gain.linearRampToValueAtTime(0, total);
+    m.connect(g).connect(mix.destination); m.start(0);
+    const out = await mix.startRendering();
+    return new File([wavBlob([toInt16(out.getChannelData(0))], sr)], "mix.wav", { type: "audio/wav" });
+  }
+
   // pre : destination déjà ouverte ({ writable, name, enc }) ou { writable: null } pour un export en mémoire sans question.
   async function exportVideo(pre) {
     if (exporting) return false;
@@ -1764,8 +1887,10 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
       output.addVideoTrack(video, { frameRate: fps });
 
       let audio = null, sink = null, input = null, audioNote = "";
-      if (media.voiceFile) {
-        input = new MB.Input({ source: new MB.BlobSource(media.voiceFile), formats: MB.ALL_FORMATS });
+      expStatus("Préparation du son…");
+      const audioFile = await exportAudio();
+      if (audioFile) {
+        input = new MB.Input({ source: new MB.BlobSource(audioFile), formats: MB.ALL_FORMATS });
         const track = await input.getPrimaryAudioTrack();
         if (track && (await track.canDecode())) {
           const aacOk = ext === "mp4" && (await MB.canEncodeAudio("aac", { numberOfChannels: track.numberOfChannels, sampleRate: track.sampleRate }));
@@ -1848,6 +1973,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
       await output.finalize();
       if (input) input.dispose?.();
       $("meter-fill").style.width = "100%";
+      audioNote += musicNote;
       if (ext === "webm") audioNote += " Format WebM (ce navigateur n'encode pas le H.264) : YouTube l'accepte ; pour TikTok, exporte depuis Chrome ou Edge sous Windows ou macOS.";
       $("btn-download").disabled = false;
       if (writable) {

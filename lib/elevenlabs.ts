@@ -102,11 +102,15 @@ export async function ajouterVoix(owner: string, id: string, nom: string): Promi
   }
 }
 
-/** Lit un texte et renvoie un MP3 (44,1 kHz). previous/next : phrases voisines, pour une intonation continue. */
-export async function synthese(o: { texte: string; voix: string; modele: Modele; vitesse: number; avant?: string; apres?: string }): Promise<ArrayBuffer> {
-  const res = await eleven(`/v1/text-to-speech/${encodeURIComponent(o.voix)}?output_format=mp3_44100_128`, {
+/**
+ * Lit un texte et renvoie le MP3 (en base64) et le temps de chaque mot, tiré de l'alignement caractère par caractère
+ * d'ElevenLabs : les sous-titres et les changements de plan suivent la voix réelle, pas une estimation.
+ * previous/next : phrases voisines, pour une intonation continue.
+ */
+export async function synthese(o: { texte: string; voix: string; modele: Modele; vitesse: number; avant?: string; apres?: string }): Promise<{ audio: string; mots: [number, number][] }> {
+  const res = await eleven(`/v1/text-to-speech/${encodeURIComponent(o.voix)}/with-timestamps?output_format=mp3_44100_128`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "audio/mpeg" },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       text: o.texte,
       model_id: MODELES[o.modele],
@@ -115,5 +119,21 @@ export async function synthese(o: { texte: string; voix: string; modele: Modele;
       voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0, use_speaker_boost: true, speed: o.vitesse },
     }),
   });
-  return res.arrayBuffer();
+  const d = (await res.json()) as { audio_base64?: string; alignment?: { characters?: string[]; character_start_times_seconds?: number[]; character_end_times_seconds?: number[] } };
+  if (!d.audio_base64) throw new ElevenErreur("voix_erreur", 502);
+  return { audio: d.audio_base64, mots: motsAlignes(d.alignment) };
+}
+
+/** Regroupe l'alignement par caractère en [début, fin] de chaque mot (séparés par des espaces). */
+function motsAlignes(a?: { characters?: string[]; character_start_times_seconds?: number[]; character_end_times_seconds?: number[] }): [number, number][] {
+  const c = a?.characters ?? [], s = a?.character_start_times_seconds ?? [], e = a?.character_end_times_seconds ?? [];
+  const out: [number, number][] = [];
+  let cur: [number, number] | null = null;
+  for (let i = 0; i < c.length; i++) {
+    if (/\s/.test(c[i])) { if (cur) { out.push(cur); cur = null; } continue; }
+    const t0 = Number(s[i]) || 0, t1 = Number(e[i]) || t0;
+    if (!cur) cur = [t0, t1]; else cur[1] = t1;
+  }
+  if (cur) out.push(cur);
+  return out.map(([x, y]) => [Math.round(x * 1000) / 1000, Math.round(y * 1000) / 1000]);
 }
