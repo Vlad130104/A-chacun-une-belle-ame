@@ -10,6 +10,9 @@ de quelques secondes à plusieurs heures.
 - **Choix de la voix** : 3 voix françaises Piper (Siwis, Gilles, Mathis) exécutées dans le navigateur
   (ONNX Runtime Web + phonémiseur espeak-ng en WebAssembly), sans coût par minute ; ou ta propre voix.
   Chaque scène est lue séparément : sa durée devient exactement celle de sa phrase.
+- **Modèles** : 6 styles visuels (Impact, Minimal clair, Néon, Documentaire, Food & Promo, Business : couleurs,
+  police, alignement, style de sous-titres) et 6 structures de script (Top 5, Storytelling, Tutoriel, Promo restaurant,
+  Motivation, Actualité) à compléter entre crochets.
 - **B-rolls** : vidéo ou image par scène (import), ou recherche automatique de vidéos libres de droits Pexels
   si `PEXELS_API_KEY` est défini. Rendu plein écran, sous-titres façon CapCut avec le mot prononcé surligné.
 

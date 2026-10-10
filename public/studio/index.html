@@ -20,6 +20,10 @@
   <div class="col">
     <section class="panel" aria-labelledby="h-script">
       <div class="phead"><span class="num">1</span><h2 id="h-script">Ton script</h2></div>
+      <div class="row">
+        <select id="s-model" class="flex1" aria-label="Modèle de script"></select>
+        <button class="btn small" id="btn-model" type="button">Utiliser ce modèle</button>
+      </div>
       <textarea id="s-script" rows="12" aria-label="Script de la vidéo"></textarea>
       <p class="hint">Ligne vide = nouvelle scène · <code># Titre</code> · <code>## Chapitre</code> · <code>&gt; Citation — Auteur</code> · <code>- point de liste</code>. Aucune limite de longueur.</p>
       <div class="opts">
@@ -29,6 +33,10 @@
         </div>
         <label class="check"><input type="checkbox" id="s-auto-broll" checked> B-rolls automatiques</label>
         <label class="check"><input type="checkbox" id="s-ai"> Mise en page par Claude</label>
+      </div>
+      <div class="tpl-block">
+        <span class="lbl">Style de la vidéo</span>
+        <div class="tpls" id="tpls" role="radiogroup" aria-label="Style de la vidéo"></div>
       </div>
       <button class="btn primary big" id="btn-generate" type="button">Générer ma vidéo</button>
       <ol class="steps" id="gen-steps" hidden>

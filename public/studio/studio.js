@@ -15,6 +15,133 @@
     cta: { label: "Appel à l'action" },
   };
   const OLD_TYPES = { danger: "alerte", interdit: "alerte", obligation: "texte", cloture: "cta" };
+
+  // Modèles visuels : couleurs, police des titres, casse, alignement et style des sous-titres.
+  const TEMPLATES = {
+    impact: { name: "Impact", bg: "#0B0C0F", fg: "#FFFFFF", accent: "#F5B700", ink: "#0B0C0F", title: "disp", upper: true, align: "left", caption: "box", capUpper: true },
+    minimal: { name: "Minimal clair", bg: "#F4F1EA", fg: "#16140F", accent: "#E4572E", ink: "#FFFFFF", title: "disp", upper: false, align: "center", caption: "color", capUpper: false },
+    neon: { name: "Néon", bg: "#07060F", gradient: ["#1A0B3D", "#07060F"], fg: "#FFFFFF", accent: "#00E5FF", ink: "#07060F", title: "disp", upper: true, align: "center", caption: "glow", capUpper: true, glow: true },
+    docu: { name: "Documentaire", bg: "#121110", fg: "#F3EDE2", accent: "#C9A227", ink: "#121110", title: "serif", upper: false, align: "center", caption: "classic", capUpper: false },
+    promo: { name: "Food & Promo", bg: "#B3001B", gradient: ["#D7141F", "#6E000E"], fg: "#FFFFFF", accent: "#FFD23F", ink: "#3A0008", title: "disp", upper: true, align: "left", caption: "box", capUpper: true },
+    business: { name: "Business", bg: "#0E1A2B", gradient: ["#16294A", "#0A1320"], fg: "#FFFFFF", accent: "#3DA5FF", ink: "#FFFFFF", title: "body", upper: false, align: "left", caption: "classic", capUpper: false },
+  };
+
+  // Modèles de script : structures éprouvées, à compléter entre crochets.
+  const SCRIPT_TEMPLATES = {
+    top5: { name: "Top 5", tpl: "impact", aspect: "9:16", text: `# Top 5 [sujet] que personne ne te dit
+Reste jusqu'au numéro 1 : c'est celui qui change tout.
+
+## Numéro 5 : [idée 5]
+
+[Explique l'idée 5 en deux phrases simples.]
+
+## Numéro 4 : [idée 4]
+
+[Explique l'idée 4 en deux phrases simples.]
+
+## Numéro 3 : [idée 3]
+
+[Explique l'idée 3 en deux phrases simples.]
+
+## Numéro 2 : [idée 2]
+
+[Explique l'idée 2 en deux phrases simples.]
+
+## Numéro 1 : [idée 1]
+
+[Explique l'idée 1 : la plus forte, avec un exemple concret.]
+
+Lequel tu ne connaissais pas ? Dis-le en commentaire, et abonne-toi pour la suite.` },
+    histoire: { name: "Storytelling", tpl: "docu", aspect: "16:9", text: `# [Titre de l'histoire]
+[Phrase d'accroche : le moment où tout a basculé.]
+
+## Le contexte
+
+[Qui, où, quand. Deux ou trois phrases pour planter le décor.]
+
+## Le problème
+
+[Ce qui bloquait. Ce que la personne risquait de perdre.]
+
+## Le tournant
+
+[La décision ou l'événement qui a tout changé.]
+
+## La leçon
+
+[Ce qu'on en retient, et comment tu peux l'appliquer toi aussi.]
+
+> [Une phrase forte à retenir] — [Auteur]
+
+Et toi, tu aurais fait quoi à sa place ? Dis-le en commentaire.` },
+    tuto: { name: "Tutoriel", tpl: "business", aspect: "16:9", text: `# Comment [obtenir tel résultat] en [nombre] étapes
+À la fin de cette vidéo, tu sauras [résultat concret].
+
+## Ce qu'il te faut
+
+Avant de commencer :
+- [Outil ou prérequis 1]
+- [Outil ou prérequis 2]
+- [Outil ou prérequis 3]
+
+## Étape 1 : [action]
+
+[Explique exactement quoi faire, et l'erreur à éviter.]
+
+## Étape 2 : [action]
+
+[Explique exactement quoi faire, et l'erreur à éviter.]
+
+## Étape 3 : [action]
+
+[Explique exactement quoi faire, et le résultat attendu.]
+
+Tu as réussi ? Montre-moi ton résultat en commentaire, et abonne-toi pour le prochain tuto.` },
+    promo: { name: "Promo restaurant", tpl: "promo", aspect: "9:16", text: `# [Nom du restaurant]
+Tu as faim ? Voici ce qui t'attend chez [nom du restaurant].
+
+[Plat vedette] : [description qui donne envie en une phrase].
+
+[Prix] FCFA le menu [nom du menu], avec [accompagnement] et [boisson].
+
+Nos incontournables :
+- [Plat 1]
+- [Plat 2]
+- [Plat 3]
+
+Livraison rapide à [quartier ou ville].
+
+Commande maintenant au [numéro de téléphone]. Abonne-toi pour ne rater aucune promo !` },
+    motivation: { name: "Motivation", tpl: "neon", aspect: "9:16", text: `# [Phrase choc sur le sujet]
+Si tu regardes cette vidéo, ce n'est pas un hasard.
+
+> [Citation inspirante] — [Auteur]
+
+[Une courte histoire ou un constat qui touche : deux ou trois phrases.]
+
+Trois choses à faire dès aujourd'hui :
+- [Action 1]
+- [Action 2]
+- [Action 3]
+
+Commence maintenant, pas demain. Écris « je commence » en commentaire.` },
+    actu: { name: "Actualité", tpl: "business", aspect: "9:16", text: `# [Le fait d'actualité en une phrase]
+Voici ce qui s'est passé, et pourquoi ça te concerne.
+
+## Ce qui s'est passé
+
+[Les faits : qui, quoi, où, quand. Vérifie chaque chiffre avant de publier.]
+
+## Pourquoi c'est important
+
+[Les conséquences, expliquées simplement.]
+
+## Ce que ça change pour toi
+
+[L'impact concret sur la vie de ton public.]
+
+Tu en penses quoi ? Donne ton avis en commentaire.` },
+  };
   const uid = () => Math.random().toString(36).slice(2, 9);
 
   const EXAMPLE_SCRIPT = `# 3 erreurs qui freinent ta chaîne
@@ -44,6 +171,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     autoBroll: true,
     aspect: "9:16",
     voice: { mode: "ia", id: "fr_FR-siwis-medium", speed: "1" },
+    template: "impact",
     brand: { nom: "Bachir IA", serie: "BACHIR IA", cta: "Abonne-toi pour ne rien rater", primary: "#F5B700", dark: "#0B0C0F", fit: true, subs: true },
     exp: { fps: "30", quality: "high" },
     example: true,
@@ -60,6 +188,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   if (typeof state.script !== "string") state.script = DEFAULT_STATE.script;
   if (typeof state.useAi !== "boolean") state.useAi = false;
   if (typeof state.autoBroll !== "boolean") state.autoBroll = true;
+  if (!TEMPLATES[state.template]) state.template = "impact";
   state.scenes.forEach((s) => {
     s.id = s.id || uid();
     s.items = Array.isArray(s.items) ? s.items : [];
@@ -89,6 +218,11 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
   const easeOut = (x) => 1 - Math.pow(1 - clamp(x), 3);
   const tick = () => new Promise((r) => setTimeout(r, 0));
+  function hexToRgba(hex, a) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(hex || "");
+    const n = m ? parseInt(m[1], 16) : 0xffffff;
+    return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+  }
   function wordsOf(s) { return String(s || "").toLowerCase().replace(/[’`]/g, "'").split(/[^\p{L}\p{N}']+/u).filter(Boolean); }
   function fmt(s) {
     s = Math.max(0, Math.floor(s));
@@ -152,7 +286,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   /* ---------------- Dessin ---------------- */
   const cv = $("cv");
   const ctx = cv.getContext("2d");
-  const F = { disp: '"Barlow Condensed", "Arial Narrow", sans-serif', body: 'Barlow, "Segoe UI", Arial, sans-serif', mono: '"IBM Plex Mono", Menlo, monospace' };
+  const F = { disp: '"Barlow Condensed", "Arial Narrow", sans-serif', body: 'Barlow, "Segoe UI", Arial, sans-serif', mono: '"IBM Plex Mono", Menlo, monospace', serif: '"Playfair Display", Georgia, serif' };
 
   function rr(x, y, w, h, r) {
     ctx.beginPath();
@@ -194,10 +328,11 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     return out;
   }
   function setSpacing(px) { if ("letterSpacing" in ctx) ctx.letterSpacing = px + "px"; }
-  function pill(text, x, y, bg, ink, k) {
+  function pill(text, x, y, bg, ink, k, centered = false) {
     ctx.save();
     ctx.font = `600 ${26 * k}px ${F.mono}`; setSpacing(3 * k);
     const w = ctx.measureText(text).width + 32 * k, h = 46 * k;
+    if (centered) x = (cv.width - w) / 2;
     rr(x, y, w, h, 23 * k); ctx.fillStyle = bg; ctx.fill();
     ctx.fillStyle = ink; ctx.textBaseline = "middle"; ctx.textAlign = "left";
     ctx.fillText(text, x + 16 * k, y + h / 2 + 1);
@@ -214,11 +349,12 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     ctx.fillText("!", cx, cy + r * 0.2);
     ctx.restore();
   }
-  function subscribeButton(x, y, k) {
+  function subscribeButton(x, y, k, centered = false) {
     ctx.save();
     ctx.font = `700 ${40 * k}px ${F.body}`;
     const label = "S'ABONNER";
     const w = ctx.measureText(label).width + 140 * k, h = 92 * k;
+    if (centered) x -= w / 2;
     rr(x, y, w, h, 46 * k); ctx.fillStyle = "#E62117"; ctx.fill();
     const bx = x + 56 * k, by = y + h / 2;
     ctx.fillStyle = "#FFFFFF";
@@ -292,12 +428,13 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     while (ci < ch.length - 1 && w >= ch[ci].length) { w -= ch[ci].length; ci++; }
     return { words: ch[ci], current: w };
   }
-  function drawCaptions(sc, lt, dur, W, pad, cw, k, land, PRIMARY, INK, centerY) {
+  function drawCaptions(sc, lt, dur, W, pad, cw, k, land, PRIMARY, INK, centerY, tpl, FG, onMedia) {
     const wc = wordClock(sc, lt, dur);
     if (!wc) return;
-    const size = (land ? 52 : 78) * k;
-    ctx.font = land ? `700 ${size}px ${F.body}` : `800 ${size}px ${F.disp}`;
-    const words = land ? wc.words : wc.words.map((w) => w.toUpperCase());
+    const condensed = tpl.capUpper && !land;
+    const size = (land ? 52 : condensed ? 78 : 62) * k;
+    ctx.font = condensed ? `800 ${size}px ${F.disp}` : `700 ${size}px ${F.body}`;
+    const words = condensed ? wc.words.map((w) => w.toUpperCase()) : wc.words;
     const space = ctx.measureText(" ").width;
     const lines = [];
     let line = [], width = 0;
@@ -310,22 +447,31 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     if (line.length) lines.push({ line, width });
     const lh = size * 1.18;
     const top = centerY - (lines.length * lh) / 2;
-    if (land) {
-      rr(pad, top - 16 * k, cw, lines.length * lh + 32 * k, 12 * k);
-      ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fill();
+    const style = land && tpl.caption !== "glow" ? "classic" : tpl.caption;
+    const base = onMedia || style === "classic" ? "#FFFFFF" : FG;
+    if (style === "classic") {
+      const bw = Math.max(...lines.map((l) => l.width)) + 60 * k;
+      rr(W / 2 - bw / 2, top - 16 * k, bw, lines.length * lh + 32 * k, 12 * k);
+      ctx.fillStyle = "rgba(0,0,0,0.62)"; ctx.fill();
     }
+    // Contour sombre seulement sur fond foncé ou sur image, pour rester lisible sans salir un fond clair
+    const stroke = style !== "classic" && !land && (onMedia || base === "#FFFFFF");
     ctx.textBaseline = "middle"; ctx.textAlign = "left"; ctx.lineJoin = "round";
     lines.forEach(({ line, width }, j) => {
       let x = W / 2 - width / 2;
       const y = top + j * lh + lh / 2;
       for (const { w, i, ww } of line) {
-        if (i === wc.current) {
+        const cur = i === wc.current;
+        if (cur && style === "box") {
           rr(x - 10 * k, y - size * 0.55, ww + 20 * k, size * 1.1, 10 * k);
           ctx.fillStyle = PRIMARY; ctx.fill();
           ctx.fillStyle = INK; ctx.fillText(w, x, y + 2 * k);
         } else {
-          if (!land) { ctx.lineWidth = 9 * k; ctx.strokeStyle = "rgba(0,0,0,0.85)"; ctx.strokeText(w, x, y + 2 * k); }
-          ctx.fillStyle = "#FFFFFF"; ctx.fillText(w, x, y + 2 * k);
+          if (stroke) { ctx.lineWidth = 9 * k; ctx.strokeStyle = "rgba(0,0,0,0.85)"; ctx.strokeText(w, x, y + 2 * k); }
+          if (cur && style === "glow") { ctx.shadowColor = PRIMARY; ctx.shadowBlur = 28 * k; }
+          ctx.fillStyle = cur ? PRIMARY : base;
+          ctx.fillText(w, x, y + 2 * k);
+          ctx.shadowBlur = 0;
         }
         x += ww + space;
       }
@@ -337,14 +483,15 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     const k = Math.min(W, H) / 1080;
     const brand = state.brand;
     const TLc = timeline();
-    const PRIMARY = brand.primary || "#F5B700", DARK = brand.dark || "#0B0C0F", INK = "#0B0C0F";
+    const tpl = TEMPLATES[state.template] || TEMPLATES.impact;
+    const PRIMARY = brand.primary || tpl.accent, DARK = brand.dark || tpl.bg, INK = tpl.ink;
 
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1; setSpacing(0);
     ctx.fillStyle = DARK; ctx.fillRect(0, 0, W, H);
     if (!state.scenes.length) {
-      ctx.fillStyle = "#FFFFFF"; ctx.font = `700 ${64 * k}px ${F.disp}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillStyle = (TEMPLATES[state.template] || TEMPLATES.impact).fg; ctx.font = `700 ${64 * k}px ${F.disp}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillText("Colle ton script pour commencer", W / 2, H / 2);
       ctx.restore(); return;
     }
@@ -356,6 +503,14 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     // Fond : B-roll plein écran, assombri vers le bas pour la lisibilité ; sinon aplat uni.
     const src = bgSource(media.bg.get(sc.id), lt, opts);
     const hasBg = Boolean(src);
+    // Sur une image, le texte reste blanc pour être lisible, quel que soit le modèle.
+    const FG = hasBg ? "#FFFFFF" : tpl.fg;
+    const center = tpl.align === "center";
+    if (!src && tpl.gradient && DARK === tpl.bg) {
+      const g = ctx.createLinearGradient(0, 0, W * 0.3, H);
+      g.addColorStop(0, tpl.gradient[0]); g.addColorStop(1, tpl.gradient[1]);
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    }
     if (src) {
       drawCover(src.el, src.w, src.h, src.still ? 1.04 + 0.08 * clamp(lt / dur) : 1);
       const g = ctx.createLinearGradient(0, 0, 0, H);
@@ -374,7 +529,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
       const lh = 64 * k, lw = (media.logo.naturalWidth / media.logo.naturalHeight) * lh;
       ctx.drawImage(media.logo, pad, headY - 8 * k, Math.min(lw, cw * 0.4), lh);
     } else if (brand.nom) {
-      ctx.fillStyle = "#FFFFFF"; ctx.font = `700 ${30 * k}px ${F.disp}`; setSpacing(3 * k);
+      ctx.fillStyle = FG; ctx.font = `700 ${30 * k}px ${F.disp}`; setSpacing(3 * k);
       ctx.textBaseline = "top"; ctx.textAlign = "left";
       ctx.fillText(String(brand.nom).toUpperCase(), pad, headY);
     }
@@ -390,20 +545,25 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
       return (1 - a) * 40 * k;
     };
     const sz = hasBg ? 0.8 : 1;
-    const titleLines = (txt, size, min, max) => fit(String(txt || "").toUpperCase(), 800, F.disp, size * sz * k, min * k, cw, max);
-    const drawTitle = (tt, y, dy, color = "#FFFFFF", lhK = 0.98) => {
-      ctx.fillStyle = color; ctx.font = `800 ${tt.size}px ${F.disp}`; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+    const TF = tpl.title === "serif" ? F.serif : tpl.title === "body" ? F.body : F.disp;
+    const TW = tpl.title === "body" ? 700 : 800;
+    const TS = tpl.title === "disp" ? 1 : 0.78; // les polices larges s'affichent plus petites
+    const tx = center ? W / 2 : pad;
+    const titleLines = (txt, size, min, max) => fit(tpl.upper ? String(txt || "").toUpperCase() : String(txt || ""), TW, TF, size * sz * TS * k, min * TS * k, cw, max);
+    const drawTitle = (tt, y, dy, color = FG, lhK = 0.98) => {
+      ctx.fillStyle = color; ctx.font = `${TW} ${tt.size}px ${TF}`; ctx.textAlign = center ? "center" : "left"; ctx.textBaseline = "alphabetic";
       if (hasBg) { ctx.shadowColor = "rgba(0,0,0,0.6)"; ctx.shadowBlur = 24 * k; }
-      const lh = tt.size * lhK;
-      tt.lines.forEach((l, j) => ctx.fillText(l, pad, y + dy + tt.size * 0.8 + j * lh));
+      else if (tpl.glow) { ctx.shadowColor = PRIMARY; ctx.shadowBlur = 30 * k; }
+      const lh = tt.size * (tpl.title === "disp" ? lhK : 1.12);
+      tt.lines.forEach((l, j) => ctx.fillText(l, tx, y + dy + tt.size * 0.8 + j * lh));
       ctx.shadowBlur = 0;
       return tt.lines.length * lh;
     };
     const drawBody = (txt, y, dy, size, maxLines, alpha = 0.9, weight = 500) => {
       if (!txt) return 0;
       const st = fit(txt, weight, F.body, size * sz * k, 30 * k, cw, maxLines);
-      ctx.fillStyle = `rgba(255,255,255,${alpha})`; ctx.font = `${weight} ${st.size}px ${F.body}`; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
-      st.lines.forEach((l, j) => ctx.fillText(l, pad, y + dy + st.size + j * st.size * 1.3));
+      ctx.fillStyle = hexToRgba(FG, alpha); ctx.font = `${weight} ${st.size}px ${F.body}`; ctx.textAlign = center ? "center" : "left"; ctx.textBaseline = "alphabetic";
+      st.lines.forEach((l, j) => ctx.fillText(l, tx, y + dy + st.size + j * st.size * 1.3));
       return st.lines.length * st.size * 1.3;
     };
 
@@ -415,47 +575,52 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
 
     if (sc.type === "titre") {
       const dy = enter(0);
-      if (brand.serie) { pill(String(brand.serie).toUpperCase(), pad, y + dy, PRIMARY, INK, k); y += 76 * k; }
+      if (brand.serie) { pill(String(brand.serie).toUpperCase(), pad, y + dy, PRIMARY, INK, k, center); y += 76 * k; }
       y += drawTitle(titleLines(sc.titre, land ? 150 : 170, 70, land ? 3 : 4), y, enter(0.12)) + 30 * k;
       ctx.globalAlpha = 1;
-      ctx.fillStyle = PRIMARY; ctx.fillRect(pad, y, 150 * k * easeOut((lt - 0.3) / 0.5), 10 * k);
+      const bar = 150 * k * easeOut((lt - 0.3) / 0.5);
+      ctx.fillStyle = PRIMARY; ctx.fillRect(center ? W / 2 - bar / 2 : pad, y, bar, 10 * k);
       y += 40 * k;
       if (showBody) drawBody(sc.texte, y, enter(0.45), 54, bodyMax);
     } else if (sc.type === "chapitre") {
       const dy = enter(0);
-      ctx.fillStyle = PRIMARY; ctx.font = `800 ${(land ? 200 : 240) * sz * k}px ${F.disp}`; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
-      ctx.fillText(String(TLc.chap[i]).padStart(2, "0"), pad - 6 * k, y + dy + (land ? 165 : 195) * sz * k);
+      ctx.fillStyle = PRIMARY; ctx.font = `800 ${(land ? 200 : 240) * sz * k}px ${F.disp}`; ctx.textAlign = center ? "center" : "left"; ctx.textBaseline = "alphabetic";
+      if (tpl.glow) { ctx.shadowColor = PRIMARY; ctx.shadowBlur = 40 * k; }
+      ctx.fillText(String(TLc.chap[i]).padStart(2, "0"), center ? W / 2 : pad - 6 * k, y + dy + (land ? 165 : 195) * sz * k);
+      ctx.shadowBlur = 0;
       y += (land ? 210 : 250) * sz * k;
       y += drawTitle(titleLines(sc.titre, land ? 116 : 126, 60, 3), y, enter(0.15)) + 24 * k;
       if (showBody) drawBody(sc.texte, y, enter(0.35), 50, bodyMax);
     } else if (sc.type === "citation") {
       let dy = enter(0);
-      ctx.fillStyle = PRIMARY; ctx.font = `800 ${(land ? 240 : 280) * sz * k}px ${F.disp}`; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
-      ctx.fillText("“", pad - 10 * k, y + dy + 190 * sz * k);
+      ctx.fillStyle = PRIMARY; ctx.font = `800 ${(land ? 240 : 280) * sz * k}px ${tpl.title === "serif" ? F.serif : F.disp}`; ctx.textAlign = center ? "center" : "left"; ctx.textBaseline = "alphabetic";
+      ctx.fillText("“", center ? W / 2 : pad - 10 * k, y + dy + 190 * sz * k);
       y += 160 * sz * k;
       const q = fit(sc.titre, 600, F.body, (land ? 70 : 78) * sz * k, 38 * k, cw, land ? 4 : 6);
       dy = enter(0.15);
-      ctx.fillStyle = "#FFFFFF"; ctx.font = `600 ${q.size}px ${F.body}`;
-      q.lines.forEach((l, j) => ctx.fillText(l, pad, y + dy + q.size + j * q.size * 1.25));
+      ctx.fillStyle = FG; ctx.font = `600 ${q.size}px ${F.body}`; ctx.textAlign = center ? "center" : "left";
+      q.lines.forEach((l, j) => ctx.fillText(l, tx, y + dy + q.size + j * q.size * 1.25));
       y += q.lines.length * q.size * 1.25 + 36 * k;
       if (sc.texte) {
         dy = enter(0.35);
         ctx.fillStyle = PRIMARY; ctx.font = `600 ${32 * k}px ${F.mono}`;
-        ctx.fillText("— " + sc.texte, pad, y + dy + 32 * k);
+        ctx.fillText("— " + sc.texte, tx, y + dy + 32 * k);
       }
     } else if (sc.type === "chiffre") {
       const dy = enter(0);
       const nt = fit(sc.titre, 800, F.disp, (land ? 320 : 400) * sz * k, 110 * k, cw, 1);
-      ctx.fillStyle = PRIMARY; ctx.font = `800 ${nt.size}px ${F.disp}`; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+      ctx.fillStyle = PRIMARY; ctx.font = `800 ${nt.size}px ${F.disp}`; ctx.textAlign = center ? "center" : "left"; ctx.textBaseline = "alphabetic";
+      if (tpl.glow) { ctx.shadowColor = PRIMARY; ctx.shadowBlur = 40 * k; }
       y += nt.size * 0.85;
-      ctx.fillText(nt.lines[0] || "", pad - 8 * k, y + dy);
+      ctx.fillText(nt.lines[0] || "", center ? W / 2 : pad - 8 * k, y + dy);
+      ctx.shadowBlur = 0;
       y += 40 * k;
       if (showBody) drawBody(sc.texte, y, enter(0.3), 66, bodyMax, 1, 600);
     } else if (sc.type === "liste") {
       const dy = enter(0);
-      pill(T.tag, pad, y + dy, PRIMARY, INK, k);
+      pill(T.tag, pad, y + dy, PRIMARY, INK, k, center);
       y += 72 * k;
-      y += drawTitle(titleLines(sc.titre, 96, 54, 2), y, enter(0.12), "#FFFFFF", 1) + 34 * k;
+      y += drawTitle(titleLines(sc.titre, 96, 54, 2), y, enter(0.12), FG, 1) + 34 * k;
       const items = (sc.items || []).filter(Boolean).slice(0, 5);
       const stepDelay = Math.min(0.9, (dur * 0.55) / Math.max(1, items.length));
       const box = 70 * k;
@@ -467,7 +632,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
         rr(pad, y, box, box, box / 2); ctx.fillStyle = PRIMARY; ctx.fill();
         ctx.fillStyle = INK; ctx.font = `800 ${46 * k}px ${F.disp}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
         ctx.fillText(String(j + 1), pad + box / 2, y + box / 2 + 2 * k);
-        ctx.textAlign = "left"; ctx.textBaseline = "alphabetic"; ctx.fillStyle = "#FFFFFF"; ctx.font = `600 ${lines.size}px ${F.body}`;
+        ctx.textAlign = "left"; ctx.textBaseline = "alphabetic"; ctx.fillStyle = FG; ctx.font = `600 ${lines.size}px ${F.body}`;
         const ty = y + box / 2 - ((lines.lines.length - 1) * lines.size * 1.2) / 2 + lines.size * 0.35;
         lines.lines.forEach((l, m) => ctx.fillText(l, pad + box + 28 * k, ty + m * lines.size * 1.2));
         ctx.restore();
@@ -475,37 +640,37 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
       });
     } else if (sc.type === "alerte") {
       const r = (land ? 70 : 84) * sz * k;
-      warnIcon(pad + r * 1.12, y + r + enter(0), r, PRIMARY, INK);
+      warnIcon(center ? W / 2 : pad + r * 1.12, y + r + enter(0), r, PRIMARY, INK);
       y += r * 2 + 36 * k;
-      pill(T.tag, pad, y + enter(0.1), PRIMARY, INK, k);
+      pill(T.tag, pad, y + enter(0.1), PRIMARY, INK, k, center);
       y += 72 * k;
-      y += drawTitle(titleLines(sc.titre, land ? 104 : 114, 58, 3), y, enter(0.22), "#FFFFFF", 1) + 26 * k;
+      y += drawTitle(titleLines(sc.titre, land ? 104 : 114, 58, 3), y, enter(0.22), FG, 1) + 26 * k;
       if (showBody) drawBody(sc.texte, y, enter(0.4), 52, bodyMax);
     } else if (sc.type === "cta") {
-      y += drawTitle(titleLines(sc.titre, land ? 116 : 126, 58, 3), y, enter(0), "#FFFFFF", 1) + 26 * k;
+      y += drawTitle(titleLines(sc.titre, land ? 116 : 126, 58, 3), y, enter(0), FG, 1) + 26 * k;
       if (showBody) y += drawBody(sc.texte, y, enter(0.2), 52, 2) + 30 * k;
       ctx.globalAlpha = easeOut((lt - 0.5) / 0.45);
       const pulse = 1 + 0.04 * Math.sin(lt * 5);
-      ctx.save(); ctx.translate(pad, y + 10 * k); ctx.scale(pulse, pulse);
-      subscribeButton(0, 0, k);
+      ctx.save(); ctx.translate(center ? W / 2 : pad, y + 10 * k); ctx.scale(pulse, pulse);
+      subscribeButton(0, 0, k, center);
       ctx.restore();
       y += 130 * k;
       if (brand.cta && !hasBg) drawBody(brand.cta, y, 0, 42, 2, 0.8, 600);
     } else {
-      y += drawTitle(titleLines(sc.titre, land ? 104 : 116, 54, 3), y, enter(0), "#FFFFFF", 1) + 26 * k;
+      y += drawTitle(titleLines(sc.titre, land ? 104 : 116, 54, 3), y, enter(0), FG, 1) + 26 * k;
       if (showBody) drawBody(sc.texte, y, enter(0.25), 52, bodyMax);
     }
 
     ctx.globalAlpha = 1; setSpacing(0);
     if (subs) {
       const centerY = land ? H - 110 * k : (hasBg ? H * 0.82 : H * 0.78);
-      drawCaptions(sc, lt, dur, W, pad, cw, k, land, PRIMARY, INK, centerY);
+      drawCaptions(sc, lt, dur, W, pad, cw, k, land, PRIMARY, INK, centerY, tpl, FG, hasBg);
     }
 
     // Fondu d'entrée de scène et fine barre de progression
     if (i > 0 && lt < 0.22) { ctx.fillStyle = DARK; ctx.globalAlpha = 0.55 * (1 - lt / 0.22); ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
     if (!opts.clean) {
-      ctx.fillStyle = "rgba(255,255,255,0.15)"; ctx.fillRect(0, H - 6 * k, W, 6 * k);
+      ctx.fillStyle = hexToRgba(FG, 0.15); ctx.fillRect(0, H - 6 * k, W, 6 * k);
       ctx.fillStyle = PRIMARY; ctx.fillRect(0, H - 6 * k, W * clamp(t / TLc.total), 6 * k);
     }
     ctx.restore();
@@ -977,6 +1142,63 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     $("rg-info").textContent = msg;
     $("rg-pick").hidden = $("rg-all").checked;
   }
+
+  /* ---------------- Modèles ---------------- */
+  function applyTemplate(id) {
+    const t = TEMPLATES[id];
+    if (!t) return;
+    state.template = id;
+    state.brand.primary = t.accent; state.brand.dark = t.bg;
+    $("br-primary").value = t.accent; $("br-dark").value = t.bg;
+    fitCache.clear();
+    persist();
+    [...$("tpls").children].forEach((c) => c.setAttribute("aria-checked", String(c.dataset.id === id)));
+    seek(scrubTime());
+  }
+  function renderTemplates() {
+    const box = $("tpls");
+    box.replaceChildren();
+    for (const [id, t] of Object.entries(TEMPLATES)) {
+      const font = t.title === "serif" ? "'Playfair Display', Georgia, serif" : t.title === "body" ? "Barlow, sans-serif" : "'Barlow Condensed', sans-serif";
+      const prev = el("span", { class: "tprev" });
+      prev.style.background = t.gradient ? `linear-gradient(160deg, ${t.gradient[0]}, ${t.gradient[1]})` : t.bg;
+      prev.style.textAlign = t.align;
+      const title = el("span", { class: "ttitle", text: t.upper ? "TON TITRE" : "Ton titre" });
+      title.style.color = t.fg; title.style.fontFamily = font; title.style.fontWeight = t.title === "body" ? "700" : "800";
+      if (t.glow) title.style.textShadow = `0 0 10px ${t.accent}`;
+      const cap = el("span", { class: "tcap" });
+      const w1 = el("span", { text: t.capUpper ? "LE MOT " : "le mot " });
+      const w2 = el("span", { text: t.capUpper ? "SURLIGNÉ" : "surligné" });
+      w1.style.color = t.caption === "classic" ? "#fff" : t.fg;
+      if (t.caption === "box") { w2.style.background = t.accent; w2.style.color = t.ink; w2.style.padding = "0 3px"; w2.style.borderRadius = "3px"; }
+      else { w2.style.color = t.accent; if (t.caption === "glow") w2.style.textShadow = `0 0 8px ${t.accent}`; }
+      if (t.caption === "classic") { cap.style.background = "rgba(0,0,0,.6)"; cap.style.padding = "2px 6px"; cap.style.borderRadius = "4px"; }
+      cap.append(w1, w2);
+      prev.append(title, cap);
+      const card = el("button", { type: "button", class: "tpl", role: "radio", title: `Modèle ${t.name}` }, prev, el("span", { class: "tname", text: t.name }));
+      card.dataset.id = id;
+      card.setAttribute("aria-checked", String(id === state.template));
+      card.addEventListener("click", () => applyTemplate(id));
+      box.append(card);
+    }
+    const sel = $("s-model");
+    sel.replaceChildren(el("option", { value: "", text: "Choisir une structure…" }),
+      ...Object.entries(SCRIPT_TEMPLATES).map(([id, m]) => el("option", { value: id, text: `${m.name} · ${TEMPLATES[m.tpl].name} · ${m.aspect === "9:16" ? "Short" : "Long"}` })));
+  }
+  $("btn-model").addEventListener("click", () => {
+    const m = SCRIPT_TEMPLATES[$("s-model").value];
+    if (!m) { status("script-status", "Choisis d'abord une structure de script.", "warn"); return; }
+    const current = String(state.script || "").trim();
+    if (current && current !== EXAMPLE_SCRIPT.trim() && !window.confirm("Remplacer ton script actuel par ce modèle ?")) return;
+    state.script = m.text;
+    $("s-script").value = m.text;
+    applyTemplate(m.tpl);
+    setAspect(m.aspect);
+    renderScenes();
+    persist();
+    status("script-status", `Modèle « ${m.name} » chargé. Remplace chaque partie entre [crochets] par ton contenu, puis clique sur « Générer ma vidéo ».`, "ok");
+    $("s-script").focus();
+  });
 
   /* ---------------- Réglages ---------------- */
   function bindInputs() {
@@ -1505,12 +1727,13 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   setTimeout(() => { loadMB().catch(() => { mbPromise = null; }); }, 1500);
   if (!state.scenes.length) state.scenes = localSplit(state.script);
   bindInputs();
+  renderTemplates();
   setAspect(state.aspect === "16:9" ? "16:9" : "9:16");
   renderScenes();
   seek(1.5);
   renderVoices();
 
-  Promise.all(['800 80px "Barlow Condensed"', '700 40px "Barlow"', '600 40px "Barlow"', '500 40px "Barlow"', '600 24px "IBM Plex Mono"']
+  Promise.all(['800 80px "Barlow Condensed"', '700 40px "Barlow"', '600 40px "Barlow"', '500 40px "Barlow"', '600 24px "IBM Plex Mono"', '800 60px "Playfair Display"']
     .map((f) => document.fonts.load(f).catch(() => null)))
     .then(() => { fitCache.clear(); if (!playing) seek(scrubTime()); });
 
