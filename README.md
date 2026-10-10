@@ -6,30 +6,24 @@ de quelques secondes à plusieurs heures.
 
 ## Fonctions
 
-- **Un script, une durée, un clic, une vidéo finie** : tu colles ton script, tu règles la durée de **1 minute à 2 heures**,
-  et « Générer ma vidéo » enchaîne tout : ajustement du texte à la durée, voix, recherche des vidéos, montage du fichier final.
-  Si le texte lu est plus court ou plus long que la durée choisie (écart de plus de 15 %), Claude le développe ou le resserre
-  en gardant les idées du créateur (option « Garder mon texte mot pour mot » pour ne rien changer). Les vidéos longues
-  s'écrivent par parties d'environ 10 minutes (plan, puis une partie par appel), chacune devenant un chapitre YouTube.
-  Au-delà de 20 minutes, le fichier s'enregistre directement sur le disque (emplacement choisi au clic, Chrome ou Edge).
-- **Uniquement des vidéos réalistes** plein écran, avec sous-titres animés : aucun carton ni titre graphique.
-  La vidéo est un seul bloc continu ; le studio change de plan au rythme choisi (rapide, normal, lent) ou garde
-  **un seul plan du début à la fin**. Les plans sans vidéo prolongent le plan précédent : jamais d'écran vide.
-- **Sources** :
-  - vidéos modernes de Pexels (gens, objets, interviews), si `PEXELS_API_KEY` est défini ;
-  - films d'archives de Wikimedia Commons (guerres, histoire, actualités d'époque), sans clé, domaine public en premier.
-  Le mode automatique choisit les archives quand le script parle d'histoire et traduit les mots-clés en anglais.
-  La vidéo affichée à la tête de lecture se remplace par une recherche ou par ta propre vidéo.
-- **Voix** :
-  - ElevenLabs (voix ultra-réalistes et voix clonées du compte), si `ELEVENLABS_API_KEY` est défini. La clé reste sur
-    le serveur ; chaque passage est lu avec ses phrases voisines pour une intonation continue. Modèles Multilingual v2
-    (qualité) ou Flash v2.5 (deux fois moins de crédits) ;
-  - 3 voix françaises Piper gratuites, calculées dans le navigateur ; ou ta propre voix enregistrée.
-- **Crédits** auteur, licence et lien générés pour la description YouTube (obligatoires pour CC BY et CC BY-SA).
-- **Export sans limite de durée** : encodage WebCodecs (H.264 + AAC en MP4, ou VP9 + Opus en WebM si le navigateur
-  n'a pas de H.264) via [Mediabunny](https://mediabunny.dev) (MPL-2.0, dans `public/vendor`). Le fichier s'écrit
-  directement sur le disque (Chrome, Edge), plus vite que le temps réel.
-- **Extrait en Short** d'une vidéo longue, **sous-titres .srt**, **chapitres YouTube** (`## Partie`), **miniature** 1920×1080.
+Éditeur organisé comme HeyGen : barre du haut (format 9:16 ou 16:9, **Générer la vidéo**, **Télécharger**),
+rail d'outils à gauche (Script, Voix, Sous-titres, Export), grand aperçu au centre avec bouton **plein écran**.
+
+- **Le script est lu mot pour mot** : il n'est jamais réécrit. Il est découpé en phrases (14 mots au plus par plan).
+- **Une vidéo par phrase, choisie pour ce qu'elle dit** : Claude lit chaque passage et donne la recherche en anglais
+  qui montre exactement ce qui est dit, et s'il faut des images d'époque. Vidéos réelles de Pexels, films d'archives de
+  Wikimedia Commons pour les passages historiques. Sans clé Claude, repli sur des mots-clés extraits du texte.
+  Bouton ↻ sous l'aperçu : autre vidéo pour le passage affiché.
+- **Toutes les voix ElevenLabs** : la bibliothèque publique complète (recherche, langue, genre, usage, écoute gratuite
+  des extraits), les voix du compte (y compris clonées), 3 voix gratuites calculées dans le navigateur, ou ta voix.
+  Une voix de la bibliothèque est ajoutée au compte ElevenLabs quand on la choisit (obligatoire pour la faire lire).
+- **Un clic, une vidéo finie** : texte analysé, voix, vidéos, montage, puis bouton Télécharger.
+  Au-delà de 20 minutes, le fichier s'écrit directement sur le disque (Chrome ou Edge sur ordinateur).
+- **Vidéos longues** : les vidéos téléchargées sont stockées sur le disque (stockage privé du navigateur), pas en mémoire :
+  jusqu'à 300 vidéos différentes par montage ; au-delà, les passages prolongent le plan précédent.
+- **Claude écrit le script** à partir d'un sujet, pour une durée de 1 minute à 2 heures (par parties de 10 minutes,
+  qui deviennent des chapitres YouTube).
+- **Sous-titres animés** mot par mot (6 styles), export `.srt`, chapitres YouTube, crédits des vidéos, miniature.
 
 ## Sécurité
 

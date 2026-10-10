@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
-  const g = await guardApi(req, 320_000, "iapartie", 200);
+  const g = await guardApi(req, 30_000, "iapartie", 200);
   if (g instanceof NextResponse) return g;
   const r = lireRequete(g.body);
   const b = (g.body ?? {}) as Record<string, unknown>;

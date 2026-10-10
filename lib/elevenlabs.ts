@@ -28,20 +28,76 @@ async function eleven(path: string, init: RequestInit = {}): Promise<Response> {
   throw new ElevenErreur("voix_erreur", 502);
 }
 
-type Voix = { voice_id: string; name: string; category?: string; labels?: Record<string, string>; description?: string | null };
+const ID = /^[A-Za-z0-9]{8,40}$/;
+const genreFr = (g?: string) => (g === "female" ? "Femme" : g === "male" ? "Homme" : g === "neutral" ? "Neutre" : "");
+/** Extrait audio d'une voix : seules les adresses de stockage ElevenLabs sont acceptées (relais côté serveur). */
+export function apercuAutorise(u: unknown): string | null {
+  if (typeof u !== "string" || u.length > 600) return null;
+  try {
+    const url = new URL(u);
+    const ok = url.protocol === "https:" && ((url.hostname === "storage.googleapis.com" && url.pathname.startsWith("/eleven-")) || /(^|\.)elevenlabs\.io$/.test(url.hostname));
+    return ok ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
 
-/** Voix disponibles sur le compte (voix par défaut, clonées et ajoutées depuis la bibliothèque). */
+type Voix = { voice_id: string; name: string; category?: string; labels?: Record<string, string>; preview_url?: string | null };
+
+/** Toutes les voix du compte (par défaut, clonées, ajoutées depuis la bibliothèque), page par page. */
 export async function listerVoix() {
-  const data = (await (await eleven("/v2/voices?page_size=100")).json()) as { voices?: Voix[] };
-  return (data.voices ?? [])
-    .filter((v) => /^[A-Za-z0-9]{8,40}$/.test(v.voice_id))
+  const out: Voix[] = [];
+  let token = "";
+  for (let page = 0; page < 10; page++) {
+    const data = (await (await eleven(`/v2/voices?page_size=100${token ? "&next_page_token=" + encodeURIComponent(token) : ""}`)).json()) as { voices?: Voix[]; has_more?: boolean; next_page_token?: string };
+    out.push(...(data.voices ?? []));
+    if (!data.has_more || !data.next_page_token) break;
+    token = data.next_page_token;
+  }
+  return out
+    .filter((v) => ID.test(v.voice_id))
     .map((v) => {
       const l = v.labels ?? {};
-      const genre = l.gender === "female" ? "Femme" : l.gender === "male" ? "Homme" : "";
-      const detail = [genre, l.accent, l.age, l.description || l.descriptive, l.use_case].filter(Boolean).join(" · ");
-      return { id: v.voice_id, name: String(v.name).slice(0, 60), detail: detail.slice(0, 120), perso: v.category === "cloned" || v.category === "professional" };
-    })
-    .slice(0, 100);
+      const detail = [genreFr(l.gender), l.accent, l.age, l.description || l.descriptive, l.use_case].filter(Boolean).join(" · ");
+      return { id: v.voice_id, name: String(v.name).slice(0, 60), detail: detail.slice(0, 120), perso: v.category === "cloned" || v.category === "professional", apercu: apercuAutorise(v.preview_url) };
+    });
+}
+
+type Partagee = { public_owner_id: string; voice_id: string; name: string; gender?: string; age?: string; accent?: string; language?: string; use_case?: string; descriptive?: string; description?: string; preview_url?: string; cloned_by_count?: number };
+
+/** Bibliothèque publique d'ElevenLabs (des milliers de voix), filtrée et paginée. */
+export async function bibliotheque(f: { recherche: string; langue: string; genre: string; usage: string; page: number }) {
+  const q = new URLSearchParams({ page_size: "30", page: String(f.page) });
+  if (f.recherche) q.set("search", f.recherche);
+  if (f.langue) q.set("language", f.langue);
+  if (f.genre) q.set("gender", f.genre);
+  if (f.usage) q.set("use_cases", f.usage);
+  const data = (await (await eleven(`/v1/shared-voices?${q}`)).json()) as { voices?: Partagee[]; has_more?: boolean };
+  const voices = (data.voices ?? [])
+    .filter((v) => ID.test(v.voice_id) && /^[A-Za-z0-9]{8,80}$/.test(v.public_owner_id))
+    .map((v) => ({
+      id: v.voice_id, owner: v.public_owner_id, name: String(v.name).slice(0, 60),
+      detail: [genreFr(v.gender), v.accent, v.age, v.descriptive, v.use_case].filter(Boolean).join(" · ").slice(0, 120),
+      langue: String(v.language ?? "").slice(0, 10), apercu: apercuAutorise(v.preview_url), populaire: v.cloned_by_count ?? 0,
+    }));
+  return { voices, plus: Boolean(data.has_more) };
+}
+
+/** Ajoute une voix de la bibliothèque au compte (obligatoire pour la faire lire). Renvoie son identifiant d'utilisation. */
+export async function ajouterVoix(owner: string, id: string, nom: string): Promise<string> {
+  try {
+    const res = await eleven(`/v1/voices/add/${encodeURIComponent(owner)}/${encodeURIComponent(id)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ new_name: nom.slice(0, 60) || "Voix Bachir" }),
+    });
+    const data = (await res.json()) as { voice_id?: string };
+    return data.voice_id && ID.test(data.voice_id) ? data.voice_id : id;
+  } catch (e) {
+    // Déjà ajoutée : la voix se lit avec son identifiant d'origine.
+    if (e instanceof ElevenErreur && e.code === "voix_erreur") return id;
+    throw e;
+  }
 }
 
 /** Lit un texte et renvoie un MP3 (44,1 kHz). previous/next : phrases voisines, pour une intonation continue. */

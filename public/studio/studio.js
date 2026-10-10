@@ -166,16 +166,14 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   const WPM = 150; // mots lus par minute par la voix off
   const MIN_MAX = 120;
   function clampMin(v) { v = Math.round(Number(v) || 1); return Math.min(MIN_MAX, Math.max(1, v)); }
-  // Rythme de montage : nombre de mots lus par plan vidéo (environ 2,6 mots par seconde).
-  const PACES = { rapide: { label: "Rapide", words: 9 }, normal: { label: "Normal", words: 17 }, lent: { label: "Lent", words: 32 }, unique: { label: "Un seul plan", words: 17 } };
+  // Montage : une vidéo par phrase, environ 14 mots (5 à 6 secondes) au plus par plan.
+  const WORDS_PER_SHOT = 14;
 
   const DEFAULT_STATE = {
     brief: { ton: "educatif", sujet: "Pourquoi la plupart des petites chaînes YouTube abandonnent avant 100 abonnés, et comment tenir." },
     minutes: 1,
     keepText: false,
     script: EXAMPLE_SCRIPT,
-    mediaSource: "auto",
-    pace: "normal",
     aspect: "9:16",
     voice: { mode: "ia", id: "fr_FR-siwis-medium", elId: "", elName: "", model: "qualite", speed: "1" },
     template: "impact",
@@ -192,10 +190,8 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   if (!state || !Array.isArray(state.scenes)) state = structuredClone(DEFAULT_STATE);
   for (const k of ["brief", "brand", "exp", "voice"]) state[k] = { ...DEFAULT_STATE[k], ...state[k] };
   if (typeof state.script !== "string") state.script = DEFAULT_STATE.script;
-  if (!["auto", "video", "film"].includes(state.mediaSource)) state.mediaSource = "auto";
   state.minutes = clampMin(state.minutes);
   if (typeof state.keepText !== "boolean") state.keepText = false;
-  if (!Object.hasOwn(PACES, state.pace)) state.pace = "normal";
   if (!["ia", "eleven", "fichier"].includes(state.voice.mode)) state.voice.mode = "ia";
   if (!["0.9", "1", "1.1", "1.2"].includes(String(state.voice.speed))) state.voice.speed = "1";
   if (state.v !== 4) { state.scenes = []; state.v = 4; } // ancien format à scènes graphiques : re-découpé au démarrage
@@ -429,7 +425,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     const brand = state.brand;
     const TLc = timeline();
     const tpl = TEMPLATES[state.template] || TEMPLATES.impact;
-    const PRIMARY = brand.primary || tpl.accent;
+    const PRIMARY = tpl.accent;
 
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -445,7 +441,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     const lt = Math.max(0, t - TLc.starts[i]), dur = TLc.durs[i], sc = state.scenes[i];
     const src = bgSource(bgFor(i), lt, opts);
     if (src) drawCover(src.el, src.w, src.h, 1);
-    else if (!media.bg.size) note("Les vidéos arrivent à l'étape 3");
+    else if (!media.bg.size) note("Clique sur « Générer la vidéo »");
 
     if (!opts.clean && brand.subs && sc.voix && sc.voix.trim()) {
       // Voile discret sous les sous-titres, pour les lire sur n'importe quelle vidéo
@@ -454,11 +450,6 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
       ctx.fillStyle = g; ctx.fillRect(0, H * 0.55, W, H * 0.45);
       const pad = (land ? 110 : 72) * k;
       drawCaptions(sc, lt, dur, W, pad, W - pad * 2, k, land, PRIMARY, tpl.ink, land ? H - 120 * k : H * 0.74, tpl, "#FFFFFF", true);
-    }
-    if (media.logo) {
-      const pad = (land ? 60 : 56) * k, lh = 72 * k, lw = (media.logo.naturalWidth / media.logo.naturalHeight) * lh;
-      ctx.globalAlpha = 0.85;
-      ctx.drawImage(media.logo, pad, pad, Math.min(lw, W * 0.3), lh);
     }
     ctx.restore();
   }
@@ -550,6 +541,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   // Mots-clés de recherche : ceux du passage, complétés par ceux du paragraphe s'il est trop court.
   function keywords(sc) {
     if (sc.broll && sc.broll.trim()) return sc.broll.trim();
+    if (sc.q) return sc.q; // requête choisie par Claude pour ce passage
     let words = kwOf(sc.voix);
     if (words.length < 2) words = [...new Set([...words, ...kwOf(sc.ctx || sc.titre)])];
     return words.slice(0, 3).join(" ");
@@ -590,13 +582,8 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     return data;
   }
 
-  /* ---------------- Vidéos réalistes : Pexels et films d'archives Wikimedia Commons ---------------- */
-  const SOURCES = {
-    auto: { label: "Automatique" },
-    video: { label: "Vidéos réalistes (Pexels)", pexels: true },
-    film: { label: "Films d'archives (Wikimedia)" },
-  };
-  // Sujet historique : le mode automatique passe alors sur les archives (photos et films d'époque).
+  /* ---------------- Vidéos : Pexels et films d'archives Wikimedia Commons ---------------- */
+  // Repli sans Claude : un passage historique est illustré par des images d'époque.
   const HISTORIC = /\b(guerres?|mondiale|poilus?|tranchées?|nazis?|hitler|staline|churchill|de gaulle|napol[ée]on|débarquement|résistance|occupation|armistice|colonial[es]?|colonisation|colonies|indépendances?|empires?|empereurs?|pharaons?|antiquité|médiéval|moyen[- ]âge|révolution|monarchie|rois?|reines?|siècles?|archives?|historiques?|histoire|1[5-9]\d\d|20[0-1]\d|années (?:folles|vingt|trente|quarante|cinquante|soixante))\b/iu;
   const isHistoric = (text) => HISTORIC.test(String(text || ""));
   // Commons est surtout décrit en anglais : les mots-clés courants sont traduits pour les archives.
@@ -703,66 +690,80 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     const first = q.split(" ")[0];
     return res.length || first === q ? res : pexelsSearch(first);
   }
+  // Les vidéos téléchargées s'écrivent dans le stockage privé du navigateur (sur le disque, pas en mémoire) :
+  // une vidéo de 2 heures peut en utiliser des centaines sans saturer l'ordinateur.
+  let clipDir = null, clipN = 0;
+  async function clipStore() {
+    if (clipDir !== null) return clipDir;
+    try {
+      const root = await navigator.storage.getDirectory();
+      try { await root.removeEntry("bachir-clips", { recursive: true }); } catch (e) { /* rien à nettoyer */ }
+      const dir = await root.getDirectoryHandle("bachir-clips", { create: true });
+      const probe = await dir.getFileHandle("test", { create: true });
+      if (typeof probe.createWritable !== "function") throw new Error("écriture indisponible");
+      clipDir = dir;
+    } catch (e) { clipDir = false; }
+    return clipDir;
+  }
+  async function keep(res, type) {
+    const dir = await clipStore();
+    if (!dir || !res.body) return new Blob([await res.blob()], { type });
+    const fh = await dir.getFileHandle(`clip-${++clipN}`, { create: true });
+    const w = await fh.createWritable();
+    await res.body.pipeTo(w);
+    return new Blob([await fh.getFile()], { type });
+  }
   async function mediaDownload(m) {
-    const direct = async () => {
-      const r = await fetch(m.link, { mode: "cors", credentials: "omit" });
-      if (!r.ok) throw new Error("http " + r.status);
-      return r.blob();
-    };
-    if (m.credit.src === "wikimedia") {
-      try { return new Blob([await direct()], { type: "video/webm" }); }
-      catch (e) { throw new Error("téléchargement impossible depuis Wikimedia Commons"); }
-    }
-    let b = null;
-    try { b = await direct(); } catch (e) { /* téléchargement direct refusé : passage par le relais */ }
-    if (!b) {
-      const r = await fetch(`/api/broll/fichier?id=${encodeURIComponent(m.id)}&f=${encodeURIComponent(m.fileId)}`, { credentials: "same-origin" });
-      if (!r.ok) throw new Error("téléchargement de la vidéo impossible");
-      b = await r.blob();
-    }
-    return new Blob([b], { type: "video/mp4" });
+    const type = m.credit.src === "wikimedia" ? "video/webm" : "video/mp4";
+    let res = null;
+    try { res = await fetch(m.link, { mode: "cors", credentials: "omit" }); } catch (e) { res = null; }
+    if (res && res.ok) return keep(res, type);
+    if (m.credit.src === "wikimedia") throw new Error("téléchargement impossible depuis Wikimedia Commons");
+    // Téléchargement direct refusé : passage par le relais du serveur
+    res = await fetch(`/api/broll/fichier?id=${encodeURIComponent(m.id)}&f=${encodeURIComponent(m.fileId)}`, { credentials: "same-origin" });
+    if (!res.ok) throw new Error("téléchargement de la vidéo impossible");
+    return keep(res, type);
   }
   const metaOf = (m) => ({ key: m.key, credit: m.credit });
 
-  const historicScript = () => isHistoric(state.scenes.map((s) => s.voix).join(" ").slice(0, 20000));
-  // Sources à essayer, dans l'ordre. Sujet historique : films d'archives d'abord.
-  function sourcePlan(sc, historic) {
-    const pex = brollOn && !pexelsBlocked;
-    if (state.mediaSource === "film" || !pex) return ["film"];
-    if (state.mediaSource === "video") return ["video"];
-    return historic || isHistoric(sc.voix) ? ["film", "video"] : ["video", "film"];
+  // Sources à essayer, dans l'ordre : images d'époque pour un passage historique, vidéos modernes sinon.
+  function sourcePlan(sc) {
+    if (!brollOn || pexelsBlocked) return ["film"];
+    const archive = typeof sc.archive === "boolean" ? sc.archive : isHistoric(sc.voix);
+    return archive ? ["film", "video"] : ["video", "film"];
   }
-  const MAX_CLIPS = 120; // vidéos différentes gardées en mémoire au plus
+  // Vidéos différentes au plus : 300 si elles s'écrivent sur le disque (stockage privé du navigateur), 120 sinon.
+  const maxClips = () => (clipDir ? 300 : 120);
+  const MAX_SEARCHES = 180; // Pexels autorise 200 recherches par heure
   // Télécharge une vidéo pour les passages qui n'en ont pas (ou qui en réutilisent une), sans doublon.
-  // `limit` : nombre de téléchargements par passage. Les passages restants reprennent la vidéo voisine.
-  async function autoBroll(limit, report, { fresh = false } = {}) {
-    const avoid = new Set(fresh ? [...media.bg.values()].map((b) => b.key) : []);
-    if (fresh) for (const s of state.scenes) clearBackground(s);
+  // Au-delà de `limit`, les passages choisis sont répartis sur toute la vidéo ; les autres prolongent le plan précédent.
+  async function autoBroll(limit, report) {
+    await clipStore();
     const used = new Set([...media.bg.values()].map((b) => b.key).filter(Boolean));
-    const historic = historicScript();
-    const single = state.pace === "unique";
-    const room = Math.max(0, MAX_CLIPS - used.size);
-    const todo = state.scenes.map((s, i) => ({ s, i }))
-      .filter(({ s }) => { const b = media.bg.get(s.id); return (!b || b.reused) && keywords(s); })
-      .slice(0, single ? (used.size ? 0 : 1) : Math.min(limit, room));
+    const cand = state.scenes.filter((s) => { const b = media.bg.get(s.id); return (!b || b.reused) && keywords(s); });
+    const room = Math.max(0, Math.min(limit, maxClips() - used.size));
+    const todo = cand.length <= room ? cand.slice() : Array.from({ length: room }, (_, j) => cand[Math.floor((j * cand.length) / room)]);
     const searches = new Map();
     const find = (q, src) => {
       const k = src + "|" + q;
-      if (!searches.has(k)) searches.set(k, mediaSearch(q, src).catch((e) => { searches.delete(k); throw e; }));
+      if (!searches.has(k)) {
+        if (searches.size >= MAX_SEARCHES) return Promise.resolve([]);
+        searches.set(k, mediaSearch(q, src).catch((e) => { searches.delete(k); throw e; }));
+      }
       return searches.get(k);
     };
     let done = 0, fail = 0, lastErr = "";
     const worker = async () => {
       while (todo.length) {
-        const { s: sc } = todo.shift();
-        const q = single ? keywords({ voix: state.scenes.map((x) => x.voix).join(" ").slice(0, 400) }) : keywords(sc);
+        const sc = todo.shift();
+        const q = keywords(sc);
         let ok = false;
-        for (const src of sourcePlan(sc, historic)) {
+        for (const src of sourcePlan(sc)) {
           if (src === "video" && pexelsBlocked) continue;
           try {
-            // Films d'archives au-delà de 60 Mo laissés au choix manuel : trop lourds pour un ajout automatique.
+            // Films d'archives au-delà de 60 Mo : trop lourds pour un ajout automatique.
             const items = (await find(q, src)).filter((m) => !(m.mb > 60));
-            const pick = items.find((m) => !used.has(m.key) && !avoid.has(m.key)) || items.find((m) => !used.has(m.key));
+            const pick = items.find((m) => !used.has(m.key));
             if (!pick) continue;
             used.add(pick.key);
             await setBackground(sc, await mediaDownload(pick), metaOf(pick));
@@ -774,15 +775,38 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
           }
         }
         if (ok) done++; else fail++;
-        report(`Vidéos réalistes : ${done} téléchargée(s)${fail ? `, ${fail} sans résultat` : ""}…`);
+        report(`Vidéos : ${done} sur ${done + fail + todo.length} téléchargée(s)${fail ? `, ${fail} sans résultat` : ""}…`);
       }
     };
-    await Promise.all(single ? [worker()] : [worker(), worker(), worker()]);
+    await Promise.all([worker(), worker(), worker()]);
     fillGaps();
     renderScenes();
-    const own = state.scenes.filter((s) => { const b = media.bg.get(s.id); return b && !b.reused; }).length;
-    return { done, fail, lastErr, reused: state.scenes.filter((s) => { const b = media.bg.get(s.id); return b && b.reused; }).length, own, empty: !media.bg.size };
+    return { done, fail, lastErr, empty: !media.bg.size };
   }
+  // Claude lit chaque passage et choisit la vidéo qui montre exactement ce qui est dit (requête en anglais).
+  async function planVisuals(report) {
+    const list = state.scenes;
+    if (!iaOn || !list.length) return false;
+    const first = String(state.script).split("\n").map((l) => l.replace(/^#+\s*/, "").trim()).find(Boolean) || "";
+    const contexte = first.slice(0, 200);
+    const starts = [];
+    for (let i = 0; i < list.length; i += 150) starts.push(i);
+    let next = 0, done = 0;
+    const worker = async () => {
+      while (next < starts.length) {
+        const a = starts[next++], part = list.slice(a, a + 150);
+        const r = await api("/api/visuels", { passages: part.map((s) => (s.voix || s.titre || "…").slice(0, 500)), contexte });
+        part.forEach((s, j) => { const v = r.visuels && r.visuels[j]; s.q = (v && v.requete) || ""; s.archive = v ? Boolean(v.archive) : null; });
+        done += part.length;
+        report(`Choix des vidéos : ${done} passage(s) sur ${list.length} analysé(s)…`);
+      }
+    };
+    try { await Promise.all([worker(), worker()]); }
+    catch (e) { list.forEach((s) => { delete s.q; delete s.archive; }); return false; }
+    persist();
+    return true;
+  }
+
   // Chaque passage sans vidéo prolonge le plan du passage précédent : jamais d'écran vide.
   function fillGaps() {
     const { durs } = timeline();
@@ -938,124 +962,163 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     return { seconds: timeline().total, voice: name };
   }
 
-  async function renderVoices() {
+  /* Choix de la voix, comme une bibliothèque : ElevenLabs (toutes les voix publiques), mes voix, voix gratuites, ma voix. */
+  let vtab = null, vlPage = 0, vlTimer = null, vlToken = 0, mesVoix = null, piperMod = undefined;
+  const previewAudio = new Audio();
+  function playPreview(url) {
+    if (!url) return false;
+    previewAudio.pause();
+    previewAudio.src = "/api/voix/elevenlabs/apercu?u=" + encodeURIComponent(url);
+    previewAudio.play().catch(() => status("voice-status", "Extrait indisponible pour cette voix.", "warn"));
+    return true;
+  }
+  function updateCurrent() {
+    const v = state.voice;
+    let name = "aucune";
+    if (v.mode === "eleven" && v.elId) name = `${v.elName || "voix"} · ElevenLabs`;
+    else if (v.mode === "fichier") name = media.voiceFile && !media.voiceTts ? "ton enregistrement" : "ton enregistrement (à importer)";
+    else if (v.mode === "ia") name = `${(piperMod && piperMod.VOICES.find((x) => x.id === v.id) || { name: "Siwis" }).name} · gratuite`;
+    $("v-current").textContent = "Voix choisie : " + name;
+    $("btn-voice").hidden = v.mode === "fichier";
+    document.querySelectorAll("#voices .voice").forEach((c) => c.setAttribute("aria-checked", String(c.dataset.key === (v.mode === "eleven" ? "el:" + v.elId : v.mode === "ia" ? "pi:" + v.id : ""))));
+  }
+  function voiceCard({ key, title, sub, badge, onPick, onListen }) {
+    const listen = onListen ? el("button", { type: "button", class: "listen", text: "▶", title: "Écouter", "aria-label": `Écouter ${title}` }) : null;
+    const c = el("div", { class: "voice", role: "radio", tabindex: "0" },
+      el("b", { text: title }), el("small", { text: sub || "" }), badge ? el("span", { class: "vbadge", text: badge }) : null, listen);
+    c.dataset.key = key;
+    c.addEventListener("click", (e) => { if (e.target !== listen) onPick(); });
+    c.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(); } });
+    if (listen) listen.addEventListener("click", async () => { listen.disabled = true; try { await onListen(); } finally { listen.disabled = false; } });
+    return c;
+  }
+  const pickEleven = (id, name) => { state.voice.mode = "eleven"; state.voice.elId = id; state.voice.elName = name; persist(); updateCurrent(); status("voice-status", `${name} sélectionnée.`, "ok"); };
+
+  async function loadBiblio(reset) {
+    const box = $("voices"), token = ++vlToken;
+    if (reset) { vlPage = 0; box.replaceChildren(el("small", { class: "hint", text: "Chargement des voix…" })); }
+    const q = new URLSearchParams({ q: $("vl-q").value.trim(), langue: $("vl-lang").value, genre: $("vl-genre").value, usage: $("vl-usage").value, page: String(vlPage) });
+    let d;
+    try {
+      const r = await fetch("/api/voix/elevenlabs/bibliotheque?" + q, { credentials: "same-origin" });
+      d = await r.json().catch(() => ({}));
+      if (!r.ok) throw { message: API_MSG[d.error] || "Bibliothèque ElevenLabs indisponible." };
+    } catch (e) { if (token === vlToken) box.replaceChildren(el("small", { class: "hint", text: (e && e.message) || "Bibliothèque indisponible." })); return; }
+    if (token !== vlToken) return;
+    if (reset) box.replaceChildren();
+    for (const v of d.voices || []) {
+      box.append(voiceCard({
+        key: "lib:" + v.id, title: v.name, sub: v.detail, badge: v.langue ? v.langue.toUpperCase() : "",
+        onListen: v.apercu ? async () => playPreview(v.apercu) : null,
+        onPick: async () => {
+          status("voice-status", `Ajout de ${v.name} à ton compte ElevenLabs…`);
+          try { const r = await api("/api/voix/elevenlabs/ajouter", { owner: v.owner, id: v.id, nom: v.name }); mesVoix = null; pickEleven(r.id, v.name); }
+          catch (e) { status("voice-status", (e && e.message) || "Ajout impossible.", "warn"); }
+        },
+      }));
+    }
+    if (!box.children.length) box.append(el("small", { class: "hint", text: "Aucune voix pour ces filtres." }));
+    $("vl-more").hidden = !d.plus;
+    updateCurrent();
+  }
+  async function loadMes() {
     const box = $("voices");
-    box.replaceChildren();
-    const select = (mode, id) => {
-      state.voice.mode = mode;
-      if (id && mode === "ia") state.voice.id = id;
-      persist();
-      [...box.querySelectorAll(".voice")].forEach((c) => c.setAttribute("aria-checked", String(c.dataset.mode === mode && (mode === "fichier" || c.dataset.id === (mode === "eleven" ? state.voice.elId : state.voice.id)))));
-      $("own-voice").hidden = mode !== "fichier";
-      $("btn-voice").hidden = mode === "fichier";
-      $("el-opts").hidden = mode !== "eleven";
-    };
-    const card = (mode, id, title, sub, info, onListen) => {
-      const kids = [el("b", { text: title }), el("small", { text: sub })];
-      if (info) kids.push(info);
-      let listen = null;
-      if (onListen) { listen = el("button", { type: "button", class: "btn small listen", text: "▶ Écouter" }); kids.push(listen); }
-      const c = el("div", { class: "voice" + (mode === "eleven" ? " el" : ""), role: "radio", tabindex: "0" }, ...kids);
-      c.dataset.mode = mode; if (id) c.dataset.id = id;
-      const pick = () => { if (mode === "eleven") { state.voice.elId = id; state.voice.elName = title; } select(mode, id); };
-      c.addEventListener("click", (e) => { if (e.target !== listen) pick(); });
-      c.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
-      if (listen) listen.addEventListener("click", async () => { pick(); listen.disabled = true; try { await onListen(); } finally { listen.disabled = false; } });
-      return c;
-    };
-    const play = (a) => new Audio(URL.createObjectURL(wavBlob([toInt16(a.pcm)], a.sampleRate))).play().catch(() => {});
-
-    // ElevenLabs en premier quand la clé est configurée : les voix les plus naturelles.
-    if (elevenOn) {
-      box.append(el("p", { class: "vgroup", text: "ElevenLabs · voix ultra-réalistes" }));
-      const wrap = el("div", { class: "voices-el" }, el("small", { class: "hint", text: "Chargement des voix ElevenLabs…" }));
-      box.append(wrap);
-      fetch("/api/voix/elevenlabs", { credentials: "same-origin" })
-        .then(async (r) => { const d = await r.json().catch(() => ({})); if (!r.ok) throw { message: API_MSG[d.error] || "Liste des voix ElevenLabs indisponible." }; return d.voices || []; })
-        .then((list) => {
-          wrap.replaceChildren(...list.map((v) => card("eleven", v.id, v.name, v.detail || (v.perso ? "Ta voix clonée" : "Voix ElevenLabs"), null, async () => {
-            status("voice-status", `Lecture de ${v.name}…`);
-            try { play(await elevenSpeak(V_SAMPLE)); status("voice-status", ""); }
-            catch (e) { status("voice-status", (e && e.message) || "Lecture impossible.", "warn"); }
-          })));
-          if (!list.length) wrap.textContent = "Aucune voix sur ton compte ElevenLabs : ajoute-en depuis la Voice Library.";
-          if (!state.voice.elId && list[0] && state.voice.mode === "eleven") { state.voice.elId = list[0].id; state.voice.elName = list[0].name; }
-          select(state.voice.mode, state.voice.mode === "ia" ? state.voice.id : null);
-        })
-        .catch((e) => { wrap.textContent = (e && e.message) || "Liste des voix ElevenLabs indisponible."; });
-    }
-
-    box.append(el("p", { class: "vgroup", text: "Voix gratuites · calculées sur ton ordinateur" }));
-    let V = null;
-    try { V = await loadVoiceMod(); } catch (e) {
-      box.append(el("small", { class: "hint", text: "Le moteur de voix gratuit ne se charge pas dans ce navigateur (Chrome ou Edge à jour requis)." }));
-    }
-    if (V) {
-      for (const v of V.VOICES) {
-        const cached = await V.isCached(v.id);
-        const info = el("small", { text: cached ? "Prête sur cet ordinateur" : `${v.mb} Mo à télécharger une fois` });
-        box.append(card("ia", v.id, v.name, `${v.genre} · ${v.detail}`, info, async () => {
-          try {
-            await V.loadVoice(v.id, (p) => status("voice-status", `Téléchargement de ${v.name} : ${Math.round(p * 100)} %`));
-            status("voice-status", `Lecture de ${v.name}…`);
-            play(await V.speak(V_SAMPLE, v.id, Number(state.voice.speed) || 1));
-            info.textContent = "Prête sur cet ordinateur";
-            status("voice-status", "");
-          } catch (e) {
-            status("voice-status", "Impossible de charger cette voix : " + ((e && e.message) || "erreur") + ".", "warn");
-          }
-        }));
+    box.replaceChildren(el("small", { class: "hint", text: "Chargement de tes voix…" }));
+    try {
+      if (!mesVoix) {
+        const r = await fetch("/api/voix/elevenlabs", { credentials: "same-origin" });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw { message: API_MSG[d.error] || "Voix ElevenLabs indisponibles." };
+        mesVoix = d.voices || [];
       }
+    } catch (e) { box.replaceChildren(el("small", { class: "hint", text: (e && e.message) || "Voix indisponibles." })); return; }
+    if (vtab !== "mes") return;
+    box.replaceChildren(...mesVoix.map((v) => voiceCard({
+      key: "el:" + v.id, title: v.name, sub: v.detail || (v.perso ? "Ta voix clonée" : "Voix ElevenLabs"), badge: v.perso ? "Clone" : "",
+      onPick: () => pickEleven(v.id, v.name),
+      onListen: async () => {
+        if (playPreview(v.apercu)) return;
+        const prev = { ...state.voice }; pickEleven(v.id, v.name);
+        try { const a = await elevenSpeak(V_SAMPLE); new Audio(URL.createObjectURL(wavBlob([toInt16(a.pcm)], a.sampleRate))).play().catch(() => {}); }
+        catch (e) { status("voice-status", (e && e.message) || "Lecture impossible.", "warn"); Object.assign(state.voice, prev); updateCurrent(); }
+      },
+    })));
+    if (!mesVoix.length) box.append(el("small", { class: "hint", text: "Aucune voix sur ton compte : choisis-en une dans la Bibliothèque." }));
+    updateCurrent();
+  }
+  async function loadGratuites() {
+    const box = $("voices");
+    if (piperMod === undefined) { try { piperMod = await loadVoiceMod(); } catch (e) { piperMod = null; } }
+    if (vtab !== "gratuites") return;
+    if (!piperMod) { box.replaceChildren(el("small", { class: "hint", text: "Le moteur de voix gratuit ne se charge pas dans ce navigateur (Chrome ou Edge à jour requis)." })); return; }
+    box.replaceChildren();
+    for (const v of piperMod.VOICES) {
+      const cached = await piperMod.isCached(v.id);
+      box.append(voiceCard({
+        key: "pi:" + v.id, title: v.name, sub: `${v.genre} · ${v.detail}`, badge: cached ? "Prête" : `${v.mb} Mo`,
+        onPick: () => { state.voice.mode = "ia"; state.voice.id = v.id; persist(); updateCurrent(); },
+        onListen: async () => {
+          state.voice.mode = "ia"; state.voice.id = v.id; persist(); updateCurrent();
+          try {
+            await piperMod.loadVoice(v.id, (p) => status("voice-status", `Téléchargement de ${v.name} : ${Math.round(p * 100)} %`));
+            status("voice-status", `Lecture de ${v.name}…`);
+            const a = await piperMod.speak(V_SAMPLE, v.id, Number(state.voice.speed) || 1);
+            new Audio(URL.createObjectURL(wavBlob([toInt16(a.pcm)], a.sampleRate))).play().catch(() => {});
+            status("voice-status", "");
+          } catch (e) { status("voice-status", "Impossible de charger cette voix : " + ((e && e.message) || "erreur") + ".", "warn"); }
+        },
+      }));
     }
-    box.append(card("fichier", null, "Ma voix", "Ton enregistrement : la voix la plus crédible"));
-    if (state.voice.mode === "eleven" && !elevenOn) state.voice.mode = V ? "ia" : "fichier";
-    if (state.voice.mode === "ia" && !V) state.voice.mode = "fichier";
-    select(state.voice.mode, state.voice.mode === "ia" ? state.voice.id : null);
+    updateCurrent();
+  }
+  function setVtab(t) {
+    vtab = t;
+    document.querySelectorAll("[data-vtab]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.vtab === t)));
+    const el11 = t === "biblio" || t === "mes";
+    $("vl-filters").hidden = t !== "biblio";
+    $("vl-more").hidden = true;
+    $("own-voice").hidden = t !== "fichier";
+    $("voices").hidden = t === "fichier";
+    $("el-opts").hidden = !elevenOn;
+    if (el11 && !elevenOn) { $("voices").replaceChildren(el("small", { class: "hint", text: API_MSG.voix_non_configuree })); return; }
+    if (t === "biblio") loadBiblio(true);
+    else if (t === "mes") loadMes();
+    else if (t === "gratuites") loadGratuites();
+    else { state.voice.mode = "fichier"; persist(); updateCurrent(); }
+  }
+  let voicesBound = false;
+  function renderVoices() {
+    if (!voicesBound) {
+      voicesBound = true;
+      document.querySelectorAll("[data-vtab]").forEach((b) => b.addEventListener("click", () => setVtab(b.dataset.vtab)));
+      $("vl-q").addEventListener("input", () => { clearTimeout(vlTimer); vlTimer = setTimeout(() => loadBiblio(true), 400); });
+      for (const id of ["vl-lang", "vl-genre", "vl-usage"]) $(id).addEventListener("change", () => loadBiblio(true));
+      $("vl-more").addEventListener("click", () => { vlPage++; loadBiblio(false); });
+    }
+    if (state.voice.mode === "eleven" && !elevenOn) state.voice.mode = "ia";
+    setVtab(state.voice.mode === "fichier" ? "fichier" : state.voice.mode === "eleven" ? "mes" : elevenOn ? "biblio" : "gratuites");
+    updateCurrent();
   }
   const V_SAMPLE = "Salut ! Voici la voix que tu as choisie pour ta prochaine vidéo.";
 
-  /* ---------------- Panneau Vidéos : état global et vidéo du moment ---------------- */
+  /* ---------------- Aperçu : texte du passage affiché et vidéo choisie ---------------- */
   function renderScenes() {
-    const n = state.scenes.length;
-    const own = new Set(), reused = state.scenes.filter((s) => { const b = media.bg.get(s.id); if (b && !b.reused) own.add(b.key || b.url); return b && b.reused; }).length;
-    const missing = state.scenes.filter((s) => !media.bg.has(s.id)).length;
-    let note;
-    if (!n) note = "Les vidéos sont choisies automatiquement quand tu génères ta vidéo.";
-    else if (!media.bg.size) note = "Aucune vidéo pour l'instant : clique sur « Trouver les vidéos ».";
-    else note = `${own.size} vidéo(s) réaliste(s) différente(s)` + (state.pace === "unique" ? ", un seul plan du début à la fin." : reused ? `, certaines prolongées sur ${reused} passage(s) : « Plus de variété » en ajoute.` : ", une par passage.") + (missing ? ` ${missing} passage(s) sans vidéo.` : "");
-    if (!brollOn) note += " Vidéos modernes (gens, objets, interviews) : ajoute la clé Pexels sur le serveur ; en attendant, seuls les films d'archives sont disponibles.";
-    $("broll-note").textContent = note;
-    $("btn-broll-more").hidden = !n || state.pace === "unique";
     refreshDerived();
     updateTimes(scrubTime());
     renderMoment(true);
   }
-
-  // Vidéo à l'endroit de la tête de lecture : remplaçable par une recherche ou par ta propre vidéo.
   let momentIdx = -1, momentTimer = null;
   function renderMoment(force = false) {
-    if (!state.scenes.length) { $("moment").hidden = true; return; }
+    if (!state.scenes.length) { $("cur-text").textContent = ""; return; }
     const i = sceneAt(scrubTime());
     if (i === momentIdx && !force) return;
     momentIdx = i;
-    $("moment").hidden = false;
     const s = state.scenes[i], bg = bgFor(i);
-    const { starts } = timeline();
-    $("cur-time").textContent = fmt(starts[i]);
-    $("cur-text").textContent = "« " + String(s.voix || s.titre || "").slice(0, 140) + (String(s.voix || "").length > 140 ? "… »" : " »");
-    const th = $("cur-thumb");
-    th.replaceChildren();
-    if (bg) {
-      th.append(el("video", { src: bg.url, muted: true, playsInline: true, preload: "metadata" }));
-      const c = bg.credit;
-      th.title = c ? (c.src === "pexels" ? `Vidéo de ${c.author} sur Pexels` : `${c.title} · ${c.author} · ${c.license}`) : "Ta vidéo";
-      th.append(el("span", { class: "tag", text: c && c.src === "wikimedia" ? "Archive" : c ? "Pexels" : "Ta vidéo" }));
-    } else th.append(el("span", { text: "Pas de vidéo" }));
-    $("cur-kw").value = s.broll || "";
-    $("cur-kw").placeholder = keywords({ ...s, broll: "" }) || "mots-clés (ex. WW2 artillery)";
-    $("cur-results").hidden = true;
+    const c = bg && bg.credit;
+    const src = !bg ? "" : !c ? " · ta vidéo" : c.src === "wikimedia" ? " · archive Wikimedia" : ` · vidéo de ${c.author || "Pexels"} (Pexels)`;
+    $("cur-text").textContent = `« ${String(s.voix || s.titre || "").slice(0, 160)} »` + (s.q ? ` → ${s.q}` : "") + src;
   }
-  const momentLater = () => { clearTimeout(momentTimer); momentTimer = setTimeout(() => { if (!playing && !exporting) renderMoment(); }, 200); };
+  const momentLater = () => { clearTimeout(momentTimer); momentTimer = setTimeout(() => { if (!playing && !exporting) renderMoment(); }, 150); };
 
   /* ---------------- Textes dérivés : prompteur, chapitres, plage d'export ---------------- */
   function hms(s) {
@@ -1122,8 +1185,6 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     const t = TEMPLATES[id];
     if (!t) return;
     state.template = id;
-    state.brand.primary = t.accent;
-    $("br-primary").value = t.accent;
     persist();
     [...$("tpls").children].forEach((c) => c.setAttribute("aria-checked", String(c.dataset.id === id)));
     seek(scrubTime());
@@ -1174,42 +1235,27 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     $("b-ton").addEventListener("change", (e) => { b.ton = e.target.value; persist(); });
     $("b-sujet").addEventListener("input", (e) => { b.sujet = e.target.value; persist(); });
     $("s-minutes").value = String(state.minutes);
-    $("s-minutes").addEventListener("input", (e) => { state.minutes = clampMin(e.target.value); persist(); durationInfo(); });
-    $("s-keep").checked = state.keepText;
-    $("s-keep").addEventListener("change", (e) => { state.keepText = e.target.checked; persist(); durationInfo(); });
-
-    const br = state.brand;
-    $("br-primary").value = br.primary;
-    $("subs").checked = !!br.subs;
-    $("subs").addEventListener("change", (e) => { br.subs = e.target.checked; persist(); seek(scrubTime()); });
+    $("s-minutes").addEventListener("input", (e) => { state.minutes = clampMin(e.target.value); persist(); scriptInfo(); });
+    $("subs").checked = !!state.brand.subs;
+    $("subs").addEventListener("change", (e) => { state.brand.subs = e.target.checked; persist(); seek(scrubTime()); });
     $("s-script").value = state.script;
-    $("s-script").addEventListener("input", (e) => { state.script = e.target.value; persist(); durationInfo(); });
-    $("s-source").value = state.mediaSource;
-    $("s-source").addEventListener("change", (e) => { state.mediaSource = e.target.value; persist(); });
-    $("s-pace").value = state.pace;
-    $("s-pace").addEventListener("change", (e) => {
-      state.pace = e.target.value; persist();
-      status("broll-note", "Rythme changé : clique sur « Générer ma vidéo » pour remonter la vidéo à ce rythme.");
-    });
+    $("s-script").addEventListener("input", (e) => { state.script = e.target.value; persist(); scriptInfo(); });
     $("el-model").value = state.voice.model;
     $("el-model").addEventListener("change", (e) => { state.voice.model = e.target.value; persist(); });
     $("v-speed").value = state.voice.speed;
     $("v-speed").addEventListener("change", (e) => { state.voice.speed = e.target.value; persist(); });
-    [["br-primary", "primary"]].forEach(([id, key]) =>
-      $(id).addEventListener("input", (e) => { br[key] = e.target.value; persist(); seek(scrubTime()); }));
-    $("br-logo").addEventListener("change", (e) => {
-      const f = e.target.files && e.target.files[0];
-      if (!f) return;
-      const img = new Image();
-      img.onload = () => { media.logo = img; $("br-logo-prev").src = img.src; $("br-logo-prev").hidden = false; seek(scrubTime()); };
-      img.src = URL.createObjectURL(f);
-    });
     $("ex-fps").value = state.exp.fps; $("ex-quality").value = state.exp.quality;
     $("ex-fps").addEventListener("change", (e) => { state.exp.fps = e.target.value; persist(); });
     $("ex-quality").addEventListener("change", (e) => { state.exp.quality = e.target.value; persist(); });
     $("rg-all").addEventListener("change", rangeInfo);
     $("rg-from").addEventListener("change", rangeInfo);
     $("rg-to").addEventListener("change", rangeInfo);
+    document.querySelectorAll(".rail [data-tab]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
+  }
+  // Onglets de gauche, comme dans un éditeur vidéo : un seul panneau ouvert à la fois.
+  function showTab(name) {
+    document.querySelectorAll(".rail [data-tab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
+    for (const t of ["script", "voix", "subs", "export"]) $("tab-" + t).hidden = t !== name;
   }
   function setAspect(a) {
     state.aspect = a;
@@ -1218,7 +1264,6 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     $("stage").classList.toggle("land", land);
     $("ar-portrait").setAttribute("aria-pressed", String(!land));
     $("ar-land").setAttribute("aria-pressed", String(land));
-    $("moment").classList.toggle("land", land);
     persist();
     rangeInfo();
     seek(scrubTime());
@@ -1240,7 +1285,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   function segmentScript(text) {
     const raw = String(text || "").replace(/\r/g, "").trim();
     if (!raw) return [];
-    const target = (PACES[state.pace] || PACES.normal).words;
+    const target = WORDS_PER_SHOT;
     const blocks = [];
     let para = [];
     const flush = () => { if (para.length) { blocks.push({ text: para.join(" ") }); para = []; } };
@@ -1286,14 +1331,10 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     const text = String(state.script || "").trim();
     if (!text) throw new Error("Colle d'abord ton script.");
     const scenes = segmentScript(text);
-    // Les vidéos déjà téléchargées sont gardées et redistribuées sur les nouveaux passages.
-    const keep = [...new Map([...media.bg.values()].filter((b) => !b.reused).map((b) => [b.url, b])).values()];
-    for (const s of state.scenes) media.bg.delete(s.id);
-    if (media.voiceFile) clearVoice();
+    // Nouvelle analyse : chaque passage recevra la vidéo qui correspond à son texte.
+    for (const s of state.scenes) clearBackground(s);
+    if (media.voiceFile && media.voiceTts) clearVoice();
     state.scenes = scenes;
-    if (state.pace === "unique") keep.splice(1);
-    keep.slice(0, scenes.length).forEach((b, j) => media.bg.set(scenes[Math.floor((j * scenes.length) / keep.length)].id, { ...b, reused: false }));
-    for (const b of keep.slice(scenes.length)) { URL.revokeObjectURL(b.url); b.el.pause(); }
     persist(); seek(0.5);
     return scenes.length;
   }
@@ -1303,24 +1344,21 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   /* ---------------- Durée visée (1 minute à 2 heures) ---------------- */
   const fmtMin = (m) => (m < 1 ? `${Math.max(1, Math.round(m * 60))} s` : m < 60 ? `${Math.round(m)} min` : `${Math.floor(m / 60)} h${Math.round(m % 60) ? " " + String(Math.round(m % 60)).padStart(2, "0") : ""}`);
   const scriptMinutes = () => wordsOf(state.script).length / WPM;
-  // Le texte est adapté quand sa durée lue s'écarte de plus de 15 % de la durée choisie.
-  const needsAdapt = () => !state.keepText && String(state.script || "").trim() && Math.abs(scriptMinutes() / state.minutes - 1) > 0.15;
-  function durationInfo() {
+  function scriptInfo() {
     $("s-minutes-val").textContent = fmtMin(state.minutes);
-    const cur = scriptMinutes();
-    let msg = String(state.script || "").trim() ? `Ton texte lu dure environ ${fmtMin(cur)}.` : "";
-    if (msg && needsAdapt()) msg += iaOn
-      ? ` Claude va le ${cur > state.minutes ? "resserrer" : "développer"} pour atteindre ${fmtMin(state.minutes)}, en gardant tes idées.`
-      : ` Sans la clé Claude sur le serveur, la vidéo durera ${fmtMin(cur)} : la durée suit ton texte.`;
-    if (state.minutes > 20) msg += " Au-delà de 20 minutes, la vidéo s'enregistre directement sur ton disque (Chrome ou Edge sur ordinateur).";
-    $("s-minutes-info").textContent = msg;
+    const words = wordsOf(state.script).length;
+    let msg = words ? `${words} mots · vidéo d'environ ${fmtMin(scriptMinutes())}. Chaque mot sera lu et illustré.` : "";
+    if (scriptMinutes() > 20) msg += " Au-delà de 20 minutes, la vidéo s'enregistre directement sur ton disque (Chrome ou Edge sur ordinateur).";
+    $("script-info").textContent = msg;
+    const first = String(state.script || "").split("\n").map((l) => l.replace(/^#+\s*|^>\s*/, "").trim()).find(Boolean);
+    $("p-title").textContent = first ? first.slice(0, 70) : "Nouvelle vidéo";
   }
-  function setScript(text) { state.script = text; $("s-script").value = text; persist(); durationInfo(); }
+  function setScript(text) { state.script = text; $("s-script").value = text; persist(); scriptInfo(); }
 
-  // Script écrit ou adapté par Claude, partie par partie (une partie ≈ 10 minutes, jusqu'à 2 heures).
-  async function writeScript(mode, source, minutes, report) {
+  // Script écrit par Claude à partir d'un sujet, partie par partie (une partie ≈ 10 minutes, jusqu'à 2 heures).
+  async function writeScript(source, minutes, report) {
     report("Claude prépare le plan…");
-    const base = { mode, source, minutes, ton: state.brief.ton };
+    const base = { source, minutes, ton: state.brief.ton };
     const { plan } = await api("/api/script/plan", base);
     const n = plan.parties.length;
     const texts = new Array(n).fill(null);
@@ -1344,31 +1382,25 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   }
   $("btn-generate").addEventListener("click", async () => {
     const btn = $("btn-generate");
-    if (!String(state.script || "").trim()) { status("script-status", "Colle d'abord ton script (ou fais-le écrire par Claude, ci-dessous).", "warn"); return; }
-    // Durée finale prévue : celle visée si Claude adapte le texte, sinon celle du texte.
-    const expected = needsAdapt() && iaOn ? state.minutes : scriptMinutes();
+    if (!String(state.script || "").trim()) { showTab("script"); status("script-status", "Colle d'abord ton script dans l'onglet Script (ou fais-le écrire par Claude).", "warn"); return; }
     // Vidéo longue : le fichier s'écrit sur le disque. L'emplacement se choisit maintenant, pendant le clic.
     let target = null;
-    if (expected > 20) {
+    if (scriptMinutes() > 20) {
       if (!window.showSaveFilePicker) { status("script-status", "Au-delà de 20 minutes, la vidéo s'écrit directement sur le disque : utilise Chrome ou Edge sur ordinateur.", "warn"); return; }
       try { target = await openTarget(); }
       catch (e) { status("script-status", (e && e.message) || "Choisis où enregistrer la vidéo pour continuer.", "warn"); return; }
       if (!target) return;
     }
-    btn.disabled = true;
+    btn.disabled = true; $("btn-download").disabled = true; $("result").hidden = true;
     $("gen-steps").hidden = false;
     const steps = ["st-scenes", "st-voice", "st-broll", "st-export"];
     steps.forEach((id) => stepState(id, ""));
     const report = (m) => status("script-status", m);
     const notes = [];
     try {
-      stepState("st-scenes", "run");
-      if (needsAdapt() && iaOn) {
-        const before = fmtMin(scriptMinutes());
-        setScript(await writeScript("adapter", String(state.script).slice(0, 120000), state.minutes, report));
-        notes.push(`Script adapté de ${before} à ${fmtMin(scriptMinutes())}.`);
-      }
+      stepState("st-scenes", "run"); report("Analyse du script…");
       buildScenes();
+      if (!(await planVisuals(report))) notes.push(iaOn ? "Choix des vidéos simplifié (Claude n'a pas répondu)." : "Sans la clé Claude, les vidéos sont choisies par mots-clés : la correspondance est moins précise.");
       stepState("st-scenes", "done");
 
       if (state.voice.mode !== "fichier") {
@@ -1376,26 +1408,27 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
         const v = await generateVoice(report);
         stepState("st-voice", "done");
         notes.push(`Voix ${v.voice}.`);
+      } else if (media.voiceFile) {
+        stepState("st-voice", "done");
       } else {
-        stepState("st-voice", "skip");
-        notes.push("Importe ton enregistrement dans « Voix » : la vidéo se calera dessus.");
+        throw new Error("Tu as choisi « Ma voix » : importe ton enregistrement dans l'onglet Voix, ou choisis une autre voix.");
       }
 
       stepState("st-broll", "run");
-      const b = await autoBroll(Math.min(80, state.scenes.length), report);
+      const b = await autoBroll(Math.min(maxClips(), state.scenes.length), report);
       stepState("st-broll", "done");
-      if (b.empty) throw new Error("Aucune vidéo trouvée" + (b.lastErr ? ` (${b.lastErr})` : "") + ". Vérifie la source dans « Vidéos réalistes », puis relance.");
+      if (b.empty) throw new Error("Aucune vidéo trouvée" + (b.lastErr ? ` (${b.lastErr})` : "") + ". Vérifie la clé Pexels sur le serveur, puis relance.");
       if (state.scenes.some((s) => { const x = media.bg.get(s.id); return x && x.credit && x.credit.src === "wikimedia" && !isFree(x.credit.license); }))
-        notes.push("Certaines archives exigent un crédit : copie-le depuis « Publication YouTube ».");
+        notes.push("Certaines archives exigent un crédit : copie-le dans l'onglet Export.");
 
       // Montage final : la vidéo est encodée tout de suite, prête à télécharger.
       stepState("st-export", "run");
-      report("Montage final en cours : suis la progression sous l'aperçu.");
+      report("Montage final en cours…");
       const ok = await exportVideo(target || { writable: null });
       stepState("st-export", ok ? "done" : "");
       status("script-status", ok
-        ? `Ta vidéo est prête : ${fmt(timeline().total)}. ${notes.join(" ")} ${target ? "Elle est enregistrée sur ton disque." : "Clique sur « Enregistrer le fichier » sous l'aperçu."}`
-        : `Vidéo préparée (${fmt(timeline().total)}) mais le montage final n'a pas abouti : relance « Exporter la vidéo ».`, ok ? "ok" : "warn");
+        ? `Ta vidéo est prête : ${fmt(timeline().total)}. ${notes.join(" ")} ${target ? "Elle est enregistrée sur ton disque." : "Clique sur « Télécharger »."}`
+        : `Vidéo préparée (${fmt(timeline().total)}) mais le montage final n'a pas abouti : relance « Exporter la vidéo » dans l'onglet Export.`, ok ? "ok" : "warn");
     } catch (e) {
       steps.forEach((id) => { if ($(id).className === "run") stepState(id, ""); });
       if (target && target.writable) { try { await target.writable.abort(); } catch (x) { /* déjà fermé */ } }
@@ -1423,6 +1456,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     if (!f) return;
     state.scenes.forEach((s) => { delete s.speech; });
     await setVoiceFile(f, false);
+    state.voice.mode = "fichier"; persist(); updateCurrent();
     status("voice-status", `${f.name} · ${fmt(voiceEl.duration || 0)}. Les vidéos sont calées proportionnellement sur ta voix.`, "ok");
   });
   $("btn-copy").addEventListener("click", () => {
@@ -1432,57 +1466,27 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
       status("voice-status", "Texte sélectionné : copie-le avec Ctrl+C.");
     });
   });
-  async function brollButton(btn, opts) {
-    if (!state.scenes.length) { try { buildScenes(); } catch (e) { status("broll-note", e.message, "warn"); return; } }
+  // Autre vidéo pour le passage affiché : résultat suivant de la même recherche.
+  $("btn-swap").addEventListener("click", async () => {
+    if (!state.scenes.length || exporting) return;
+    const btn = $("btn-swap"), s = state.scenes[sceneAt(scrubTime())];
+    const used = new Set([...media.bg.values()].map((b) => b.key));
     btn.disabled = true;
+    status("script-status", "Recherche d'une autre vidéo pour ce passage…");
     try {
-      const b = await autoBroll(40, (m) => status("broll-note", m), opts);
-      if (b.empty) status("broll-note", "Aucune vidéo trouvée" + (b.lastErr ? ` : ${b.lastErr}` : "") + ". Change de source, ou cherche avec d'autres mots-clés ci-dessous.", "warn");
-      seek(scrubTime());
+      for (const src of sourcePlan(s)) {
+        try {
+          const items = (await mediaSearch(keywords(s), src)).filter((m) => !(m.mb > 60) && !used.has(m.key));
+          if (!items.length) continue;
+          const pick = items[Math.floor(Math.random() * Math.min(4, items.length))];
+          await setBackground(s, await mediaDownload(pick), metaOf(pick));
+          fillGaps(); renderScenes(); seek(scrubTime());
+          status("script-status", "Vidéo remplacée. Réexporte pour l'inclure dans le fichier.", "ok");
+          return;
+        } catch (e) { /* source suivante */ }
+      }
+      status("script-status", "Pas d'autre vidéo trouvée pour ce passage.", "warn");
     } finally { btn.disabled = false; }
-  }
-  $("btn-broll-all").addEventListener("click", () => brollButton($("btn-broll-all"), { fresh: true }));
-  $("btn-broll-more").addEventListener("click", () => brollButton($("btn-broll-more")));
-
-  // Remplacer la vidéo du moment affiché
-  $("cur-kw").addEventListener("input", (e) => { const s = state.scenes[momentIdx]; if (s) { s.broll = e.target.value; persist(); } });
-  $("cur-file").addEventListener("change", async (e) => {
-    const f = e.target.files && e.target.files[0], s = state.scenes[momentIdx];
-    if (!f || !s) return;
-    try { await setBackground(s, f, { key: "file:" + f.name + f.size }); fillGaps(); renderScenes(); seek(scrubTime()); }
-    catch (err) { status("broll-note", err.message, "warn"); }
-    e.target.value = "";
-  });
-  $("cur-search").addEventListener("click", async () => {
-    const s = state.scenes[momentIdx];
-    if (!s) return;
-    const q = keywords(s);
-    const results = $("cur-results"), search = $("cur-search");
-    if (!q) return;
-    const src = sourcePlan(s, historicScript())[0];
-    search.disabled = true; results.hidden = false; results.textContent = `Recherche : ${SOURCES[src].label}…`;
-    try {
-      const found = await mediaSearch(q, src);
-      results.replaceChildren(...found.map((m) => {
-        const c = m.credit;
-        const tip = c.src === "pexels" ? `Vidéo de ${c.author} sur Pexels` : `${c.title} · ${c.author} · ${c.license}${m.mb ? ` · environ ${Math.ceil(m.mb)} Mo` : ""}`;
-        const img = el("img", { src: m.image, alt: c.title || q, loading: "lazy" });
-        if (m.fallback) img.addEventListener("error", () => { if (img.src !== m.fallback) img.src = m.fallback; }, { once: true });
-        const tags = [el("span", { class: "rtag", text: `▶${m.dur ? " " + fmt(m.dur) : ""}` })];
-        if (c.src === "wikimedia") tags.push(el("span", { class: "rlic" + (isFree(c.license) ? " free" : ""), text: isFree(c.license) ? "Dom. public" : c.license }));
-        const b = el("button", { type: "button", title: tip }, img, ...tags);
-        b.addEventListener("click", async () => {
-          results.textContent = m.mb > 60 ? `Téléchargement du film (environ ${Math.ceil(m.mb)} Mo), patiente…` : "Téléchargement…";
-          try { await setBackground(s, await mediaDownload(m), metaOf(m)); fillGaps(); renderScenes(); seek(scrubTime()); }
-          catch (e) { results.textContent = e.message; }
-        });
-        return b;
-      }));
-      if (!found.length) results.textContent = src === "film"
-        ? "Aucun film d'archives : essaie des mots-clés en anglais (ex. « WW2 artillery », « 1960 Africa »)."
-        : "Aucun résultat : essaie d'autres mots-clés (en anglais, Pexels trouve davantage).";
-    } catch (e) { results.textContent = (e && e.message) || "Recherche impossible."; }
-    finally { search.disabled = false; }
   });
 
   $("btn-gen").addEventListener("click", async () => {
@@ -1494,9 +1498,9 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     const btn = $("btn-gen");
     btn.disabled = true;
     try {
-      const text = await writeScript("ecrire", sujet, state.minutes, (m) => status("gen-status", m));
+      const text = await writeScript(sujet, state.minutes, (m) => status("gen-status", m));
       setScript(text);
-      status("gen-status", `Script de ${fmtMin(wordsOf(text).length / WPM)} écrit et placé ci-dessus. Relis-le, puis clique sur « Générer ma vidéo ».`, "ok");
+      status("gen-status", `Script de ${fmtMin(wordsOf(text).length / WPM)} écrit et placé ci-dessus. Relis-le, puis clique sur « Générer la vidéo ».`, "ok");
     } catch (e) {
       status("gen-status", (e && e.message) || "L'écriture a échoué. Réessaie.", "warn");
     } finally { btn.disabled = false; }
@@ -1505,7 +1509,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   /* ---------------- Export vidéo (WebCodecs + Mediabunny) ---------------- */
   let mbPromise = null;
   const loadMB = () => (mbPromise ??= import("/vendor/mediabunny.min.mjs"));
-  let exporting = false, cancelExport = null, lastBlob = null, lastUrl = null;
+  let exporting = false, cancelExport = null, lastBlob = null, lastUrl = null, lastSaved = null;
   const expStatus = (m, c) => status("exp-status", m, c);
   // Nom du fichier : première ligne du script (sans les repères), quelques mots.
   function fileBase() {
@@ -1683,7 +1687,9 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
       if (input) input.dispose?.();
       $("meter-fill").style.width = "100%";
       if (ext === "webm") audioNote += " Format WebM (ce navigateur n'encode pas le H.264) : YouTube l'accepte ; pour TikTok, exporte depuis Chrome ou Edge sous Windows ou macOS.";
+      $("btn-download").disabled = false;
       if (writable) {
+        lastSaved = name; lastBlob = null; $("result").hidden = true;
         expStatus(`Vidéo enregistrée : ${name} (${fmt(span)}).${audioNote}`, audioNote ? "warn" : "ok");
       } else {
         lastBlob = new Blob([target.buffer], { type: `video/${ext}` });
@@ -1692,7 +1698,8 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
         $("result-video").src = lastUrl;
         $("result").hidden = false;
         $("btn-save").dataset.name = name;
-        expStatus(`Vidéo prête : ${ext.toUpperCase()}, ${(lastBlob.size / 1048576).toFixed(1)} Mo. Clique sur « Enregistrer le fichier ».${audioNote}`, audioNote ? "warn" : "ok");
+        lastSaved = null;
+        expStatus(`Vidéo prête : ${ext.toUpperCase()}, ${(lastBlob.size / 1048576).toFixed(1)} Mo. Clique sur « Télécharger ».${audioNote}`, audioNote ? "warn" : "ok");
       }
       success = true;
     } catch (e) {
@@ -1774,12 +1781,25 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   /* ---------------- Contrôles ---------------- */
   $("btn-play").addEventListener("click", () => { if (playing) stop(); else play(); });
   $("scrub").addEventListener("input", () => { if (playing) stop(); seek(scrubTime()); });
-  // Changer de format change l'orientation des vidéos à chercher : on remet les vidéos à zéro.
+  // Changer de format change l'orientation des vidéos à chercher : il faut regénérer.
   const switchAspect = (a) => {
     if (state.aspect === a) return;
     setAspect(a);
-    if (media.bg.size) status("broll-note", "Format changé : clique sur « Changer toutes les vidéos » pour des vidéos à la bonne orientation.");
+    if (media.bg.size) status("script-status", "Format changé : clique sur « Générer la vidéo » pour des vidéos à la bonne orientation.");
   };
+  // Grand format : plein écran (Échap pour sortir) ; à défaut, aperçu agrandi dans la page.
+  $("btn-full").addEventListener("click", () => {
+    const p = $("player");
+    if (document.fullscreenElement) { document.exitFullscreen().catch(() => {}); return; }
+    if (p.classList.contains("theater")) { p.classList.remove("theater"); return; }
+    if (p.requestFullscreen) p.requestFullscreen().catch(() => p.classList.add("theater"));
+    else p.classList.add("theater");
+  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("player").classList.remove("theater"); });
+  $("btn-download").addEventListener("click", () => {
+    if (lastBlob) { saveBlob(lastBlob, $("btn-save").dataset.name || "video.mp4"); expStatus("Téléchargement lancé.", "ok"); return; }
+    if (lastSaved) status("script-status", `Ta vidéo est déjà enregistrée sur ton disque : ${lastSaved}.`, "ok");
+  });
   $("ar-portrait").addEventListener("click", () => switchAspect("9:16"));
   $("ar-land").addEventListener("click", () => switchAspect("16:9"));
 
@@ -1791,7 +1811,8 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   setAspect(state.aspect === "16:9" ? "16:9" : "9:16");
   renderScenes();
   seek(1.5);
-  durationInfo();
+  scriptInfo();
+  clipStore();
 
   Promise.all(['800 80px "Barlow Condensed"', '700 40px "Barlow"', '600 40px "Barlow"'].map((f) => document.fonts.load(f).catch(() => null)))
     .then(() => { if (!playing) seek(scrubTime()); });
@@ -1802,12 +1823,8 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
       iaOn = Boolean(d && d.ia);
       brollOn = Boolean(d && d.broll);
       elevenOn = Boolean(d && d.eleven);
-      if (!brollOn) {
-        for (const o of $("s-source").options) if (SOURCES[o.value] && SOURCES[o.value].pexels) { o.disabled = true; o.textContent = SOURCES[o.value].label + " : clé requise"; }
-        if (state.mediaSource === "video") { state.mediaSource = "auto"; $("s-source").value = "auto"; }
-      }
       $("el-note").hidden = elevenOn;
-      durationInfo();
+      if (!brollOn) status("script-status", "Vidéos modernes non activées (clé Pexels absente sur le serveur) : seules les archives Wikimedia sont utilisées.", "warn");
       renderVoices();
       renderScenes();
     })

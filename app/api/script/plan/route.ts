@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
-  const g = await guardApi(req, 300_000, "ia", 30);
+  const g = await guardApi(req, 10_000, "ia", 30);
   if (g instanceof NextResponse) return g;
   const r = lireRequete(g.body);
   if (!r) return jsonError("brief_invalide", 400);

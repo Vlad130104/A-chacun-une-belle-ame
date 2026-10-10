@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
   if (!session) return jsonError("non_connecte", 401);
   if (req.headers.get("sec-fetch-site") && req.headers.get("sec-fetch-site") !== "same-origin") return jsonError("origine_refusee", 403);
   if (!elevenDisponible()) return jsonError("voix_non_configuree", 503);
-  if (!rateLimit("voixliste:" + session.id, 60, 60 * 60 * 1000)) return jsonError("trop_de_demandes", 429);
+  if (!rateLimit("voixliste:" + session.id, 120, 60 * 60 * 1000)) return jsonError("trop_de_demandes", 429);
   try {
     return NextResponse.json({ voices: await listerVoix() });
   } catch (e) {
