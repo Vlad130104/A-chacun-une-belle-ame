@@ -163,11 +163,16 @@ Ton rythme de publication :
 
 Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et abonne-toi pour la suite.`;
 
+  const WPM = 150; // mots lus par minute par la voix off
+  const MIN_MAX = 120;
+  function clampMin(v) { v = Math.round(Number(v) || 1); return Math.min(MIN_MAX, Math.max(1, v)); }
   // Rythme de montage : nombre de mots lus par plan vidéo (environ 2,6 mots par seconde).
   const PACES = { rapide: { label: "Rapide", words: 9 }, normal: { label: "Normal", words: 17 }, lent: { label: "Lent", words: 32 }, unique: { label: "Un seul plan", words: 17 } };
 
   const DEFAULT_STATE = {
-    brief: { format: "short", ton: "educatif", duree: "60", sujet: "Pourquoi la plupart des petites chaînes YouTube abandonnent avant 100 abonnés, et comment tenir." },
+    brief: { ton: "educatif", sujet: "Pourquoi la plupart des petites chaînes YouTube abandonnent avant 100 abonnés, et comment tenir." },
+    minutes: 1,
+    keepText: false,
     script: EXAMPLE_SCRIPT,
     mediaSource: "auto",
     pace: "normal",
@@ -188,6 +193,8 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   for (const k of ["brief", "brand", "exp", "voice"]) state[k] = { ...DEFAULT_STATE[k], ...state[k] };
   if (typeof state.script !== "string") state.script = DEFAULT_STATE.script;
   if (!["auto", "video", "film"].includes(state.mediaSource)) state.mediaSource = "auto";
+  state.minutes = clampMin(state.minutes);
+  if (typeof state.keepText !== "boolean") state.keepText = false;
   if (!Object.hasOwn(PACES, state.pace)) state.pace = "normal";
   if (!["ia", "eleven", "fichier"].includes(state.voice.mode)) state.voice.mode = "ia";
   if (!["0.9", "1", "1.1", "1.2"].includes(String(state.voice.speed))) state.voice.speed = "1";
@@ -558,7 +565,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     ia_cle_invalide: "La clé API configurée sur le serveur est refusée.",
     trop_long: "Texte trop long.",
     script_invalide: "Script vide ou trop long pour l'IA (12 000 caractères maximum).",
-    brief_invalide: "Brief incomplet ou trop long (3 000 caractères maximum).",
+    brief_invalide: "Texte vide ou trop long (2 heures de script maximum ; sujet : 3 000 caractères maximum).",
     broll_non_configure: "B-rolls automatiques non activés : ajoute la clé Pexels (gratuite) sur le serveur.",
     broll_sature: "Pexels limite les recherches : réessaie dans quelques minutes.",
     broll_erreur: "Pexels n'a pas répondu. Réessaie.",
@@ -1163,18 +1170,20 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   /* ---------------- Réglages ---------------- */
   function bindInputs() {
     const b = state.brief;
-    $("b-format").value = b.format; $("b-ton").value = b.ton; $("b-duree").value = String(b.duree); $("b-sujet").value = b.sujet;
-    $("b-format").addEventListener("change", (e) => { b.format = e.target.value; persist(); });
+    $("b-ton").value = b.ton; $("b-sujet").value = b.sujet;
     $("b-ton").addEventListener("change", (e) => { b.ton = e.target.value; persist(); });
-    $("b-duree").addEventListener("change", (e) => { b.duree = e.target.value; persist(); });
     $("b-sujet").addEventListener("input", (e) => { b.sujet = e.target.value; persist(); });
+    $("s-minutes").value = String(state.minutes);
+    $("s-minutes").addEventListener("input", (e) => { state.minutes = clampMin(e.target.value); persist(); durationInfo(); });
+    $("s-keep").checked = state.keepText;
+    $("s-keep").addEventListener("change", (e) => { state.keepText = e.target.checked; persist(); durationInfo(); });
 
     const br = state.brand;
     $("br-primary").value = br.primary;
     $("subs").checked = !!br.subs;
     $("subs").addEventListener("change", (e) => { br.subs = e.target.checked; persist(); seek(scrubTime()); });
     $("s-script").value = state.script;
-    $("s-script").addEventListener("input", (e) => { state.script = e.target.value; persist(); });
+    $("s-script").addEventListener("input", (e) => { state.script = e.target.value; persist(); durationInfo(); });
     $("s-source").value = state.mediaSource;
     $("s-source").addEventListener("change", (e) => { state.mediaSource = e.target.value; persist(); });
     $("s-pace").value = state.pace;
@@ -1290,15 +1299,75 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   }
 
   const stepState = (id, cls) => { $(id).className = cls; };
+
+  /* ---------------- Durée visée (1 minute à 2 heures) ---------------- */
+  const fmtMin = (m) => (m < 1 ? `${Math.max(1, Math.round(m * 60))} s` : m < 60 ? `${Math.round(m)} min` : `${Math.floor(m / 60)} h${Math.round(m % 60) ? " " + String(Math.round(m % 60)).padStart(2, "0") : ""}`);
+  const scriptMinutes = () => wordsOf(state.script).length / WPM;
+  // Le texte est adapté quand sa durée lue s'écarte de plus de 15 % de la durée choisie.
+  const needsAdapt = () => !state.keepText && String(state.script || "").trim() && Math.abs(scriptMinutes() / state.minutes - 1) > 0.15;
+  function durationInfo() {
+    $("s-minutes-val").textContent = fmtMin(state.minutes);
+    const cur = scriptMinutes();
+    let msg = String(state.script || "").trim() ? `Ton texte lu dure environ ${fmtMin(cur)}.` : "";
+    if (msg && needsAdapt()) msg += iaOn
+      ? ` Claude va le ${cur > state.minutes ? "resserrer" : "développer"} pour atteindre ${fmtMin(state.minutes)}, en gardant tes idées.`
+      : ` Sans la clé Claude sur le serveur, la vidéo durera ${fmtMin(cur)} : la durée suit ton texte.`;
+    if (state.minutes > 20) msg += " Au-delà de 20 minutes, la vidéo s'enregistre directement sur ton disque (Chrome ou Edge sur ordinateur).";
+    $("s-minutes-info").textContent = msg;
+  }
+  function setScript(text) { state.script = text; $("s-script").value = text; persist(); durationInfo(); }
+
+  // Script écrit ou adapté par Claude, partie par partie (une partie ≈ 10 minutes, jusqu'à 2 heures).
+  async function writeScript(mode, source, minutes, report) {
+    report("Claude prépare le plan…");
+    const base = { mode, source, minutes, ton: state.brief.ton };
+    const { plan } = await api("/api/script/plan", base);
+    const n = plan.parties.length;
+    const texts = new Array(n).fill(null);
+    let done = 0;
+    report(n > 1 ? `Claude écrit le script : 0 partie sur ${n}…` : "Claude écrit le script…");
+    // Chaque partie reçoit la fin de la précédente quand elle est déjà écrite ; trois parties à la fois.
+    let next = 0;
+    const worker = async () => {
+      while (next < n) {
+        const i = next++;
+        const avant = i > 0 && texts[i - 1] ? texts[i - 1].slice(-1200) : i > 0 ? `(Partie précédente : ${plan.parties[i - 1].titre}. ${plan.parties[i - 1].contenu})` : "";
+        const r = await api("/api/script/partie", { ...base, plan, index: i, avant });
+        texts[i] = r.texte;
+        done++;
+        if (n > 1) report(`Claude écrit le script : ${done} partie(s) sur ${n}…`);
+      }
+    };
+    await Promise.all([worker(), worker(), worker()].slice(0, Math.min(3, n)));
+    if (n === 1) return texts[0];
+    return texts.map((t, i) => `## ${plan.parties[i].titre}\n\n${t}`).join("\n\n");
+  }
   $("btn-generate").addEventListener("click", async () => {
     const btn = $("btn-generate");
+    if (!String(state.script || "").trim()) { status("script-status", "Colle d'abord ton script (ou fais-le écrire par Claude, ci-dessous).", "warn"); return; }
+    // Durée finale prévue : celle visée si Claude adapte le texte, sinon celle du texte.
+    const expected = needsAdapt() && iaOn ? state.minutes : scriptMinutes();
+    // Vidéo longue : le fichier s'écrit sur le disque. L'emplacement se choisit maintenant, pendant le clic.
+    let target = null;
+    if (expected > 20) {
+      if (!window.showSaveFilePicker) { status("script-status", "Au-delà de 20 minutes, la vidéo s'écrit directement sur le disque : utilise Chrome ou Edge sur ordinateur.", "warn"); return; }
+      try { target = await openTarget(); }
+      catch (e) { status("script-status", (e && e.message) || "Choisis où enregistrer la vidéo pour continuer.", "warn"); return; }
+      if (!target) return;
+    }
     btn.disabled = true;
     $("gen-steps").hidden = false;
-    ["st-scenes", "st-voice", "st-broll"].forEach((id) => stepState(id, ""));
+    const steps = ["st-scenes", "st-voice", "st-broll", "st-export"];
+    steps.forEach((id) => stepState(id, ""));
     const report = (m) => status("script-status", m);
     const notes = [];
     try {
-      stepState("st-scenes", "run"); report("Préparation du texte…");
+      stepState("st-scenes", "run");
+      if (needsAdapt() && iaOn) {
+        const before = fmtMin(scriptMinutes());
+        setScript(await writeScript("adapter", String(state.script).slice(0, 120000), state.minutes, report));
+        notes.push(`Script adapté de ${before} à ${fmtMin(scriptMinutes())}.`);
+      }
       buildScenes();
       stepState("st-scenes", "done");
 
@@ -1306,23 +1375,30 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
         stepState("st-voice", "run");
         const v = await generateVoice(report);
         stepState("st-voice", "done");
-        notes.push(`Voix ${v.voice} : ${fmt(v.seconds)}.`);
+        notes.push(`Voix ${v.voice}.`);
       } else {
         stepState("st-voice", "skip");
         notes.push("Importe ton enregistrement dans « Voix » : la vidéo se calera dessus.");
       }
 
       stepState("st-broll", "run");
-      const b = await autoBroll(40, report);
+      const b = await autoBroll(Math.min(80, state.scenes.length), report);
       stepState("st-broll", "done");
-      if (b.empty) notes.push("Aucune vidéo trouvée" + (b.lastErr ? ` (${b.lastErr})` : "") + " : change de source ou importe ta vidéo dans l'étape 3.");
-      else if (b.reused && state.pace !== "unique") notes.push("Clique sur « Plus de variété » pour remplacer les plans prolongés.");
+      if (b.empty) throw new Error("Aucune vidéo trouvée" + (b.lastErr ? ` (${b.lastErr})` : "") + ". Vérifie la source dans « Vidéos réalistes », puis relance.");
       if (state.scenes.some((s) => { const x = media.bg.get(s.id); return x && x.credit && x.credit.src === "wikimedia" && !isFree(x.credit.license); }))
         notes.push("Certaines archives exigent un crédit : copie-le depuis « Publication YouTube ».");
-      seek(0.3);
-      status("script-status", `Vidéo prête : ${fmt(timeline().total)}. ${notes.join(" ")} Vérifie l'aperçu, puis exporte.`, b.empty ? "warn" : "ok");
+
+      // Montage final : la vidéo est encodée tout de suite, prête à télécharger.
+      stepState("st-export", "run");
+      report("Montage final en cours : suis la progression sous l'aperçu.");
+      const ok = await exportVideo(target || { writable: null });
+      stepState("st-export", ok ? "done" : "");
+      status("script-status", ok
+        ? `Ta vidéo est prête : ${fmt(timeline().total)}. ${notes.join(" ")} ${target ? "Elle est enregistrée sur ton disque." : "Clique sur « Enregistrer le fichier » sous l'aperçu."}`
+        : `Vidéo préparée (${fmt(timeline().total)}) mais le montage final n'a pas abouti : relance « Exporter la vidéo ».`, ok ? "ok" : "warn");
     } catch (e) {
-      ["st-scenes", "st-voice", "st-broll"].forEach((id) => { if ($(id).className === "run") stepState(id, ""); });
+      steps.forEach((id) => { if ($(id).className === "run") stepState(id, ""); });
+      if (target && target.writable) { try { await target.writable.abort(); } catch (x) { /* déjà fermé */ } }
       status("script-status", (e && e.message) || "La génération a échoué.", "warn");
     } finally {
       btn.disabled = false;
@@ -1411,23 +1487,18 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
 
   $("btn-gen").addEventListener("click", async () => {
     if (!iaOn) { status("gen-status", API_MSG.ia_non_configuree + " Écris ton script toi-même et colle-le ci-dessus.", "warn"); return; }
-    if (!String(state.brief.sujet).trim()) { status("gen-status", "Décris d'abord le sujet de la vidéo.", "warn"); return; }
+    const sujet = String(state.brief.sujet || "").trim();
+    if (!sujet) { status("gen-status", "Décris d'abord le sujet de la vidéo.", "warn"); return; }
+    const current = String(state.script || "").trim();
+    if (current && current !== EXAMPLE_SCRIPT.trim() && !window.confirm("Remplacer ton script actuel par le script écrit par Claude ?")) return;
     const btn = $("btn-gen");
     btn.disabled = true;
-    status("gen-status", "Claude écrit le script… (jusqu'à une minute pour une vidéo de 10 minutes)");
     try {
-      const b = state.brief;
-      const out = await api("/api/script", { format: b.format, ton: b.ton, duree: Number(b.duree), sujet: String(b.sujet).slice(0, 3000) });
-      const scenes = normalize(out);
-      if (scenes.length < 2) throw { message: "La réponse était vide. Relance la génération." };
-      // Le script écrit par Claude remplace le script courant ; « Générer ma vidéo » fait le reste.
-      state.script = scenes.map((s) => (s.type === "chapitre" ? `## ${s.titre}` : s.type === "liste" ? `${s.titre} :\n${s.items.map((x) => "- " + x).join("\n")}` : s.voix)).filter(Boolean).join("\n\n");
-      $("s-script").value = state.script;
-      setAspect(b.format === "long" ? "16:9" : "9:16");
-      persist();
-      status("gen-status", "Script écrit et placé dans la zone ci-dessus. Relis-le à ta façon, puis clique sur « Générer ma vidéo ».", "ok");
+      const text = await writeScript("ecrire", sujet, state.minutes, (m) => status("gen-status", m));
+      setScript(text);
+      status("gen-status", `Script de ${fmtMin(wordsOf(text).length / WPM)} écrit et placé ci-dessus. Relis-le, puis clique sur « Générer ma vidéo ».`, "ok");
     } catch (e) {
-      status("gen-status", (e && e.message) || "La génération a échoué. Réessaie.", "warn");
+      status("gen-status", (e && e.message) || "L'écriture a échoué. Réessaie.", "warn");
     } finally { btn.disabled = false; }
   });
 
@@ -1436,7 +1507,11 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   const loadMB = () => (mbPromise ??= import("/vendor/mediabunny.min.mjs"));
   let exporting = false, cancelExport = null, lastBlob = null, lastUrl = null;
   const expStatus = (m, c) => status("exp-status", m, c);
-  function fileBase() { const s = state.scenes[0]; return slug(s && (s.titre || s.voix.split(" ").slice(0, 7).join(" "))) + (state.aspect === "9:16" ? "-short" : ""); }
+  // Nom du fichier : première ligne du script (sans les repères), quelques mots.
+  function fileBase() {
+    const first = String(state.script || "").split("\n").map((l) => l.replace(/^#+\s*|^>\s*/, "").trim()).find(Boolean) || "video";
+    return slug(first.split(/\s+/).slice(0, 8).join(" ")) + (state.aspect === "9:16" ? "-short" : "");
+  }
 
   function clipSample(s, t0, t1) {
     const sr = s.sampleRate;
@@ -1449,42 +1524,58 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     return out;
   }
 
-  async function exportVideo() {
-    if (exporting) return;
-    if (!state.scenes.length) { expStatus("Génère d'abord ta vidéo.", "warn"); return; }
-    if (!("VideoEncoder" in window)) { expStatus("Ce navigateur ne sait pas encoder de vidéo. Utilise Chrome ou Edge à jour sur ordinateur.", "warn"); return; }
-    stop();
-    const { starts, durs } = timeline();
-    const { from, to } = getRange();
-    const t0 = starts[from], t1 = starts[to] + durs[to], span = t1 - t0;
-    const fps = Number(state.exp.fps) || 30;
-    let MB, vcodec = null;
+  // H.264 + AAC en MP4 (accepté partout) ; sinon VP9 + Opus en WebM (accepté par YouTube)
+  async function pickCodec() {
+    if (!("VideoEncoder" in window)) return null;
     try {
-      MB = await loadMB();
+      const MB = await loadMB();
       const q0 = state.exp.quality === "standard" ? MB.QUALITY_MEDIUM : MB.QUALITY_HIGH;
       for (const c of ["avc", "vp9"]) {
-        if (await MB.canEncodeVideo(c, { width: cv.width, height: cv.height, quality: q0 })) { vcodec = c; break; }
+        if (await MB.canEncodeVideo(c, { width: cv.width, height: cv.height, quality: q0 })) return { MB, vcodec: c, ext: c === "avc" ? "mp4" : "webm" };
       }
     } catch (e) { mbPromise = null; }
-    if (!vcodec) { expStatus("Ce navigateur ne sait pas encoder de vidéo. Utilise Chrome ou Edge à jour sur ordinateur.", "warn"); return; }
-    // H.264 + AAC en MP4 (accepté partout) ; sinon VP9 + Opus en WebM (accepté par YouTube)
-    const ext = vcodec === "avc" ? "mp4" : "webm";
-    const name = `${fileBase()}${from || to < state.scenes.length - 1 ? `-extrait-${Math.floor(t0)}s` : ""}.${ext}`;
+    return null;
+  }
+  // Fichier de destination sur le disque (Chrome, Edge). Renvoie null si l'utilisateur annule.
+  async function openTarget(nameBase) {
+    const enc = await pickCodec();
+    if (!enc) throw new Error("Ce navigateur ne sait pas encoder de vidéo. Utilise Chrome ou Edge à jour sur ordinateur.");
+    const name = `${nameBase || fileBase()}.${enc.ext}`;
+    try {
+      const handle = await window.showSaveFilePicker({ suggestedName: name, types: [{ description: `Vidéo ${enc.ext.toUpperCase()}`, accept: { [`video/${enc.ext}`]: [`.${enc.ext}`] } }] });
+      return { writable: await handle.createWritable(), name, enc };
+    } catch (e) {
+      if (e && e.name === "AbortError") return null;
+      throw e;
+    }
+  }
+
+  // pre : destination déjà ouverte ({ writable, name, enc }) ou { writable: null } pour un export en mémoire sans question.
+  async function exportVideo(pre) {
+    if (exporting) return false;
+    if (!state.scenes.length) { expStatus("Génère d'abord ta vidéo.", "warn"); return false; }
+    stop();
+    const { starts, durs } = timeline();
+    const { from, to } = pre ? { from: 0, to: state.scenes.length - 1 } : getRange();
+    const t0 = starts[from], t1 = starts[to] + durs[to], span = t1 - t0;
+    const fps = Number(state.exp.fps) || 30;
+    const enc = (pre && pre.enc) || (await pickCodec());
+    if (!enc) { expStatus("Ce navigateur ne sait pas encoder de vidéo. Utilise Chrome ou Edge à jour sur ordinateur.", "warn"); return false; }
+    const { MB, vcodec, ext } = enc;
+    let name = (pre && pre.name) || `${fileBase()}${from || to < state.scenes.length - 1 ? `-extrait-${Math.floor(t0)}s` : ""}.${ext}`;
 
     // Fichier de destination : écriture directe sur le disque si le navigateur le permet
-    let writable = null;
-    if (window.showSaveFilePicker) {
+    let writable = pre ? pre.writable : null;
+    if (!pre && window.showSaveFilePicker) {
       try {
-        const handle = await window.showSaveFilePicker({ suggestedName: name, types: [{ description: `Vidéo ${ext.toUpperCase()}`, accept: { [`video/${ext}`]: [`.${ext}`] } }] });
-        writable = await handle.createWritable();
-      } catch (e) {
-        if (e && e.name === "AbortError") { expStatus("Export annulé."); return; }
-        writable = null;
-      }
+        const t = await openTarget(name.replace(/\.[a-z0-9]+$/, ""));
+        if (!t) { expStatus("Export annulé."); return false; }
+        writable = t.writable; name = t.name;
+      } catch (e) { writable = null; }
     }
     if (!writable && span > 20 * 60) {
       expStatus("Au-delà de 20 minutes, la vidéo doit s'écrire directement sur le disque : utilise Chrome ou Edge sur ordinateur.", "warn");
-      return;
+      return false;
     }
 
     exporting = true;
@@ -1495,7 +1586,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
     $("meter-fill").style.width = "0%";
     expStatus("Préparation de l'encodeur…");
 
-    let output = null;
+    let output = null, success = false;
     const bgReaders = new Map(); // vidéo source -> lecteur, ouvert à la demande et partagé entre passages
     let curBg = null;
     try {
@@ -1603,6 +1694,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
         $("btn-save").dataset.name = name;
         expStatus(`Vidéo prête : ${ext.toUpperCase()}, ${(lastBlob.size / 1048576).toFixed(1)} Mo. Clique sur « Enregistrer le fichier ».${audioNote}`, audioNote ? "warn" : "ok");
       }
+      success = true;
     } catch (e) {
       try { if (output && output.state !== "finalized") await output.cancel(); } catch (x) { /* déjà arrêté */ }
       try { if (writable) await writable.abort(); } catch (x) { /* déjà fermé */ }
@@ -1616,8 +1708,9 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
       $("meter").hidden = true;
       seek(scrubTime());
     }
+    return success;
   }
-  $("btn-export").addEventListener("click", exportVideo);
+  $("btn-export").addEventListener("click", () => exportVideo());
   $("btn-cancel").addEventListener("click", () => { if (cancelExport) cancelExport(); });
   $("btn-save").addEventListener("click", () => {
     if (!lastBlob) return;
@@ -1698,6 +1791,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
   setAspect(state.aspect === "16:9" ? "16:9" : "9:16");
   renderScenes();
   seek(1.5);
+  durationInfo();
 
   Promise.all(['800 80px "Barlow Condensed"', '700 40px "Barlow"', '600 40px "Barlow"'].map((f) => document.fonts.load(f).catch(() => null)))
     .then(() => { if (!playing) seek(scrubTime()); });
@@ -1713,6 +1807,7 @@ Alors, laquelle de ces erreurs tu fais encore ? Dis-le-moi en commentaire, et ab
         if (state.mediaSource === "video") { state.mediaSource = "auto"; $("s-source").value = "auto"; }
       }
       $("el-note").hidden = elevenOn;
+      durationInfo();
       renderVoices();
       renderScenes();
     })

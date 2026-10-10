@@ -25,7 +25,14 @@
         <button class="btn small" id="btn-model" type="button">Utiliser ce modèle</button>
       </div>
       <textarea id="s-script" rows="12" aria-label="Script de la vidéo"></textarea>
-      <p class="hint">Tout le texte est lu par la voix et illustré par des vidéos réelles. <code>## Partie</code> crée un chapitre YouTube. Aucune limite de longueur.</p>
+      <p class="hint">Colle ton script, choisis la durée et clique : Bachir IA ajuste le texte, le lit, trouve les vidéos et monte le fichier final. <code>## Partie</code> crée un chapitre YouTube.</p>
+      <div class="duration">
+        <label for="s-minutes"><span class="lbl">Durée de la vidéo</span> <b id="s-minutes-val">1 min</b></label>
+        <input type="range" id="s-minutes" min="1" max="120" step="1" value="1">
+        <div class="ticks" aria-hidden="true"><span>1 min</span><span>30 min</span><span>1 h</span><span>1 h 30</span><span>2 h</span></div>
+        <p class="hint" id="s-minutes-info"></p>
+        <label class="check"><input type="checkbox" id="s-keep"> Garder mon texte mot pour mot (la durée suit alors le texte)</label>
+      </div>
       <div class="opts">
         <div class="seg" role="group" aria-label="Format">
           <button type="button" id="ar-portrait" aria-pressed="true">Short 9:16</button>
@@ -34,26 +41,22 @@
       </div>
       <button class="btn primary big" id="btn-generate" type="button">Générer ma vidéo</button>
       <ol class="steps" id="gen-steps" hidden>
-        <li id="st-scenes">Texte</li>
+        <li id="st-scenes">Script</li>
         <li id="st-voice">Voix off</li>
         <li id="st-broll">Vidéos réalistes</li>
+        <li id="st-export">Montage final</li>
       </ol>
       <p class="status" id="script-status" role="status"></p>
 
       <details class="sub">
         <summary>Pas encore de script ? Claude peut l'écrire</summary>
+        <p class="hint">Claude écrit un script à la durée choisie ci-dessus, de 1 minute à 2 heures.</p>
         <div class="grid3">
-          <label class="f"><span>Format</span>
-            <select id="b-format"><option value="short">Short vertical</option><option value="long">Vidéo longue</option></select>
-          </label>
           <label class="f"><span>Ton</span>
             <select id="b-ton">
               <option value="educatif">Éducatif</option><option value="motivation">Motivant</option><option value="histoire">Storytelling</option>
               <option value="humour">Humour</option><option value="actu">Actualité</option>
             </select>
-          </label>
-          <label class="f"><span>Durée</span>
-            <select id="b-duree"><option value="30">30 s</option><option value="60">60 s</option><option value="180">3 min</option><option value="600">10 min</option></select>
           </label>
         </div>
         <label class="f"><span>Sujet et angle</span><textarea id="b-sujet" rows="3"></textarea></label>

@@ -159,3 +159,9 @@ code { font: 500 12.5px var(--f-mono); background: var(--field); border: 1px sol
 #s-model { width: auto; }
 label.f.inline { min-width: 0; max-width: 100%; }
 #s-source { min-width: 0; max-width: 100%; text-overflow: ellipsis; }
+
+.duration { display: grid; gap: 6px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); }
+.duration > label:first-child { display: flex; justify-content: space-between; align-items: baseline; }
+.duration b { font: 700 22px/1 var(--f-disp); color: var(--accent); font-variant-numeric: tabular-nums; }
+.duration input[type=range] { width: 100%; accent-color: var(--accent); }
+.duration .ticks { display: flex; justify-content: space-between; font: 500 11px var(--f-mono); color: var(--muted); }

@@ -6,7 +6,12 @@ de quelques secondes à plusieurs heures.
 
 ## Fonctions
 
-- **Un seul script, un clic** : « Générer ma vidéo » prépare le texte, génère la voix et monte des vidéos réelles dessus.
+- **Un script, une durée, un clic, une vidéo finie** : tu colles ton script, tu règles la durée de **1 minute à 2 heures**,
+  et « Générer ma vidéo » enchaîne tout : ajustement du texte à la durée, voix, recherche des vidéos, montage du fichier final.
+  Si le texte lu est plus court ou plus long que la durée choisie (écart de plus de 15 %), Claude le développe ou le resserre
+  en gardant les idées du créateur (option « Garder mon texte mot pour mot » pour ne rien changer). Les vidéos longues
+  s'écrivent par parties d'environ 10 minutes (plan, puis une partie par appel), chacune devenant un chapitre YouTube.
+  Au-delà de 20 minutes, le fichier s'enregistre directement sur le disque (emplacement choisi au clic, Chrome ou Edge).
 - **Uniquement des vidéos réalistes** plein écran, avec sous-titres animés : aucun carton ni titre graphique.
   La vidéo est un seul bloc continu ; le studio change de plan au rythme choisi (rapide, normal, lent) ou garde
   **un seul plan du début à la fin**. Les plans sans vidéo prolongent le plan précédent : jamais d'écran vide.
@@ -52,7 +57,7 @@ il ne remplace pas le pare-feu Vercel.
 | --- | --- |
 | `ACCESS_PASSWORD_HASH` | `npm run hash-password -- "mot de passe long"` |
 | `SESSION_SECRET` | `npm run new-secret` |
-| `ANTHROPIC_API_KEY` | Facultatif : active la mise en forme et l'écriture des scripts par Claude |
+| `ANTHROPIC_API_KEY` | Facultatif : ajuste le script à la durée choisie et écrit des scripts à partir d'un sujet (Claude) |
 | `PEXELS_API_KEY` | Facultatif (gratuit sur pexels.com/api) : active les vidéos modernes (les archives Wikimedia marchent sans) |
 | `ELEVENLABS_API_KEY` | Facultatif (payant au caractère) : active les voix ElevenLabs |
 
