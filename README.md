@@ -6,6 +6,13 @@ de quelques secondes à plusieurs heures.
 
 ## Fonctions
 
+- **Un seul script, un clic** : « Générer ma vidéo » découpe le script, génère la voix et ajoute les B-rolls.
+- **Choix de la voix** : 3 voix françaises Piper (Siwis, Gilles, Mathis) exécutées dans le navigateur
+  (ONNX Runtime Web + phonémiseur espeak-ng en WebAssembly), sans coût par minute ; ou ta propre voix.
+  Chaque scène est lue séparément : sa durée devient exactement celle de sa phrase.
+- **B-rolls** : vidéo ou image par scène (import), ou recherche automatique de vidéos libres de droits Pexels
+  si `PEXELS_API_KEY` est défini. Rendu plein écran, sous-titres façon CapCut avec le mot prononcé surligné.
+
 - **Script vers scènes** : une scène par paragraphe ; repères `# Titre`, `## Chapitre`, `> Citation — Auteur`, `- liste`.
   Aucune limite de longueur ; la mise en forme par Claude (facultative) traite jusqu'à 12 000 caractères.
 - **Voix off** d'un seul fichier, de n'importe quelle durée, avec les scènes calées dessus.
@@ -42,6 +49,12 @@ il ne remplace pas le pare-feu Vercel.
 | `ACCESS_PASSWORD_HASH` | `npm run hash-password -- "mot de passe long"` |
 | `SESSION_SECRET` | `npm run new-secret` |
 | `ANTHROPIC_API_KEY` | Facultatif : active la mise en forme et l'écriture des scripts par Claude |
+| `PEXELS_API_KEY` | Facultatif (gratuit sur pexels.com/api) : active la recherche automatique de B-rolls |
+
+## Licences des composants embarqués
+
+- Voix Piper (`public/voices`) : siwis CC BY 4.0, gilles CC0, mls_1840 CC BY 4.0 (voir `MODEL_CARD.txt`).
+- Phonémiseur `public/vendor/piper` : MIT, données espeak-ng GPL-3.0. ONNX Runtime Web : MIT. Mediabunny : MPL-2.0.
 
 ## Développement
 

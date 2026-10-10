@@ -39,12 +39,12 @@ export function jsonError(code: string, status: number): NextResponse {
   return NextResponse.json({ error: code }, { status });
 }
 
-/** Contrôles communs aux routes de l'API IA : origine, session, débit, taille du corps. */
-export async function guardApi(req: NextRequest, maxBytes: number): Promise<{ body: unknown } | NextResponse> {
+/** Contrôles communs aux routes de l'API : origine, session, débit (par heure et par session), taille du corps. */
+export async function guardApi(req: NextRequest, maxBytes: number, bucket = "ia", perHour = 30): Promise<{ body: unknown } | NextResponse> {
   if (!sameOrigin(req)) return jsonError("origine_refusee", 403);
   const session = await verifySession(req.cookies.get(COOKIE)?.value, process.env.SESSION_SECRET);
   if (!session) return jsonError("non_connecte", 401);
-  if (!rateLimit("ia:" + session.id, 30, 60 * 60 * 1000)) return jsonError("trop_de_demandes", 429);
+  if (!rateLimit(bucket + ":" + session.id, perHour, 60 * 60 * 1000)) return jsonError("trop_de_demandes", 429);
   const raw = await req.text();
   if (raw.length > maxBytes) return jsonError("trop_long", 413);
   try {
@@ -52,4 +52,9 @@ export async function guardApi(req: NextRequest, maxBytes: number): Promise<{ bo
   } catch {
     return jsonError("requete_invalide", 400);
   }
+}
+
+/** Session valide pour une requête GET (pas de corps, pas d'en-tête Origin systématique). */
+export async function sessionOf(req: NextRequest): Promise<{ id: string } | null> {
+  return verifySession(req.cookies.get(COOKIE)?.value, process.env.SESSION_SECRET);
 }
