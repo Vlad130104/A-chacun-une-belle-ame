@@ -2,15 +2,16 @@
 //|                                                     KossWin2.mq5 |
 //|  Structure BOS / CHoCH, biais directionnel (TF supérieur),        |
 //|  liquidité, sweeps d'EQH / EQL, Order Blocks + FVG et             |
-//|  Supply / Demand validés par inducement, doji de CHoCH.           |
+//|  Supply / Demand validés par inducement, doji de CHoCH (bougie    |
+//|  recolorée en violet après un rejet au 1er contact).              |
 //|  Même logique que KossWin2.pine (TradingView).                    |
 //+------------------------------------------------------------------+
 #property copyright   "KossWin2"
 #property version     "2.00"
-#property description "Structure BOS/CHoCH, biais directionnel du TF supérieur, liquidité, sweeps d'EQH/EQL (point rouge), OB+FVG et Supply/Demand affichés après inducement, doji de CHoCH en violet."
+#property description "Structure BOS/CHoCH, biais directionnel du TF supérieur, liquidité, sweeps d'EQH/EQL (point rouge), OB+FVG et Supply/Demand affichés après inducement, bougie doji de CHoCH en violet après un rejet."
 #property indicator_chart_window
-#property indicator_buffers 3
-#property indicator_plots   2
+#property indicator_buffers 7
+#property indicator_plots   3
 #property indicator_label1  "Sweep EQH"
 #property indicator_type1   DRAW_ARROW
 #property indicator_color1  clrRed
@@ -19,6 +20,9 @@
 #property indicator_type2   DRAW_ARROW
 #property indicator_color2  clrRed
 #property indicator_width2  1
+#property indicator_label3  "Doji de CHoCH (rejet)"
+#property indicator_type3   DRAW_CANDLES
+#property indicator_color3  C'156,39,176'
 
 //--- Paramètres
 input group "Structure"
@@ -68,9 +72,8 @@ input bool   InpShowDoji    = true;           // Afficher les doji (violet)
 input double InpDojiBodyPct = 10.0;           // Doji : corps maximum (% de l'amplitude)
 input color  InpDojiCol     = C'156,39,176';  // Couleur des doji
 input int    InpDojiExpiry  = 300;            // Attente max du 1er contact (bougies)
-input int    InpReactBars   = 3;              // Réaction : bougies max après le 1er contact (1 = rejet seul)
-input double InpReactAtr    = 0.25;           // Réaction : distance min hors de la zone (x ATR, 0 = aucune)
-input int    InpMaxDoji     = 6;              // Doji affichés max
+input double InpReactAtr    = 0.25;           // Rejet : clôture à au moins x ATR hors de la zone (0 = aucune)
+input int    InpMaxDoji     = 10;             // Doji violets affichés max
 
 input group "Alertes"
 input bool   InpAlerts      = true;           // Alertes (zone validée, sweep, doji)
@@ -99,8 +102,9 @@ struct Doji
    double   bottom;
    int      bar;       // index de la bougie doji
    int      created;   // index de la bougie du CHoCH
-   int      touchBar;  // bougie du 1er contact avec la zone (-1 = pas encore)
-   bool     active;    // réaction confirmée → affiché en violet
+   double   op;        // ouverture du doji
+   double   cl;        // clôture du doji
+   bool     active;    // rejet confirmé → bougie violette
   };
 
 struct Liq
@@ -115,6 +119,10 @@ struct Liq
 //--- Buffers
 double g_sweepHi[];
 double g_sweepLo[];
+double g_dojiO[];   // bougies doji recolorées (DRAW_CANDLES)
+double g_dojiH[];
+double g_dojiL[];
+double g_dojiC[];
 double g_atr[];
 
 //--- État
@@ -660,24 +668,38 @@ bool IsDoji(int k, const double &op[], const double &h[], const double &l[], con
    return r > 0.0 && MathAbs(c[k] - op[k]) / r * 100.0 <= InpDojiBodyPct;
   }
 
+void ClearDojiCandle(int b)
+  {
+   if(b < 0 || b >= ArraySize(g_dojiO))
+      return;
+   g_dojiO[b] = EMPTY_VALUE;
+   g_dojiH[b] = EMPTY_VALUE;
+   g_dojiL[b] = EMPTY_VALUE;
+   g_dojiC[b] = EMPTY_VALUE;
+  }
+
 void RemoveDoji(int k)
   {
-   Del(Nm("D", g_dojis[k].id));
-   Del(Nm("DT", g_dojis[k].id));
+   if(g_dojis[k].active)
+      ClearDojiCandle(g_dojis[k].bar);
    int n = ArraySize(g_dojis);
    for(int j = k; j < n - 1; j++)
       g_dojis[j] = g_dojis[j + 1];
    ArrayResize(g_dojis, n - 1);
   }
 
-void DrawDoji(const Doji &d, int i, const datetime &t[])
+// Recolore la bougie doji en violet (tracé « bougies » de l'indicateur).
+void PaintDoji(const Doji &d)
   {
-   Rect(Nm("D", d.id), t[d.bar], d.top, Future(t, i, InpExtBars), d.bottom, Blend(InpDojiCol, InpFillAlpha), true, STYLE_SOLID);
-   Text(Nm("DT", d.id), t[d.bar], d.top, "Doji", InpDojiCol, ANCHOR_LEFT_LOWER);
+   g_dojiO[d.bar] = d.op;
+   g_dojiH[d.bar] = d.top;
+   g_dojiL[d.bar] = d.bottom;
+   g_dojiC[d.bar] = d.cl;
   }
 
-// Doji du mouvement qui mène au CHoCH : de la bougie du swing cassé (début de
-// la dernière jambe) jusqu'à la bougie de cassure incluse.
+// Doji du mouvement du CHoCH, positionnés AVANT la bougie de cassure : de la
+// bougie du swing cassé (début de la dernière jambe) à la bougie qui précède
+// le CHoCH.
 void CollectDoji(int dir, int fromBar, int i, const double &op[], const double &h[], const double &l[], const double &c[])
   {
    int old = ArraySize(g_dojiSeen);
@@ -687,7 +709,7 @@ void CollectDoji(int dir, int fromBar, int i, const double &op[], const double &
       for(int x = old; x <= i; x++)
          g_dojiSeen[x] = false;
      }
-   for(int b = fromBar; b <= i; b++)
+   for(int b = fromBar; b <= i - 1; b++)
      {
       if(g_dojiSeen[b] || !IsDoji(b, op, h, l, c))
          continue;
@@ -700,7 +722,8 @@ void CollectDoji(int dir, int fromBar, int i, const double &op[], const double &
       g_dojis[n].bottom  = l[b];
       g_dojis[n].bar     = b;
       g_dojis[n].created = i;
-      g_dojis[n].touchBar = -1;
+      g_dojis[n].op      = op[b];
+      g_dojis[n].cl      = c[b];
       g_dojis[n].active  = false;
      }
 //--- Limite des doji en attente de réaction
@@ -794,37 +817,33 @@ void ProcessBar(int i, const datetime &t[], const double &op[], const double &h[
    EnforceCap(1);
    EnforceCap(-1);
 
-//--- C bis) Doji : le 1er contact du prix avec la zone doit produire un rejet
-//           (bougie de contact) ou un retournement (<= InpReactBars bougies) :
-//           clôture hors de la zone, côté réaction, d'au moins InpReactAtr x ATR.
-//           Sinon le doji est écarté. Réaction confirmée → affiché en violet.
+//--- C bis) Doji : au 1er contact du prix avec la zone du doji (son plus haut /
+//           plus bas), la bougie de contact doit faire un REJET : clôture hors
+//           de la zone, côté réaction, d'au moins InpReactAtr x ATR. Rejet → la
+//           bougie doji devient violette. Pas de rejet au 1er contact → écarté.
    for(int k = ArraySize(g_dojis) - 1; k >= 0; k--)
      {
-      bool bull    = g_dojis[k].dir == 1;
-      bool invalid = bull ? c[i] < g_dojis[k].bottom : c[i] > g_dojis[k].top;
-      bool kill    = invalid;
-      if(!invalid && !g_dojis[k].active)
+      if(g_dojis[k].active)
+         continue;
+      bool bull = g_dojis[k].dir == 1;
+      bool inZ  = bull ? l[i] <= g_dojis[k].top : h[i] >= g_dojis[k].bottom;
+      bool kill = false;
+      if(inZ)
         {
-         bool inZ = bull ? l[i] <= g_dojis[k].top : h[i] >= g_dojis[k].bottom;
-         if(g_dojis[k].touchBar < 0 && inZ)
-            g_dojis[k].touchBar = i;
-         if(g_dojis[k].touchBar < 0)
-            kill = i - g_dojis[k].created > InpDojiExpiry;
-         else
+         double dist     = InpReactAtr * g_atr[i];
+         bool   rejected = bull ? c[i] > g_dojis[k].top + dist : c[i] < g_dojis[k].bottom - dist;
+         if(rejected)
            {
-            double dist    = InpReactAtr * g_atr[i];
-            bool   reacted = bull ? c[i] > g_dojis[k].top + dist : c[i] < g_dojis[k].bottom - dist;
-            if(!reacted)
-               kill = i - g_dojis[k].touchBar >= MathMax(1, InpReactBars) - 1;   // pas de réaction au 1er contact
-            else
-              {
-               g_dojis[k].active = true;
-               g_newDoji++;
-               if(InpShowDoji)
-                  DrawDoji(g_dojis[k], i, t);
-              }
+            g_dojis[k].active = true;
+            g_newDoji++;
+            if(InpShowDoji)
+               PaintDoji(g_dojis[k]);
            }
+         else
+            kill = true;
         }
+      else
+         kill = i - g_dojis[k].created > InpDojiExpiry;
       if(kill)
          RemoveDoji(k);
      }
@@ -974,9 +993,6 @@ void Refresh(int last, const double &c[], const datetime &t[])
          ObjectSetInteger(0, Nm("Z", g_zones[k].id), OBJPROP_TIME, 1, Future(t, last, InpExtBars));
    for(int k = 0; k < ArraySize(g_liqs); k++)
       DrawLiq(g_liqs[k], last, t);
-   for(int k = 0; k < ArraySize(g_dojis); k++)
-      if(g_dojis[k].active && InpShowDoji)
-         ObjectSetInteger(0, Nm("D", g_dojis[k].id), OBJPROP_TIME, 1, Future(t, last, InpExtBars));
 
 //--- Panneau : biais du TF supérieur, structure locale, alignement
    if(InpShowPanel)
@@ -1064,10 +1080,20 @@ int OnInit()
   {
    SetIndexBuffer(0, g_sweepHi, INDICATOR_DATA);
    SetIndexBuffer(1, g_sweepLo, INDICATOR_DATA);
-   SetIndexBuffer(2, g_atr, INDICATOR_CALCULATIONS);
+   SetIndexBuffer(2, g_dojiO, INDICATOR_DATA);
+   SetIndexBuffer(3, g_dojiH, INDICATOR_DATA);
+   SetIndexBuffer(4, g_dojiL, INDICATOR_DATA);
+   SetIndexBuffer(5, g_dojiC, INDICATOR_DATA);
+   SetIndexBuffer(6, g_atr, INDICATOR_CALCULATIONS);
    ArraySetAsSeries(g_sweepHi, false);
    ArraySetAsSeries(g_sweepLo, false);
+   ArraySetAsSeries(g_dojiO, false);
+   ArraySetAsSeries(g_dojiH, false);
+   ArraySetAsSeries(g_dojiL, false);
+   ArraySetAsSeries(g_dojiC, false);
    ArraySetAsSeries(g_atr, false);
+   PlotIndexSetInteger(2, PLOT_LINE_COLOR, InpDojiCol);
+   PlotIndexSetDouble(2, PLOT_EMPTY_VALUE, EMPTY_VALUE);
    PlotIndexSetInteger(0, PLOT_ARROW, 159);
    PlotIndexSetInteger(1, PLOT_ARROW, 159);
    PlotIndexSetInteger(0, PLOT_LINE_WIDTH, MathMax(1, MathMin(3, InpDotSize)));
@@ -1127,6 +1153,10 @@ int OnCalculate(const int rates_total,
       ResetAll();
       ArrayInitialize(g_sweepHi, EMPTY_VALUE);
       ArrayInitialize(g_sweepLo, EMPTY_VALUE);
+      ArrayInitialize(g_dojiO, EMPTY_VALUE);
+      ArrayInitialize(g_dojiH, EMPTY_VALUE);
+      ArrayInitialize(g_dojiL, EMPTY_VALUE);
+      ArrayInitialize(g_dojiC, EMPTY_VALUE);
      }
 
 //--- Uniquement les bougies clôturées : aucun repaint
@@ -1139,12 +1169,14 @@ int OnCalculate(const int rates_total,
       ComputeAtr(i, high, low, close);
       g_sweepHi[i] = EMPTY_VALUE;
       g_sweepLo[i] = EMPTY_VALUE;
+      ClearDojiCandle(i);
       ProcessBar(i, time, open, high, low, close);
       g_last = i;
      }
    ComputeAtr(rates_total - 1, high, low, close);
    g_sweepHi[rates_total - 1] = EMPTY_VALUE;
    g_sweepLo[rates_total - 1] = EMPTY_VALUE;
+   ClearDojiCandle(rates_total - 1);
 
    if(InpAlerts && prev_calculated > 0)
      {
@@ -1153,7 +1185,7 @@ int OnCalculate(const int rates_total,
       if(g_sweepNow)
          Alert("KossWin2 : sweep d'EQH / EQL — ", _Symbol, " ", EnumToString(_Period));
       if(g_newDoji > 0)
-         Alert("KossWin2 : ", g_newDoji, " doji de CHoCH validé(s) par une 1re réaction — ", _Symbol, " ", EnumToString(_Period));
+         Alert("KossWin2 : ", g_newDoji, " doji de CHoCH validé(s) par un rejet — ", _Symbol, " ", EnumToString(_Period));
      }
 
    Refresh(rates_total - 1, close, time);

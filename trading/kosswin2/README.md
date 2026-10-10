@@ -34,7 +34,7 @@ Les deux versions sont au même niveau : biais directionnel, doji de CHoCH, poin
 | OB + FVG achat / vente | Rectangle plein `OB+FVG`                                                | Vert / rouge                       |
 | Demand / Supply        | Rectangle plein `Demand` / `Supply`                                     | Bleu / orange                      |
 | Inducement pris        | Ligne pointillée `IDM`                                                  | Gris                               |
-| Doji de CHoCH          | Rectangle `Doji`, si le 1er contact a donné un rejet ou un retournement | Violet                             |
+| Doji de CHoCH          | La bougie doji elle-même, si le 1er contact a donné un rejet            | Violet                             |
 | Panneau                | Biais du TF supérieur + structure locale + alignement                   | Coin haut droit                    |
 
 ## 3. Définitions exactes utilisées
@@ -113,17 +113,19 @@ Zone d'achat :
    └────────────────────┘
 ```
 
-### 3.6 Doji de CHoCH (violet)
+### 3.6 Doji de CHoCH (bougie violette)
 
 - **Doji** : bougie dont le corps fait au plus **10 %** de son amplitude (réglable).
-- **Où on les cherche** : seulement autour des **CHoCH**, pas des BOS. La recherche couvre tout le mouvement qui mène au CHoCH : de la bougie du swing cassé (début de la dernière jambe) jusqu'à la **bougie de cassure incluse**. On couvre ainsi « avant le CHoCH » et « au niveau du CHoCH ».
-- **Zone du doji** : du plus haut au plus bas de la bougie.
-- **Condition d'affichage : le premier contact doit produire une réaction.** Une réaction, c'est un **rejet** ou un **retournement** du prix au moment où il touche la zone :
-  - **Rejet** : la bougie qui touche la zone clôture **hors de la zone, côté réaction**, c'est-à-dire au-dessus pour un CHoCH haussier, en dessous pour un baissier ;
-  - **Retournement** : cette clôture de réaction arrive dans les **3 bougies** suivant le premier contact, bougie de contact comprise (réglable ; 1 = rejet seul) ;
-  - **Amplitude minimale** : la clôture de réaction doit s'éloigner de la zone d'au moins **0,25 × ATR** (réglable ; 0 = n'importe quelle clôture hors de la zone).
-- **Si le premier contact ne réagit pas dans ce délai, le doji est écarté.** Un contact ultérieur ne le rattrape pas.
-- **Effacement** : quand une clôture traverse la zone, quand le prix ne revient pas dans la zone dans les 300 bougies qui suivent le CHoCH, ou quand on dépasse 6 doji affichés (les plus anciens partent).
+- **Où on les cherche** : seulement dans le mouvement des **CHoCH** (pas des BOS), et **avant** la bougie de cassure. La recherche va de la bougie du swing cassé (début de la dernière jambe) jusqu'à la bougie qui **précède** le CHoCH. La bougie de CHoCH elle-même est exclue.
+- **Zone du doji** : du plus haut au plus bas de la bougie. Elle sert au calcul mais **n'est pas tracée**.
+- **Condition : un rejet au premier contact.** Après le CHoCH, la première bougie qui touche la zone du doji doit **clôturer hors de la zone, côté réaction**, à au moins **0,25 × ATR** :
+  - au-dessus de la zone pour un CHoCH haussier ;
+  - en dessous de la zone pour un CHoCH baissier ;
+  - le seuil est réglable ; 0 = n'importe quelle clôture hors de la zone.
+- **Sans rejet au premier contact, le doji est écarté.** Un contact ultérieur ne le rattrape pas. Il est aussi écarté si le prix ne revient pas dans sa zone dans les 300 bougies qui suivent le CHoCH.
+- **Affichage** : la **bougie doji elle-même** devient violette, et le reste à partir de ce moment. Seules les 10 dernières sont gardées (réglable).
+  - **MT5** : la bougie est réellement recolorée, grâce à un tracé de type « bougies » de l'indicateur.
+  - **TradingView** : Pine Script ne permet pas de changer la couleur d'une bougie passée. La bougie est donc **redessinée en violet par-dessus** l'originale : une ligne pour la mèche, une ligne épaisse pour le corps. Le réglage « Épaisseur du corps violet » (5 pixels par défaut) permet de l'ajuster au zoom.
 
 ## 4. Garder le graphique propre
 
@@ -132,7 +134,7 @@ Réglages par défaut volontairement sobres :
 - 4 BOS / CHoCH affichés ;
 - 3 niveaux de liquidité par côté ;
 - 4 zones par sens ;
-- 6 doji violets au maximum ;
+- 10 bougies doji violettes au maximum ;
 - les niveaux pris et les zones invalidées sont effacés ;
 - points de sweep réduits (puce « • »).
 
@@ -145,7 +147,7 @@ Tout se règle dans les paramètres, et chaque élément peut être masqué.
 - **TradingView** : Créer une alerte → condition « KossWin2 » → « Tout appel de fonction alert() ».
 - **MT5** : popup automatique si le paramètre `Alertes` est activé.
 
-Trois événements déclenchent une alerte : une zone validée par inducement, un sweep d'EQH / EQL, et un doji de CHoCH validé par une 1re réaction.
+Trois événements déclenchent une alerte : une zone validée par inducement, un sweep d'EQH / EQL, et un doji de CHoCH validé par un rejet.
 
 ## 6. Analyse critique
 
@@ -155,30 +157,28 @@ Trois événements déclenchent une alerte : une zone validée par inducement, u
 4. **Tout dépend du réglage « Force des swings ».** Avec 3, beaucoup de BOS/CHoCH ; avec 10, peu. Ce n'est pas « la » structure du marché, c'est une structure à une échelle choisie.
 5. **Les points rouges sont rares, et c'est voulu.** Seuls les sweeps d'EQH / EQL sont marqués. Sur les données simulées, cela donne environ un point toutes les 250 bougies, contre un toutes les 25 quand tous les niveaux comptaient. Une détection EQH / EQL limitée aux gros swings n'en aurait donné qu'un toutes les 900 bougies environ, d'où la force dédiée. Pour en voir davantage : tolérance 0,2 ATR (environ 1 toutes les 130 bougies) ou force EQH / EQL de 2.
 6. **TradingView et MT5 ne donneront pas exactement les mêmes zones.** Les flux de prix et les fuseaux horaires des bougies diffèrent d'un courtier à l'autre, et les cas d'égalité entre sommets peuvent être traités différemment. La logique est la même ; les données ne le sont pas.
-7. **MT5 n'a pas de vraie transparence pour les rectangles.** Le remplissage est donc mélangé avec la couleur de fond du graphique pour la simuler. Les doji violets suivent la même règle.
+7. **MT5 n'a pas de vraie transparence pour les rectangles.** Le remplissage est donc mélangé avec la couleur de fond du graphique pour la simuler.
 8. **Particularités de la version MT5.**
    - **Biais** : calculé sur les 20 000 dernières bougies du timeframe du biais. Si ces données ne sont pas encore chargées, le panneau affiche « INDÉFINI » jusqu'au tick suivant.
    - **Taille du point de sweep** : réglage `Taille du point`, de 1 (minuscule, par défaut) à 3 (ancienne taille).
    - **Accents** : le fichier est enregistré en UTF-8 avec BOM, pour que MetaEditor affiche correctement les accents des textes. Si des caractères étranges apparaissent dans les alertes, réenregistre le fichier en UTF-8 depuis MetaEditor.
 9. **Le biais n'est qu'une échelle de structure de plus.** Il dépend du timeframe choisi et de la force des swings. Un biais H4 haussier peut cohabiter avec une tendance journalière baissière. Il oriente la lecture, il ne prédit rien.
-10. **C'est l'amplitude de la réaction qui fait le tri, pas la forme rejet / retournement.** Une zone de doji est petite, et le prix y revient puis en ressort facilement. Sur 546 doji candidats (données simulées), voici combien sont validés selon la règle :
+10. **Le rejet au premier contact est un filtre sélectif, surtout avec un seuil d'amplitude.** Une zone de doji est petite : le prix y entre et en ressort facilement, donc une simple clôture hors de la zone ne prouve pas grand-chose. Sur 545 doji candidats (données simulées, doji placés avant le CHoCH), voici combien deviennent violets :
 
-    | Règle                                                       | Doji validés |
-    | ----------------------------------------------------------- | ------------ |
-    | Ancienne (réaction à n'importe quel moment)                 | 60 %         |
-    | Rejet seul, bougie de contact                               | 45 %         |
-    | Rejet ou retournement ≤ 3 bougies, sans amplitude minimale  | 56 %         |
-    | **Rejet ou retournement ≤ 3 bougies + 0,25 × ATR (défaut)** | **43 %**     |
-    | Rejet ou retournement ≤ 3 bougies + 0,5 × ATR               | 31 %         |
+    | Règle                           | Doji violets |
+    | ------------------------------- | ------------ |
+    | Rejet, sans amplitude minimale  | 45 %         |
+    | **Rejet + 0,25 × ATR (défaut)** | **24 %**     |
+    | Rejet + 0,5 × ATR               | 12 %         |
 
     Le seuil de 0,25 × ATR est un choix de ma part, pas une règle SMC. Le régler à 0 donne ta définition au pied de la lettre.
 
 ## 7. Vérifications faites
 
-- **Doji** : sur 5 × 6 000 bougies simulées, on obtient 512 CHoCH et 546 doji candidats, dont 233 validés avec la règle par défaut (environ 1 doji violet toutes les 130 bougies). Invariants vérifiés sur chaque doji violet :
-  - le contact retenu est bien le **premier** contact après le CHoCH ;
-  - la clôture de réaction arrive au plus 3 bougies après ce contact ;
-  - aucune clôture n'a traversé la zone avant l'affichage.
+- **Doji** : sur 5 × 6 000 bougies simulées, 545 doji candidats placés avant un CHoCH, dont 132 deviennent violets avec la règle par défaut (environ 1 toutes les 227 bougies). Invariants vérifiés sur chaque doji violet :
+  - le doji est strictement **avant** la bougie de CHoCH ;
+  - la bougie de rejet est bien le **premier** contact avec la zone après le CHoCH ;
+  - cette bougie touche la zone et clôture hors de la zone, côté réaction.
 - Le biais n'a pas été simulé. Il réutilise exactement les règles de structure déjà vérifiées, appliquées au timeframe supérieur.
 - La logique a été reproduite en Python et exécutée sur 5 × 6 000 bougies simulées. Sur ces données : 1 321 cassures (dont 512 CHoCH), 1 079 zones créées, dont 572 (53 %) validées par inducement.
 - Invariants vérifiés sur chaque zone affichée :

@@ -12,10 +12,10 @@
 //  • Zones : Order Block + FVG et Supply / Demand, nés de la jambe qui a cassé
 //    la structure. Une zone n'est AFFICHÉE qu'après la prise de son inducement
 //    (premier repli interne formé après la cassure).
-//  • Doji de CHoCH : doji formés dans le mouvement qui mène au CHoCH (jambe
-//    avant la cassure + bougie de cassure), affichés en violet seulement si le
-//    PREMIER contact du prix avec leur zone a produit un rejet ou un
-//    retournement.
+//  • Doji de CHoCH : doji formés dans le mouvement du CHoCH, AVANT la bougie
+//    de cassure. La bougie doji devient violette seulement si le PREMIER
+//    contact du prix avec sa zone (son plus haut / plus bas) produit un rejet.
+//    Aucune zone n'est tracée.
 //
 //  La logique est identique dans KossWin2.mq5 (MetaTrader 5).
 // ════════════════════════════════════════════════════════════════════════════
@@ -67,11 +67,11 @@ bool   showPanel  = input.bool(true, "Panneau biais / structure", group = G_BIAS
 const string G_DOJI = "Doji de CHoCH"
 bool  showDoji    = input.bool(true, "Afficher les doji (violet)", group = G_DOJI)
 float dojiBodyPct = input.float(10.0, "Doji : corps maximum (% de l'amplitude)", minval = 1.0, maxval = 50.0, step = 1.0, group = G_DOJI)
-color dojiCol     = input.color(color.new(#9C27B0, 70), "Couleur des doji", group = G_DOJI)
+color dojiCol     = input.color(#9C27B0, "Couleur des doji", group = G_DOJI)
+int   dojiBodyW   = input.int(5, "Épaisseur du corps violet (pixels)", minval = 1, maxval = 20, group = G_DOJI, tooltip = "TradingView ne permet pas de recolorer une bougie passée : la bougie est redessinée en violet par-dessus (mèche + corps). Ajuste l'épaisseur à ton niveau de zoom.")
 int   dojiExpiry  = input.int(300, "Attente max du 1er contact (bougies)", minval = 10, maxval = 2000, group = G_DOJI)
-int   reactBars   = input.int(3, "Réaction : bougies max après le 1er contact", minval = 1, maxval = 10, group = G_DOJI, tooltip = "1 = rejet seul : la bougie qui touche la zone doit clôturer hors de la zone, côté réaction.\n3 = rejet ou retournement : la clôture de réaction peut arriver jusqu'à la 3e bougie après le contact (bougie de contact comprise).\nSans réaction dans ce délai, le doji est écarté.")
-float reactAtr    = input.float(0.25, "Réaction : distance min hors de la zone (× ATR)", minval = 0.0, step = 0.05, group = G_DOJI, tooltip = "La clôture de réaction doit s'éloigner de la zone d'au moins cette distance. 0 = n'importe quelle clôture hors de la zone.")
-int   maxDoji     = input.int(6, "Doji affichés max", minval = 1, maxval = 30, group = G_DOJI)
+float reactAtr    = input.float(0.25, "Rejet : clôture à au moins x ATR hors de la zone", minval = 0.0, step = 0.05, group = G_DOJI, tooltip = "Rejet = la bougie qui touche la zone du doji clôture hors de la zone, côté réaction, à au moins cette distance. 0 = n'importe quelle clôture hors de la zone. Sans rejet au 1er contact, le doji est écarté.")
+int   maxDoji     = input.int(10, "Doji violets affichés max", minval = 1, maxval = 50, group = G_DOJI)
 
 // ─── Types et état ──────────────────────────────────────────────────────────
 type Zone
@@ -95,9 +95,11 @@ type Doji
     float bottom
     int   bar                // bougie du doji
     int   created            // bougie du CHoCH
-    int   touchBar = na      // bougie du 1er contact avec la zone
-    bool  active  = false    // réaction confirmée → affiché en violet
-    box   bx
+    float op                 // ouverture du doji
+    float cl                 // clôture du doji
+    bool  active  = false    // rejet confirmé → bougie violette
+    line  wick
+    line  body
 
 type Liq
     float price
@@ -360,19 +362,33 @@ isDoji(int off) =>
     rng > 0 and math.abs(close[off] - open[off]) / rng * 100 <= dojiBodyPct
 
 deleteDoji(Doji d) =>
-    if not na(d.bx)
-        d.bx.delete()
+    if not na(d.wick)
+        d.wick.delete()
+    if not na(d.body)
+        d.body.delete()
     true
 
-// Doji du mouvement qui mène au CHoCH : de la bougie du swing cassé (début de
-// la dernière jambe) jusqu'à la bougie de cassure incluse.
+// Redessine la bougie doji en violet par-dessus l'originale (mèche + corps).
+paintDoji(Doji d) =>
+    float bTop = math.max(d.op, d.cl)
+    float bBot = math.min(d.op, d.cl)
+    if bTop - bBot < syminfo.mintick
+        bTop += syminfo.mintick / 2
+        bBot -= syminfo.mintick / 2
+    d.wick := line.new(d.bar, d.top, d.bar, d.bottom, color = dojiCol, width = 2)
+    d.body := line.new(d.bar, bTop, d.bar, bBot, color = dojiCol, width = dojiBodyW)
+    true
+
+// Doji du mouvement du CHoCH, positionnés AVANT la bougie de cassure : de la
+// bougie du swing cassé (début de la dernière jambe) à la bougie qui précède
+// le CHoCH.
 collectDoji(int dir, int fromBar) =>
     int len = bar_index - fromBar
-    for k = len to 0
+    for k = len to 1
         int b = bar_index - k
         if isDoji(k) and not dojiSeen.contains(b)
             dojiSeen.put(b, true)
-            dojis.push(Doji.new(dir, high[k], low[k], b, bar_index))
+            dojis.push(Doji.new(dir, high[k], low[k], b, bar_index, open[k], close[k]))
     // Limite des doji en attente de réaction
     int n = 0
     for d in dojis
@@ -448,32 +464,29 @@ if barstate.isconfirmed
         enforceCap(1)
         enforceCap(-1)
 
-    // C bis) Doji : le 1er contact du prix avec la zone doit produire un rejet
-    //        (bougie de contact) ou un retournement (≤ reactBars bougies) :
-    //        clôture hors de la zone, côté réaction, d'au moins reactAtr × ATR.
-    //        Sinon le doji est écarté. Réaction confirmée → affiché en violet.
+    // C bis) Doji : au 1er contact du prix avec la zone du doji (son plus haut /
+    //        plus bas), la bougie de contact doit faire un REJET : clôture hors
+    //        de la zone, côté réaction, d'au moins reactAtr × ATR. Rejet → la
+    //        bougie doji devient violette. Pas de rejet au 1er contact → écarté.
     if dojis.size() > 0
         for i = dojis.size() - 1 to 0
-            Doji d       = dojis.get(i)
-            bool bull    = d.dir == 1
-            bool invalid = bull ? close < d.bottom : close > d.top
-            bool kill    = invalid
-            if not invalid and not d.active
-                bool inZ = bull ? low <= d.top : high >= d.bottom
-                if na(d.touchBar) and inZ
-                    d.touchBar := bar_index
-                if na(d.touchBar)
-                    kill := bar_index - d.created > dojiExpiry
+            Doji d = dojis.get(i)
+            if d.active
+                continue
+            bool bull = d.dir == 1
+            bool inZ  = bull ? low <= d.top : high >= d.bottom
+            bool kill = false
+            if inZ
+                bool rejected = bull ? close > d.top + reactAtr * atr : close < d.bottom - reactAtr * atr
+                if rejected
+                    d.active := true
+                    newDoji  += 1
+                    if showDoji
+                        paintDoji(d)
                 else
-                    bool reacted = bull ? close > d.top + reactAtr * atr : close < d.bottom - reactAtr * atr
-                    if not reacted
-                        // Pas de réaction au 1er contact dans le délai : écarté.
-                        kill := bar_index - d.touchBar >= reactBars - 1
-                    else
-                        d.active := true
-                        newDoji  += 1
-                        if showDoji
-                            d.bx := box.new(d.bar, d.top, bar_index + extBars, d.bottom, border_color = color.new(dojiCol, 0), border_width = 1, bgcolor = dojiCol, text = "Doji", text_size = size.tiny, text_color = color.new(dojiCol, 0), text_halign = text.align_right, text_valign = text.align_center)
+                    kill := true
+            else
+                kill := bar_index - d.created > dojiExpiry
             if kill
                 deleteDoji(d)
                 dojis.remove(i)
@@ -573,7 +586,7 @@ if barstate.isconfirmed
     if newZones > 0
         alert("KossWin2 : " + str.tostring(newZones) + " zone(s) validée(s) par inducement — " + syminfo.ticker + " " + timeframe.period, alert.freq_once_per_bar_close)
     if newDoji > 0
-        alert("KossWin2 : " + str.tostring(newDoji) + " doji de CHoCH validé(s) par une 1re réaction — " + syminfo.ticker + " " + timeframe.period, alert.freq_once_per_bar_close)
+        alert("KossWin2 : " + str.tostring(newDoji) + " doji de CHoCH validé(s) par un rejet — " + syminfo.ticker + " " + timeframe.period, alert.freq_once_per_bar_close)
     if sweepHi or sweepLo
         alert("KossWin2 : sweep " + (sweepHi ? "d'EQH" : "d'EQL") + " — " + syminfo.ticker + " " + timeframe.period, alert.freq_once_per_bar_close)
 
@@ -598,9 +611,6 @@ if barstate.islast
             q.ln.set_xy2(bar_index + 5, q.price)
             q.lb.set_xy(bar_index + 5, q.price)
             q.lb.set_text(liqText(q))
-    for d in dojis
-        if d.active and not na(d.bx)
-            d.bx.set_right(bar_index + extBars)
 
     if showPanel
         int    bT    = nz(biasTrend)
