@@ -1,17 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.progression.app"
-    android:versionCode="1"
-    android:versionName="1.0">
-    <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="34" />
+    package="@APP_ID@"
+    android:versionCode="@VERSION_CODE@"
+    android:versionName="@VERSION_NAME@">
     <application
         android:label="Progression"
         android:icon="@mipmap/ic_launcher"
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:supportsRtl="true"
         android:usesCleartextTraffic="false"
-        android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar">
+        android:theme="@style/AppTheme">
         <activity
-            android:name=".MainActivity"
+            android:name="com.progression.app.MainActivity"
             android:exported="true"
             android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout|uiMode"
             android:windowSoftInputMode="adjustResize">
